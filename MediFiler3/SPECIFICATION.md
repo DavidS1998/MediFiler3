@@ -73,7 +73,7 @@ The home screen should be designed so that additional collections or shortcuts c
 The application must support loading:
 
 - A single folder.
-- Multiple folders as a combined collection.
+- Multiple folders as separate roots in one loaded session. Each root retains its own filesystem hierarchy; files from different roots are not merged into a single folder list.
 - A previously loaded collection.
 
 When a folder is loaded, the application should scan its directory structure and construct a navigable folder tree.
@@ -297,7 +297,7 @@ Drag and drop should complement, rather than replace, the primary interaction mo
 
 # 6. Alternative viewing modes
 
-The application should support multiple viewing modes that share the same underlying file collection, selection state, and organization functionality.
+The application should support multiple viewing modes that share the same underlying file collection and organization functionality. Switching viewing modes is a context change: preserve the loaded roots and folder context, but clear mode-specific file selections.
 
 Switching between viewing modes should not require rescanning or reloading the collection.
 
@@ -595,7 +595,7 @@ Implement a centralized navigation controller responsible for:
 - Switching between viewing modes.
 - Preserving relevant navigation state.
 
-Alternative viewing modes should use the same underlying navigation data.
+Alternative viewing modes should use the same underlying navigation data. On a mode switch, retain the loaded roots and active folder/file context where applicable, and clear selections made in the previous mode.
 
 ## 9.3 Filesystem architecture
 
@@ -666,7 +666,7 @@ The following principles should guide implementation decisions:
 
 1. **Navigation should be immediate.** Moving between files should require minimal interaction and should not trigger unnecessary reloads.
 2. **Organization should be contextual.** The user should be able to move a file to another folder without leaving the current viewing workflow.
-3. **Viewing modes should share state.** Switching between gallery, main viewer, and reader should not reset the user's position unnecessarily.
+3. **Viewing modes should share navigation context.** Switching between gallery, main viewer, and reader should not reset the user's position unnecessarily; mode-specific selections are cleared when switching modes.
 4. **Interactions should be predictable.** The same interaction should have consistent behavior within the same viewing context.
 5. **Destructive operations should be safe.** Never silently overwrite or permanently delete user data.
 6. **The interface should remain responsive.** Expensive operations must run asynchronously.
