@@ -44,6 +44,7 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="4,5,4,5" />
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
         </Style>
     </UserControl.Resources>
     <Grid>
@@ -56,6 +57,7 @@
             <DockPanel>
                 <TextBlock DockPanel.Dock="Top" Text="Folders" FontSize="16" FontWeight="SemiBold" Foreground="#FFFFFF" Margin="8,6,8,12" />
                 <TreeView x:Name="FolderTree" ItemsSource="{Binding Roots}" Background="Transparent" BorderThickness="0" Foreground="#E7E8EA"
+                          SelectedItemChanged="OnFolderSelectionChanged"
                           ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           ScrollViewer.CanContentScroll="False" VirtualizingStackPanel.IsVirtualizing="False"
                           VirtualizingPanel.ScrollUnit="Pixel">
@@ -85,14 +87,41 @@
                 </TreeView>
             </DockPanel>
         </Border>
-        <Border Grid.Column="2" Background="#111317" BorderBrush="#292B31" BorderThickness="1" CornerRadius="12">
-          <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
-            <Border Width="58" Height="58" CornerRadius="16" Background="#17191E" BorderBrush="#292B31" BorderThickness="1" HorizontalAlignment="Center">
-                <TextBlock Text="â–±" FontSize="30" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
-            </Border>
-            <TextBlock Text="Browse your collection" FontSize="25" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center" Margin="0,22,0,8" />
-            <TextBlock Text="Load a folder to see its files and start browsing." FontSize="14" Foreground="#A3A6AE" TextAlignment="Center" TextWrapping="Wrap" />
-          </StackPanel>
+        <Border Grid.Column="2" Background="#111317" BorderBrush="#292B31" BorderThickness="1" CornerRadius="12" Padding="18">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top" Margin="4,2,4,14">
+                    <TextBlock Text="{Binding ActiveFolder.Name, TargetNullValue=Files, FallbackValue=Files}" FontSize="21" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                    <TextBlock Text="{Binding ActiveFolder.Path}" FontSize="12" Foreground="#A3A6AE" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Grid>
+                    <ListBox x:Name="FileList" ItemsSource="{Binding Files}" SelectionChanged="OnFileSelectionChanged"
+                             Background="Transparent" BorderThickness="0" Foreground="#E7E8EA"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Name}" Foreground="#E7E8EA" Padding="8,6" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="Padding" Value="0" />
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1B1E24" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#252932" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                    <TextBlock x:Name="EmptyFilesNotice" Text="No files in this folder." Foreground="#A3A6AE"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                </Grid>
+            </DockPanel>
         </Border>
     </Grid>
 </UserControl>

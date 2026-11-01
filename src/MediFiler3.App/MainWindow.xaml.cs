@@ -8,6 +8,9 @@ using System.Windows.Interop;
 using Microsoft.Win32;
 using MediFiler3.Application.Folders;
 using System.IO;
+using MediFiler3.Application.Files;
+using MediFiler3.Application.Navigation;
+using MediFiler3.Domain.Files;
 
 namespace MediFiler3;
 
@@ -38,6 +41,7 @@ public partial class MainWindow : Window
     private readonly HomeView _homeView = new();
     private readonly BrowseView _browseView;
     private readonly ILogger<MainWindow> _logger;
+    private readonly NavigationSessionState _navigationState;
     private bool _sourceInitialized;
 
     public Brush TitleBarBackground
@@ -58,14 +62,17 @@ public partial class MainWindow : Window
         set => SetValue(IsSidebarVisibleProperty, value);
     }
 
-    public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService)
+    public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState)
     {
         _logger = logger;
-        _browseView = new BrowseView(folderTreeService);
+        _navigationState = navigationState;
+        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState);
         InitializeComponent();
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
         _browseView.StatusChanged += status => LoadStatus.Text = status;
+        _navigationState.PropertyChanged += OnNavigationStateChanged;
+        UpdateWindowTitle();
         SourceInitialized += OnWindowSourceInitialized;
         ApplySidebarLayout();
         logger.LogInformation("Main window initialized.");
@@ -142,6 +149,22 @@ public partial class MainWindow : Window
             "Browse" => _browseView,
             _ => _homeView
         };
+    }
+
+    private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files))
+        {
+            UpdateWindowTitle();
+        }
+    }
+
+    private void UpdateWindowTitle()
+    {
+        var currentFile = _navigationState.CurrentFile;
+        Title = currentFile is null || _navigationState.CurrentFilePosition == 0
+            ? "MediFiler3"
+            : $"({_navigationState.CurrentFilePosition}/{_navigationState.Files.Count}) {currentFile.Name}";
     }
 
     private async void OnLoadFoldersClick(object sender, RoutedEventArgs e)

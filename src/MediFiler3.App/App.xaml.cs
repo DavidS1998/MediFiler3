@@ -3,6 +3,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MediFiler3.Interop;
 using MediFiler3.Infrastructure.Folders;
+using MediFiler3.Infrastructure.Files;
+using MediFiler3.Application.Navigation;
 using System.Windows;
 
 namespace MediFiler3;
@@ -22,6 +24,8 @@ public partial class App : System.Windows.Application
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton<MediFiler3.Application.Folders.IFolderTreeService, FileSystemFolderTreeService>();
+                    services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
+                    services.AddSingleton<NavigationSessionState>();
                     services.AddSingleton<MainWindow>();
                 })
                 .Build();

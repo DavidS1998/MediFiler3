@@ -85,6 +85,7 @@ Files should be indexed sufficiently to support fast navigation, sorting, thumbn
 ### Important considerations
 
 - Avoid loading every file's full contents into memory during indexing.
+- Exclude files marked with the Windows Hidden or System attribute from the browsing file list.
 - Large directory structures must not freeze the UI.
 - Thumbnail generation should happen asynchronously.
 - The application should handle inaccessible directories and files gracefully.
@@ -102,7 +103,7 @@ It should provide a focused browsing experience where the user can move through 
 
 When a folder is selected, display its supported files in the main viewer.
 
-Files should initially be sorted alphabetically by filename, using a consistent and predictable sorting method.
+Files should initially be sorted by filename using Windows Explorer-style natural ordering, so numeric portions sort numerically (for example, `page 2` before `page 10`). The same ordering should be used by all viewing modes.
 
 The main viewer should:
 
@@ -110,7 +111,7 @@ The main viewer should:
 - Allow the user to move to the next or previous file through mouse-wheel scrolling.
 - Update the file carousel and current selection immediately when navigating.
 - Support keyboard navigation.
-- Indicate the current file's position within the folder (for example, 12 / 148).
+- Indicate the current file's position within the folder in the native application title bar, formatted as `(5/16) FileName.jpg`, where the position is one-based and the total is the number of files in the active folder. Show the application name when no file is active.
 - Handle reaching the beginning or end of the file list predictably.
 - Allow the user to change sorting preferences.
 

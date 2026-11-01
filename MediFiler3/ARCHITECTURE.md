@@ -31,6 +31,8 @@ tests/
 
 The application layer describes operations such as loading a folder, moving files, and undoing an operation. Infrastructure implements those contracts. Keep file handlers behind capability-focused interfaces so the main viewer does not accumulate format-specific logic.
 
+The browsing session state owns loaded roots, the active folder, its sorted file list, and the current file and one-based position. Selecting a folder loads only its direct files asynchronously, excludes Windows Hidden and System attributes, and uses Windows logical filename ordering. The native WPF title displays `(position/total) filename` while a file is active.
+
 ## WPF and WinUI boundary
 
 The WPF app owns the process, top-level window, composition root, and application navigation state. Keep ordinary views and controls in WPF. Use WinUI XAML Islands only for controls where their built-in behavior and Windows consistency justify the interop cost. The Home/Browse navigation rail uses the WinUI `NavigationView` hosted by a WPF `HwndHost`; it stays in compact icon-only mode, with its expand/collapse toggle disabled. Its selected destination is bridged to the WPF page host. The whole rail remains hideable through `MainWindow.IsSidebarVisible` for future fullscreen behavior.
