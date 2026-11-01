@@ -13,6 +13,7 @@ public sealed class CarouselThumbnailItem : INotifyPropertyChanged
     public string Name => File.Name;
     public string PlaceholderText => string.IsNullOrWhiteSpace(File.Extension) ? "FILE" : File.Extension.TrimStart('.').ToUpperInvariant();
     public bool IsCurrent { get; }
+    public bool IsSpacer => false;
     public Task<BitmapSource?>? ThumbnailTask { get; set; }
     public BitmapSource? Thumbnail
     {

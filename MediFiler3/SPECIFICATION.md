@@ -214,6 +214,12 @@ Its purpose is to provide visual context for the currently selected file and all
 - Display a configurable number of previous and upcoming files.
 - Use 150 × 150 pixel square thumbnail tiles by default; fill each tile while preserving aspect ratio and cropping from the center as needed.
 - Display the current file distinctly.
+- Keep the current file centered in the visible carousel viewport and animate recentering during file navigation to avoid abrupt shifts. Provide blank space before the first file or after the last file as needed to preserve this centered position.
+- Keep spacing between adjacent carousel items compact.
+- Show each carousel filename on a single line, truncating it when necessary.
+- Preserve mouse-wheel file navigation while the pointer is over the carousel.
+- Hide the horizontal scrollbar while preserving horizontal navigation.
+- In the default layout, keep the carousel mostly hidden while allowing its upper quarter to peek above the bottom edge. Use a translucent gradient at the exposed edge to hint at the carousel. Hovering near the bottom fully reveals it; leaving the carousel returns it to the peek state. Make the peek amount and reveal behavior adjustable in future settings.
 - Use generated thumbnails where possible.
 - Highlight the currently selected file.
 - Update the carousel whenever the current file changes.
@@ -227,7 +233,7 @@ Thumbnail generation and retrieval should be cached to avoid unnecessary process
 
 # 5. Folder tree and file organization
 
-The folder tree should remain accessible alongside the main viewer.
+The folder tree should remain accessible alongside the main viewer. In the default browsing layout, it floats above the media canvas and slides into view when the pointer approaches the left edge; it hides again when the pointer leaves the tree.
 
 It should display the hierarchy of the loaded collection and allow the user to perform file and folder operations.
 
@@ -387,16 +393,16 @@ These are not required for the initial implementation.
 
 The interface should be clean, modern, and designed for extended use.
 
-The main application window should consist of independently adjustable panels.
+The main application window should consist of a full-width toolbar above a compact navigation rail and a media canvas. The media canvas fills the available window area beneath the toolbar, excluding the navigation rail. The folder tree and file carousel float above this canvas instead of reserving space beside or below it.
 
 ### Main layout
 
 Suggested layout:
 
-- Main viewer occupying the largest portion of the window.
-- Folder tree positioned to the left.
-- File carousel positioned at the bottom of the viewer.
-- Optional toolbar containing navigation, sorting, and viewing-mode controls.
+- Three WinUI `CommandBar` controls hosted in a XAML Island span the entire top of the WPF window, including the navigation rail column. Align them left, center, and right in a shared three-column grid, use square `AppBarButton` controls for actions, and keep the toolbar 48 pixels tall with overflow buttons hidden.
+- Divide the toolbar into three sections. The left section shows current folder context (with breadcrumb navigation where practical) and file metadata as handlers provide it, including image resolution, video duration, and file size. The middle section contains common actions such as undo, delete, and folder loading; folder loading uses an Add/Plus icon. The right section contains contextual controls and information such as the current zoom level, adjacent zoom-in/zoom-out buttons, and future media playback controls. The zoom indicator is also a reset-to-fit control.
+- The media viewer or gallery occupies the available canvas beneath the toolbar and beside the navigation rail.
+- The folder tree floats over the left side of the media canvas and the carousel floats over its bottom edge. Both are slightly transparent and slide in when the pointer approaches their respective edge. The tree is hidden by default. The carousel remains mostly hidden with its upper quarter peeking above the bottom edge. They return to their default hidden/peek state when the pointer leaves. A future setting may allow users to adjust the peek amount, keep either panel visible, or toggle this reveal behavior.
 
 The layout should adapt to different window sizes.
 

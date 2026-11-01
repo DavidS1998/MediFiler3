@@ -20,63 +20,28 @@
     </Window.Resources>
 
     <Grid Background="#08090B">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="SidebarColumn" Width="56" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#0E0F12" BorderThickness="0">
+            <interop:WinUiToolbarIsland x:Name="ToolbarIsland" Focusable="True" />
+        </Border>
+
         <Border x:Name="Sidebar"
+                Grid.Row="1"
                 Grid.Column="0"
                 Background="#0E0F12"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,0,1,0">
-            <interop:WinUiNavigationIsland x:Name="NavigationIsland"
-                                           Focusable="True" />
+            <interop:WinUiNavigationIsland x:Name="NavigationIsland" Focusable="True" />
         </Border>
 
-        <Grid Grid.Column="1" Margin="28,20,28,24">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-            <DockPanel Grid.Row="0" Margin="0,0,0,14" LastChildFill="True" Height="36">
-                <Border Background="#111317" BorderBrush="#292B31" BorderThickness="1" CornerRadius="8" Padding="2">
-                    <Button Click="OnLoadFoldersClick"
-                            Width="34" Height="30"
-                            Foreground="#E7E8EA"
-                            ToolTip="Load folders"
-                            ToolTipService.InitialShowDelay="450"
-                            ToolTipService.ShowDuration="5000"
-                            AutomationProperties.Name="Load folders">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border x:Name="ButtonBackground" Background="Transparent" CornerRadius="6">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="ButtonBackground" Property="Background" Value="#1B1E24" />
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter TargetName="ButtonBackground" Property="Background" Value="#252932" />
-                                    </Trigger>
-                                    <Trigger Property="IsEnabled" Value="False">
-                                        <Setter TargetName="ButtonBackground" Property="Opacity" Value="0.45" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#E7E8EA" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Button>
-                </Border>
-                <TextBlock x:Name="LoadStatus"
-                           Margin="14,0,0,0"
-                           VerticalAlignment="Center"
-                           FontSize="12"
-                           Foreground="#A3A6AE"
-                           Text="Ready" />
-            </DockPanel>
-            <ContentControl x:Name="PageContent" Grid.Row="1" />
-        </Grid>
+        <ContentControl x:Name="PageContent" Grid.Row="1" Grid.Column="1" />
     </Grid>
 </Window>

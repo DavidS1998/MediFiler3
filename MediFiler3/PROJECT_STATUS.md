@@ -17,7 +17,10 @@
 - For supported images, right-click toggles between file navigation and zoom interaction. In zoom mode, mouse-wheel and Numpad plus/minus zoom by 25% multiplicative steps within 20%–500%; Numpad zoom enters zoom mode automatically. Each zoom level requests a decode at the matching viewport pixel scale, capped at source resolution. Left-drag pans above fit-to-view. Zoom and pan reset when switching back to file navigation or changing files.
 - When changing files, the viewer shows the selected carousel thumbnail immediately when available, then replaces it with the full image after decoding.
 - Unsupported files use their Shell thumbnail in the main viewer when available, with an explicit thumbnail-preview label.
-- A compact persistent command bar provides the folder picker; the folder tree uses high-contrast text, full-width clickable rows, adjustable-through-style row padding, and a subtle narrow scrollbar.
+- Three 48-pixel WinUI CommandBars share a full-window-width XAML Island above the sidebar and media canvas; they align left, center, and right with overflow buttons hidden. The left section shows folder context, the center Add AppBarButton loads folders, and the right section has zoom-out, reset-to-fit with the zoom percentage, and zoom-in controls. The redundant current filename and inline viewer zoom badge are removed.
+- The tree and carousel float over the WPF media canvas with translucent backgrounds. The tree starts hidden; the carousel leaves its upper quarter peeking above the bottom edge with a transparent gradient hint. Hovering at the left/bottom edges slides the corresponding panel out; leaving the panel hides the tree or returns the carousel to its peek state.
+- The scrollbar is hidden while horizontal scrolling remains available, including mouse-wheel file navigation over the carousel. Leading/trailing spacers represent the omitted folder items, so global scroll offsets animate recentering across the entire folder. Thumbnails are explicitly center-cropped, spacing is reduced, and names stay on one line.
+- Carousel hit testing is disabled while its panel or content is moving to prevent clicks from selecting an unintended thumbnail.
 - The Home/Browse rail is a WinUI `NavigationView` hosted by a WPF `HwndHost` through Windows App SDK XAML Islands. It is always compact/icon-only; the pane expand/collapse control is disabled. `MainWindow.IsSidebarVisible` can hide the whole rail for future fullscreen mode.
 - WPF retains the native Windows title bar. `TitleBarBackground` and `TitleBarForeground` dependency properties apply runtime caption/text colors through DWM; defaults are black and white.
 - App project references `Microsoft.WindowsAppSDK` 2.6.4 and is configured unpackaged/framework-dependent with automatic bootstrap initialization. The Windows App Runtime 2.6.4 must be installed on deployment computers.
@@ -37,9 +40,9 @@
 
 ## Immediate next tasks
 
-1. Manually check zoom mode, zoom bounds and increments, panning, and mode reset on file changes on Windows 11.
-2. Manually check full-resolution zoom sharpness, Numpad mode entry, zoom bounds and increments, panning, and immediate reset when returning to navigation mode.
-3. Preserve the WinUI/WPF boundary and keep the rail permanently compact and programmatically hideable when adding future controls.
+1. Manually check the three 48-pixel CommandBars, square buttons, compact zoom controls, no overflow affordance, absence of the white stripe, and seamless toolbar/sidebar join on Windows 11.
+2. Check wheel navigation over the carousel, scrollbar-free recentering throughout a long folder, center-cropped thumbnails, one-line filenames, quarter-peek gradient, and click safety during both animations.
+3. Manually check full-resolution zoom sharpness, Numpad mode entry, zoom bounds and increments, panning, and immediate reset when returning to navigation mode.
 
 ## Known caveats and risks
 
@@ -53,7 +56,7 @@
 - The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
 - Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
 - Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
-- The shell and tree presentation were manually checked by the user. The image viewer, carousel, Shell fallback, and navigation behavior have also been manually checked; zoom and panning await manual interaction checks.
+- The shell, tree, carousel, image viewer, Shell fallback, and navigation behavior were manually checked by the user before this interface revision. The new toolbar and auto-revealing overlays, and zoom/panning, await manual interaction checks.
 
 ## Outstanding decisions
 
@@ -68,3 +71,4 @@
 - The user has manually verified the image viewer, 150 x 150 center-cropped carousel, thumbnail-to-full-image transition, Shell fallback, and navigation stage as sufficiently functional for this stage. Zoom/panning has been build-verified and still needs manual interaction checking on Windows 11.
 - `dotnet build MediFiler3.sln` after navigation implementation on 2026-11-01 succeeded with 0 warnings and 0 errors.
 - A standard build could not overwrite the running app's locked output. `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Build\` succeeded with 0 warnings and 0 errors; zoom remains pending manual verification.
+- `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Build\` after the carousel and toolbar refinements succeeded with 0 warnings and 0 errors. The separate output path avoids the running app's file lock; manual UI validation remains pending.

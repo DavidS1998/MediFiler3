@@ -11,6 +11,7 @@ using MediFiler3.Services;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Media.Animation;
 
 namespace MediFiler3.Views;
 
@@ -34,6 +35,22 @@ public partial class BrowseView : UserControl
     private bool _isPanning;
     private System.Windows.Point _lastPanPoint;
     private double _zoomLevel = 1d;
+    private bool _folderOverlayVisible;
+    private bool _carouselOverlayVisible;
+    private CarouselSpacerItem? _carouselLeadingSpacer;
+    private CarouselSpacerItem? _carouselTrailingSpacer;
+    private readonly DispatcherTimer _carouselScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private DateTime _carouselScrollStartedAt;
+    private double _carouselScrollStartOffset;
+    private double _carouselScrollTargetOffset;
+    private double _carouselOffsetBeforeRefresh;
+    private ScrollViewer? _carouselScrollViewer;
+    private int _carouselStartIndex;
+    private int _carouselEndIndex;
+    private int _carouselFileCount;
+    private int _carouselCurrentIndex;
+    private int _carouselWheelDeltaRemainder;
+    private bool _hasCenteredCarouselItem;
     private readonly ScaleTransform _zoomTransform = new(1d, 1d);
     private readonly TranslateTransform _panTransform = new();
     private readonly DispatcherTimer _resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
@@ -46,7 +63,9 @@ public partial class BrowseView : UserControl
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"
     };
     public event Action<string>? StatusChanged;
-    public ObservableCollection<CarouselThumbnailItem> CarouselItems { get; } = [];
+    public ObservableCollection<object> CarouselItems { get; } = [];
+    public double CurrentZoomLevel => _zoomLevel;
+    public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
         WicImageDecoder imageDecoder, IThumbnailService thumbnailService)
@@ -64,6 +83,7 @@ public partial class BrowseView : UserControl
         DataContext = navigationState;
         CarouselList.ItemsSource = CarouselItems;
         _resizeTimer.Tick += OnImageResizeTimerTick;
+        _carouselScrollTimer.Tick += OnCarouselScrollTimerTick;
     }
 
     public async Task LoadRootsAsync(IEnumerable<string> paths)
@@ -182,6 +202,12 @@ public partial class BrowseView : UserControl
 
     private void OnCarouselSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_carouselScrollTimer.IsEnabled || !_carouselOverlayVisible)
+        {
+            RestoreCarouselSelection();
+            return;
+        }
+
         if (CarouselList.SelectedItem is not CarouselThumbnailItem selectedItem || ReferenceEquals(selectedItem.File, _navigationState.CurrentFile))
         {
             return;
@@ -192,6 +218,39 @@ public partial class BrowseView : UserControl
         ResetBoundaryAttempts();
         _ = RefreshCarouselAsync();
         _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: immediatePreview);
+    }
+
+    private void RestoreCarouselSelection()
+    {
+        var currentItem = CarouselItems.OfType<CarouselThumbnailItem>()
+            .FirstOrDefault(item => ReferenceEquals(item.File, _navigationState.CurrentFile));
+        if (currentItem is not null)
+        {
+            CarouselList.SelectedItem = currentItem;
+        }
+    }
+
+    private void OnCarouselPreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (e.Delta == 0)
+        {
+            return;
+        }
+
+        _carouselWheelDeltaRemainder += e.Delta;
+        var notches = _carouselWheelDeltaRemainder / 120;
+        _carouselWheelDeltaRemainder %= 120;
+        if (notches == 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var direction = notches < 0 ? 1 : -1;
+        for (var notch = 0; notch < Math.Abs(notches); notch++)
+        {
+            NavigateByOneFile(direction);
+        }
     }
 
     private void OnBrowsePreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -206,7 +265,6 @@ public partial class BrowseView : UserControl
             if (!_zoomInteractionEnabled)
             {
                 _zoomInteractionEnabled = true;
-                UpdateZoomInteractionBadge();
             }
 
             e.Handled = true;
@@ -242,6 +300,76 @@ public partial class BrowseView : UserControl
             ImageViewport.CaptureMouse();
             e.Handled = true;
         }
+    }
+
+    private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        var point = e.GetPosition(BrowseSurface);
+        var showFolder = point.X <= 26 || (_folderOverlayVisible && point.X <= FolderOverlay.Width);
+        var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
+                           (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
+        SetFolderOverlayVisible(showFolder);
+        SetCarouselOverlayVisible(showCarousel);
+    }
+
+    private void OnBrowseSurfaceMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        SetFolderOverlayVisible(false);
+        SetCarouselOverlayVisible(false);
+    }
+
+    private void OnBrowseSurfaceSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateCarouselSpacerWidths();
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(CenterCurrentCarouselItem));
+    }
+
+    private void SetFolderOverlayVisible(bool isVisible)
+    {
+        if (_folderOverlayVisible == isVisible)
+        {
+            return;
+        }
+
+        _folderOverlayVisible = isVisible;
+        FolderOverlay.IsHitTestVisible = isVisible;
+        FolderOverlayTransform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation
+        {
+            To = isVisible ? 0 : -FolderOverlay.Width,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
+    }
+
+    private void SetCarouselOverlayVisible(bool isVisible)
+    {
+        if (_carouselOverlayVisible == isVisible)
+        {
+            return;
+        }
+
+        _carouselOverlayVisible = isVisible;
+        CarouselOverlay.IsHitTestVisible = false;
+        CarouselList.IsHitTestVisible = false;
+        var animation = new DoubleAnimation
+        {
+            To = isVisible ? 0 : CarouselOverlay.Height * 0.75,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        if (isVisible)
+        {
+            animation.Completed += (_, _) =>
+            {
+                if (_carouselOverlayVisible)
+                {
+                    CarouselOverlay.IsHitTestVisible = true;
+                    CarouselList.IsHitTestVisible = !_carouselScrollTimer.IsEnabled;
+                }
+            };
+        }
+
+        CarouselOverlayTransform.BeginAnimation(TranslateTransform.YProperty, animation);
     }
 
     private void OnImageViewportMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -286,7 +414,6 @@ public partial class BrowseView : UserControl
             _ = LoadCurrentImageAsync(clearCurrentImage: false);
         }
 
-        UpdateZoomInteractionBadge();
     }
 
     private void OnImageViewportMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
@@ -418,7 +545,7 @@ public partial class BrowseView : UserControl
 
     private void SelectFile(FileEntry file)
     {
-        var item = CarouselItems.FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
+        var item = CarouselItems.OfType<CarouselThumbnailItem>().FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
         var immediatePreview = item?.Thumbnail;
         _navigationState.SetCurrentFile(file);
         ResetZoomState();
@@ -447,7 +574,7 @@ public partial class BrowseView : UserControl
         }
 
         ClampPan();
-        UpdateZoomInteractionBadge();
+        ZoomLevelChanged?.Invoke(_zoomLevel);
         if (IsSupportedCurrentImage && ImageViewer.Source is not null)
         {
             _ = LoadCurrentImageAsync(clearCurrentImage: false);
@@ -481,7 +608,39 @@ public partial class BrowseView : UserControl
         _panTransform.X = 0;
         _panTransform.Y = 0;
         StopPanning();
-        UpdateZoomInteractionBadge();
+        ZoomLevelChanged?.Invoke(_zoomLevel);
+    }
+
+    public void ResetZoomToFit()
+    {
+        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        {
+            return;
+        }
+
+        _zoomLevel = 1d;
+        _zoomTransform.ScaleX = 1d;
+        _zoomTransform.ScaleY = 1d;
+        _panTransform.X = 0;
+        _panTransform.Y = 0;
+        StopPanning();
+        ZoomLevelChanged?.Invoke(_zoomLevel);
+        _ = LoadCurrentImageAsync(clearCurrentImage: false);
+    }
+
+    public void ZoomInFromToolbar() => AdjustZoomFromToolbar(ZoomStepFactor);
+
+    public void ZoomOutFromToolbar() => AdjustZoomFromToolbar(1d / ZoomStepFactor);
+
+    private void AdjustZoomFromToolbar(double factor)
+    {
+        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        {
+            return;
+        }
+
+        _zoomInteractionEnabled = true;
+        ChangeZoom(factor);
     }
 
     private void StopPanning()
@@ -493,18 +652,14 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private void UpdateZoomInteractionBadge()
-    {
-        ZoomInteractionBadge.Visibility = _zoomInteractionEnabled ? Visibility.Visible : Visibility.Collapsed;
-        ZoomInteractionText.Text = $"Zoom / pan · {_zoomLevel:P0} · right-click to navigate";
-    }
-
     private async Task RefreshCarouselAsync()
     {
         _carouselLoadCancellation?.Cancel();
         _carouselLoadCancellation?.Dispose();
         _carouselLoadCancellation = new CancellationTokenSource();
         var cancellationToken = _carouselLoadCancellation.Token;
+        _carouselScrollTimer.Stop();
+        _carouselOffsetBeforeRefresh = FindVisualChild<ScrollViewer>(CarouselList)?.HorizontalOffset ?? 0;
         CarouselItems.Clear();
 
         var files = _navigationState.Files.ToArray();
@@ -512,13 +667,22 @@ public partial class BrowseView : UserControl
         var currentIndex = currentFile is null ? -1 : _navigationState.Files.IndexOf(currentFile);
         if (currentIndex < 0)
         {
+            _carouselLeadingSpacer = null;
+            _carouselTrailingSpacer = null;
             return;
         }
 
+        _carouselLeadingSpacer = new CarouselSpacerItem(0);
+        _carouselTrailingSpacer = new CarouselSpacerItem(0);
+        CarouselItems.Add(_carouselLeadingSpacer);
         const int neighborsOnEachSide = 5;
         const int thumbnailSize = 150;
         var start = Math.Max(0, currentIndex - neighborsOnEachSide);
         var end = Math.Min(files.Length - 1, currentIndex + neighborsOnEachSide);
+        _carouselStartIndex = start;
+        _carouselEndIndex = end;
+        _carouselFileCount = files.Length;
+        _carouselCurrentIndex = currentIndex;
         var visibleItems = new List<CarouselThumbnailItem>(end - start + 1);
         for (var index = start; index <= end; index++)
         {
@@ -527,9 +691,22 @@ public partial class BrowseView : UserControl
             CarouselItems.Add(item);
         }
 
+        CarouselItems.Add(_carouselTrailingSpacer);
+        UpdateCarouselSpacerWidths();
+
         var currentItem = visibleItems[currentIndex - start];
         CarouselList.SelectedItem = currentItem;
-        CarouselList.ScrollIntoView(currentItem);
+        await Dispatcher.InvokeAsync(() =>
+        {
+            _carouselScrollViewer = FindVisualChild<ScrollViewer>(CarouselList);
+            if (_carouselScrollViewer is not null)
+            {
+                _carouselScrollViewer.ScrollToHorizontalOffset(
+                    Math.Clamp(_carouselOffsetBeforeRefresh, 0, _carouselScrollViewer.ScrollableWidth));
+            }
+
+            CenterCurrentCarouselItem();
+        }, DispatcherPriority.Loaded);
 
         var loads = visibleItems.Select(item =>
         {
@@ -538,6 +715,89 @@ public partial class BrowseView : UserControl
         });
 
         await Task.WhenAll(loads);
+    }
+
+    private void UpdateCarouselSpacerWidths()
+    {
+        const double carouselItemWidth = 156;
+        var sideSpace = Math.Max(0, (CarouselList.ActualWidth - carouselItemWidth) / 2);
+        if (_carouselLeadingSpacer is not null)
+        {
+            _carouselLeadingSpacer.Width = sideSpace + _carouselStartIndex * carouselItemWidth;
+        }
+
+        if (_carouselTrailingSpacer is not null)
+        {
+            _carouselTrailingSpacer.Width = sideSpace + Math.Max(0, _carouselFileCount - 1 - _carouselEndIndex) * carouselItemWidth;
+        }
+    }
+
+    private void CenterCurrentCarouselItem()
+    {
+        if (CarouselList.SelectedItem is not CarouselThumbnailItem selectedItem ||
+            CarouselList.ItemContainerGenerator.ContainerFromItem(selectedItem) is not ListBoxItem container ||
+            (_carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList)) is not { } scrollViewer)
+        {
+            return;
+        }
+
+        const double carouselItemWidth = 156;
+        var targetOffset = _carouselCurrentIndex * carouselItemWidth;
+        targetOffset = Math.Clamp(targetOffset, 0, scrollViewer.ScrollableWidth);
+        if (!_hasCenteredCarouselItem || Math.Abs(targetOffset - scrollViewer.HorizontalOffset) < 1)
+        {
+            _carouselScrollTimer.Stop();
+            scrollViewer.ScrollToHorizontalOffset(targetOffset);
+            _hasCenteredCarouselItem = true;
+            CarouselList.IsHitTestVisible = _carouselOverlayVisible;
+            return;
+        }
+
+        _carouselScrollTimer.Stop();
+        CarouselList.IsHitTestVisible = false;
+        _carouselScrollStartOffset = scrollViewer.HorizontalOffset;
+        _carouselScrollTargetOffset = targetOffset;
+        _carouselScrollStartedAt = DateTime.UtcNow;
+        _carouselScrollTimer.Start();
+    }
+
+    private void OnCarouselScrollTimerTick(object? sender, EventArgs e)
+    {
+        if (_carouselScrollViewer is null)
+        {
+            _carouselScrollTimer.Stop();
+            return;
+        }
+
+        var progress = Math.Clamp((DateTime.UtcNow - _carouselScrollStartedAt).TotalMilliseconds / 180d, 0d, 1d);
+        var easedProgress = 1d - Math.Pow(1d - progress, 3d);
+        var offset = _carouselScrollStartOffset + (_carouselScrollTargetOffset - _carouselScrollStartOffset) * easedProgress;
+        _carouselScrollViewer.ScrollToHorizontalOffset(offset);
+        if (progress >= 1d)
+        {
+            _carouselScrollTimer.Stop();
+            _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollTargetOffset);
+            CarouselList.IsHitTestVisible = _carouselOverlayVisible;
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            if (FindVisualChild<T>(child) is { } descendant)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
     }
 
     private async Task<BitmapSource?> LoadCarouselThumbnailAsync(CarouselThumbnailItem item, FileEntry? currentFile,
@@ -551,7 +811,7 @@ public partial class BrowseView : UserControl
                 return null;
             }
 
-            var bitmap = await Task.Run(() => DecodePng(pngBytes), cancellationToken);
+            var bitmap = await Task.Run(() => DecodeCenterCroppedThumbnail(pngBytes), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (ReferenceEquals(_navigationState.CurrentFile, currentFile))
             {
@@ -593,7 +853,7 @@ public partial class BrowseView : UserControl
         _imageLoadCancellation?.Dispose();
         _imageLoadCancellation = null;
         var file = _navigationState.CurrentFile;
-        var carouselItem = file is null ? null : CarouselItems.FirstOrDefault(item => ReferenceEquals(item.File, file));
+        var carouselItem = file is null ? null : CarouselItems.OfType<CarouselThumbnailItem>().FirstOrDefault(item => ReferenceEquals(item.File, file));
         var previewTask = carouselItem?.ThumbnailTask;
         var fullImageLoaded = false;
 
@@ -732,6 +992,14 @@ public partial class BrowseView : UserControl
     private void ClearActivePresentation(string message, string detail)
     {
         ResetZoomState();
+        _carouselScrollTimer.Stop();
+        _hasCenteredCarouselItem = false;
+        _carouselOffsetBeforeRefresh = 0;
+        _carouselScrollViewer = null;
+        _carouselStartIndex = 0;
+        _carouselEndIndex = -1;
+        _carouselFileCount = 0;
+        _carouselCurrentIndex = 0;
         _imageLoadCancellation?.Cancel();
         _imageLoadCancellation?.Dispose();
         _imageLoadCancellation = null;
@@ -743,6 +1011,8 @@ public partial class BrowseView : UserControl
         ImageViewer.Visibility = Visibility.Collapsed;
         ThumbnailFallbackBadge.Visibility = Visibility.Collapsed;
         CarouselItems.Clear();
+        _carouselLeadingSpacer = null;
+        _carouselTrailingSpacer = null;
         CarouselList.SelectedItem = null;
         EmptyFilesNotice.Visibility = Visibility.Visible;
         ShowImageMessage(message, detail);
@@ -758,5 +1028,19 @@ public partial class BrowseView : UserControl
         image.EndInit();
         image.Freeze();
         return image;
+    }
+
+    private static BitmapSource DecodeCenterCroppedThumbnail(byte[] pngBytes)
+    {
+        var source = DecodePng(pngBytes);
+        var cropSize = Math.Min(source.PixelWidth, source.PixelHeight);
+        var crop = new Int32Rect(
+            (source.PixelWidth - cropSize) / 2,
+            (source.PixelHeight - cropSize) / 2,
+            cropSize,
+            cropSize);
+        var cropped = new CroppedBitmap(source, crop);
+        cropped.Freeze();
+        return cropped;
     }
 }

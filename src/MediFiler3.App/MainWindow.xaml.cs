@@ -71,8 +71,14 @@ public partial class MainWindow : Window
         InitializeComponent();
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
-        _browseView.StatusChanged += status => LoadStatus.Text = status;
+        ToolbarIsland.LoadFoldersRequested += OnLoadFoldersRequested;
+        ToolbarIsland.ResetZoomRequested += _browseView.ResetZoomToFit;
+        ToolbarIsland.ZoomInRequested += _browseView.ZoomInFromToolbar;
+        ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
+        _browseView.ZoomLevelChanged += ToolbarIsland.SetZoomLevel;
         _navigationState.PropertyChanged += OnNavigationStateChanged;
+        ToolbarIsland.SetZoomLevel(_browseView.CurrentZoomLevel);
+        UpdateToolbarContext();
         UpdateWindowTitle();
         SourceInitialized += OnWindowSourceInitialized;
         ApplySidebarLayout();
@@ -138,9 +144,7 @@ public partial class MainWindow : Window
         }
 
         Sidebar.Visibility = IsSidebarVisible ? Visibility.Visible : Visibility.Collapsed;
-        SidebarColumn.Width = IsSidebarVisible
-            ? new GridLength(CompactSidebarWidth)
-            : new GridLength(0);
+        SidebarColumn.Width = IsSidebarVisible ? new GridLength(CompactSidebarWidth) : new GridLength(0);
     }
 
     private void OnNavigationSelectionChanged(string destination)
@@ -154,10 +158,23 @@ public partial class MainWindow : Window
 
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files))
+        if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files) or
+            nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.CurrentFile))
         {
             UpdateWindowTitle();
+            UpdateToolbarContext();
         }
+    }
+
+    private void UpdateToolbarContext()
+    {
+        var folder = _navigationState.ActiveFolder;
+        ToolbarIsland.SetFolderContext(folder?.Name ?? "MediFiler3", folder?.Path ?? "No folder loaded · file metadata will appear here");
+    }
+
+    private async void OnLoadFoldersRequested()
+    {
+        await OnLoadFoldersClick(this, new RoutedEventArgs());
     }
 
     private void UpdateWindowTitle()
@@ -168,7 +185,7 @@ public partial class MainWindow : Window
             : $"({_navigationState.CurrentFilePosition}/{_navigationState.Files.Count}) {currentFile.Name}";
     }
 
-    private async void OnLoadFoldersClick(object sender, RoutedEventArgs e)
+    private async Task OnLoadFoldersClick(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog
         {
@@ -201,7 +218,7 @@ public partial class MainWindow : Window
         var files = paths.Length - folders.Length;
         if (files > 0)
         {
-            LoadStatus.Text = $"Ignored {files} dropped file(s); drop folders to load a collection.";
+            _logger.LogInformation("Ignored {FileCount} dropped file(s); only folders are loaded.", files);
         }
 
         if (folders.Length > 0)
@@ -214,7 +231,6 @@ public partial class MainWindow : Window
     {
         PageContent.Content = _browseView;
         NavigationIsland.SelectDestination("Browse");
-        LoadStatus.Text = "Loading folder hierarchy…";
         try
         {
             await _browseView.LoadRootsAsync(folderPaths);
