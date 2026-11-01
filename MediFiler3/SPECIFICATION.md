@@ -128,6 +128,7 @@ The interaction system should be extensible so additional file types can introdu
 When displaying an image:
 
 - Render the image at its highest available resolution, constrained by the viewport.
+- When available, show the file's thumbnail in the viewer while its full image is loading, then replace it with the full image.
 - Preserve the original aspect ratio.
 - Scale the image to fit the viewport by default.
 - Right-click to toggle between file navigation and image zoom interaction.
@@ -211,6 +212,7 @@ Its purpose is to provide visual context for the currently selected file and all
 ### Requirements
 
 - Display a configurable number of previous and upcoming files.
+- Use 150 × 150 pixel square thumbnail tiles by default; fill each tile while preserving aspect ratio and cropping from the center as needed.
 - Display the current file distinctly.
 - Use generated thumbnails where possible.
 - Highlight the currently selected file.

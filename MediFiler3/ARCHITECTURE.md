@@ -35,7 +35,7 @@ The browsing session state owns loaded roots, the active folder, its sorted file
 
 The initial image viewer uses WPF/WIC for JPEG, PNG, BMP, GIF, and TIFF. Decode to the viewport's pixel bounds while setting only one decode dimension to preserve aspect ratio; cap decoding at source resolution, freeze the resulting bitmap, and release it when the active file changes. Initial GIF display uses its first frame; animated GIF and WebP support are required future capabilities.
 
-The browsing session state owns loaded roots, the active folder, its sorted file list, and the current file and one-based position. Selecting a folder loads only its direct files asynchronously, excludes Windows Hidden and System attributes, and uses Windows logical filename ordering. The native WPF title displays `(position/total) filename` while a file is active.
+The thumbnail service returns encoded PNG data so WPF image objects remain outside application contracts. It uses bounded workers, WIC for supported images, and `IShellItemImageFactory` with `SIIGBF_THUMBNAILONLY` for other file types; unavailable thumbnails use UI placeholders. Cache by normalized path, file size, last-write time, and requested dimensions, with a bounded LRU memory cache and a local application data disk cache. The carousel defaults to five neighbors per side with 150 × 150 square tiles; fill tiles by uniformly scaling and center-cropping. When changing files, show an available carousel thumbnail while the full viewer image loads.
 
 ## WPF and WinUI boundary
 

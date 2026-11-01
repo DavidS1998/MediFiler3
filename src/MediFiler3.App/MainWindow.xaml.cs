@@ -63,11 +63,11 @@ public partial class MainWindow : Window
     }
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
-        NavigationSessionState navigationState, WicImageDecoder imageDecoder)
+        NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService)
     {
         _logger = logger;
         _navigationState = navigationState;
-        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder);
+        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder, thumbnailService);
         InitializeComponent();
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;

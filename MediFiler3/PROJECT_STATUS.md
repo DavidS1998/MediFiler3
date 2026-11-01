@@ -1,7 +1,7 @@
 # Project status
 
 **Snapshot date:** 2026-11-01  
-**Overall:** Phase 1 in progress; steps 1.1 through 1.5 are implemented. Thumbnail generation and file navigation input have not started.
+**Overall:** Phase 1 in progress; steps 1.1 through 1.6 are implemented. Step 1.7 navigation and zoom behavior has not started.
 
 ## Current implementation
 
@@ -12,6 +12,9 @@
 - Browse replaces the current folder roots on each new load and recursively enumerates the selected hierarchies in the background. The tree starts expanded, omits expanders for empty folders, skips junctions and symbolic links, and reports inaccessible paths.
 - Selecting a folder asynchronously enumerates its immediate non-hidden, non-system files. The list uses Windows Explorer natural filename ordering; selecting a file updates shared navigation state and the native title bar to `(position/total) filename`.
 - The Browse viewer displays JPEG, PNG, BMP, GIF, and TIFF images fit to the available viewport using WPF/WIC. Decode is bounded by viewport pixels, preserves aspect ratio, freezes sources for cross-thread use, cancels stale loads, and releases the previous source when selection changes. Unsupported or unreadable files show an explanatory message.
+- The carousel shows the current file and up to five neighbors on either side in 150 x 150 square tiles, filling each square with a center-focused crop. The shared asynchronous thumbnail service uses WIC for supported images, Windows Shell thumbnails for other file types, placeholders when no thumbnail exists, a 32 MB LRU memory cache, and a disk cache keyed by normalized path, file size, last-write time, and dimensions.
+- When changing files, the viewer shows the selected carousel thumbnail immediately when available, then replaces it with the full image after decoding.
+- Unsupported files use their Shell thumbnail in the main viewer when available, with an explicit thumbnail-preview label.
 - A compact persistent command bar provides the folder picker; the folder tree uses high-contrast text, full-width clickable rows, adjustable-through-style row padding, and a subtle narrow scrollbar.
 - The Home/Browse rail is a WinUI `NavigationView` hosted by a WPF `HwndHost` through Windows App SDK XAML Islands. It is always compact/icon-only; the pane expand/collapse control is disabled. `MainWindow.IsSidebarVisible` can hide the whole rail for future fullscreen mode.
 - WPF retains the native Windows title bar. `TitleBarBackground` and `TitleBarForeground` dependency properties apply runtime caption/text colors through DWM; defaults are black and white.
@@ -26,13 +29,14 @@
 - **1.3 Folder roots and hierarchy:** multi-select folder picker, folder drag and drop, separate loaded roots, asynchronous recursive folder enumeration, reset-on-load context, cancellation of superseded work, and inaccessible-folder reporting.
 - **1.4 File enumeration and navigation state:** immediate-folder file listings, hidden/system filtering, Explorer-style natural sorting, shared active-folder/current-file state, first-file selection, and title-bar position display.
 - **1.5 Image viewer:** viewport-fitted WPF/WIC image display, bounded decode dimensions, aspect-ratio preservation, cancellation and stale-result checks, source freezing and release, and unsupported/unreadable-file messaging.
+- **1.6 Thumbnails and carousel:** bounded asynchronous thumbnail generation, Shell thumbnail fallback for unsupported formats, 150-square carousel tiles, loading placeholders, memory/disk caching, and centered current-file context.
 - Specification and architecture decisions are recorded in `MediFiler3/SPECIFICATION.md` and `MediFiler3/ARCHITECTURE.md`.
 
 ## Immediate next tasks
 
-1. Manually check folder selection, direct-child file enumeration, hidden/system filtering, natural sorting, and title-bar position updates on Windows 11.
-2. Start Phase 1.6: add the shared asynchronous thumbnail service, caching, placeholders, and file carousel.
-3. Before adding additional island controls, preserve the WinUI/WPF boundary and ensure the rail remains permanently compact and fully hideable programmatically.
+1. Manually check 150-square center-cropped thumbnails, current-file selection/recentering, unsupported-file Shell thumbnail fallback, and thumbnail-to-full-image transitions on Windows 11.
+2. Start Phase 1.7: add keyboard/mouse file navigation, image right-click zoom toggle, and Numpad zoom controls.
+3. Preserve the WinUI/WPF boundary and keep the rail permanently compact and programmatically hideable when adding future controls.
 
 ## Known caveats and risks
 
@@ -43,12 +47,19 @@
 - The navigation rail currently has no user-facing full-hide command. `IsSidebarVisible` is the intended integration point for future fullscreen behavior.
 - The folder hierarchy is scanned recursively before it is displayed, on a background worker with cancellation. Very large trees may take time to appear; dropped files are ignored with a status message.
 - Tree item virtualization is disabled so the expanded hierarchy has a stable scrollbar extent; extremely large trees will use more UI memory until a stable virtualized scrolling strategy is added.
-- The shell and tree presentation were manually checked by the user. The image viewer and its fallback states still need a manual interaction check.
+- The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
+- Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
+- Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
+- The shell and tree presentation were manually checked by the user. The image viewer, carousel, Shell fallback, and cache behavior still need manual interaction checks.
+
+## Outstanding decisions
+
+- Step 1.7 should settle whether previous/next navigation wraps at list boundaries or stops at the first/last file.
+- Step 1.7 should specify zoom increments and practical minimum/maximum zoom limits, including how the Numpad plus/minus controls interact with fit-to-view.
+- Carousel density is currently fixed at five neighboring files on each side and 150 x 150 WPF layout units; user-configurable values remain future settings work.
 
 ## Verification record
 
-- `dotnet build MediFiler3.sln` after step 1.5 succeeded on 2026-11-01 with 0 warnings and 0 errors.
-- `dotnet build MediFiler3.sln` after step 1.4 succeeded on 2026-11-01 with 0 warnings and 0 errors.
-- `dotnet build MediFiler3.sln` — succeeded on 2026-11-01 with 0 warnings and 0 errors.
-- `dotnet test MediFiler3.sln --no-build --verbosity normal` — exited successfully, but the solution has no test projects, so no tests were executed.
-- The image viewer, selection cancellation, and unsupported-file messages have not been manually verified in this handover.
+- `dotnet build MediFiler3.sln` on 2026-11-01 succeeded with 0 warnings and 0 errors.
+- `dotnet test MediFiler3.sln --no-build --verbosity normal` exited 0, but no test projects exist in the solution, so no tests were discovered or executed.
+- The latest image viewer, carousel, Shell fallback, and cache behavior still need manual interaction checks.

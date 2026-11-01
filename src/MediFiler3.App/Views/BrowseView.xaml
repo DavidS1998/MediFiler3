@@ -96,29 +96,77 @@
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
-                        <RowDefinition Height="160" />
+                        <RowDefinition Height="210" />
                     </Grid.RowDefinitions>
                     <Grid x:Name="ImageViewport" Grid.Row="0" Background="#0B0C0E" SizeChanged="OnImageViewportSizeChanged">
                         <Image x:Name="ImageViewer" Stretch="Uniform" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                        <Border x:Name="ThumbnailFallbackBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
+                                Padding="8,5" Background="#D916191E" CornerRadius="5" Visibility="Collapsed" IsHitTestVisible="False">
+                            <TextBlock Text="Thumbnail preview • no integrated viewer" Foreground="#E7E8EA" FontSize="11" />
+                        </Border>
                         <StackPanel x:Name="ImageMessagePanel" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480" Margin="24">
                             <TextBlock x:Name="ImageMessage" Text="Select an image from the file list." FontSize="18" FontWeight="SemiBold" Foreground="#FFFFFF" TextAlignment="Center" TextWrapping="Wrap" />
                             <TextBlock x:Name="ImageMessageDetail" Margin="0,8,0,0" Foreground="#A3A6AE" TextAlignment="Center" TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
                     <Grid Grid.Row="1" Margin="0,12,0,0">
-                        <ListBox x:Name="FileList" ItemsSource="{Binding Files}" SelectionChanged="OnFileSelectionChanged"
+                        <ListBox x:Name="CarouselList" SelectionChanged="OnCarouselSelectionChanged"
                                  Background="Transparent" BorderThickness="0" Foreground="#E7E8EA"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="True">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" Foreground="#E7E8EA" Padding="8,6" TextTrimming="CharacterEllipsis" />
+                                    <StackPanel Width="164" Height="194" HorizontalAlignment="Center">
+                                        <Border x:Name="ThumbnailBorder" Width="150" Height="150" Background="#0B0C0E"
+                                                CornerRadius="6" Padding="0" ClipToBounds="True"
+                                                HorizontalAlignment="Center">
+                                            <Grid>
+                                                <TextBlock Text="{Binding PlaceholderText}" FontSize="16" FontWeight="SemiBold"
+                                                           Foreground="#777D88" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" Width="150" Height="150">
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
+                                                </Image>
+                                            </Grid>
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="#292B31" />
+                                                    <Setter Property="BorderThickness" Value="1" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="#75819A" />
+                                                            <Setter Property="BorderThickness" Value="2" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" Foreground="#E7E8EA" FontSize="11" Margin="4,6,4,0"
+                                                   TextAlignment="Center" TextTrimming="CharacterEllipsis" MaxHeight="32" TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Width" Value="170" />
+                                    <Setter Property="Height" Value="202" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Center" />
                                     <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Padding" Value="3" />
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
                                             <Setter Property="Background" Value="#1B1E24" />
