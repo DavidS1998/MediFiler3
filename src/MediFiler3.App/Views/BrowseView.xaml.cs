@@ -25,7 +25,22 @@ public partial class BrowseView : UserControl
     private CancellationTokenSource? _fileLoadCancellation;
     private CancellationTokenSource? _imageLoadCancellation;
     private CancellationTokenSource? _carouselLoadCancellation;
+    private int _overscrollDirection;
+    private int _overscrollCount;
+    private int _wheelDeltaRemainder;
+    private int _zoomWheelDeltaRemainder;
+    private bool _changingFolderFromOverscroll;
+    private bool _zoomInteractionEnabled;
+    private bool _isPanning;
+    private System.Windows.Point _lastPanPoint;
+    private double _zoomLevel = 1d;
+    private readonly ScaleTransform _zoomTransform = new(1d, 1d);
+    private readonly TranslateTransform _panTransform = new();
     private readonly DispatcherTimer _resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private const int OverscrollAttemptsToChangeFolder = 5;
+    private const double MinimumZoom = 0.2d;
+    private const double MaximumZoom = 5d;
+    private const double ZoomStepFactor = 1.25d;
     private static readonly HashSet<string> SupportedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"
@@ -42,6 +57,10 @@ public partial class BrowseView : UserControl
         _imageDecoder = imageDecoder;
         _thumbnailService = thumbnailService;
         InitializeComponent();
+        ImageViewer.RenderTransform = new TransformGroup
+        {
+            Children = { _zoomTransform, _panTransform }
+        };
         DataContext = navigationState;
         CarouselList.ItemsSource = CarouselItems;
         _resizeTimer.Tick += OnImageResizeTimerTick;
@@ -170,8 +189,314 @@ public partial class BrowseView : UserControl
 
         var immediatePreview = selectedItem.Thumbnail;
         _navigationState.SetCurrentFile(selectedItem.File);
+        ResetBoundaryAttempts();
         _ = RefreshCarouselAsync();
         _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: immediatePreview);
+    }
+
+    private void OnBrowsePreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (!ImageViewport.IsKeyboardFocusWithin && !CarouselList.IsKeyboardFocusWithin)
+        {
+            return;
+        }
+
+        if (IsSupportedCurrentImage && e.Key is System.Windows.Input.Key.Add or System.Windows.Input.Key.Subtract)
+        {
+            if (!_zoomInteractionEnabled)
+            {
+                _zoomInteractionEnabled = true;
+                UpdateZoomInteractionBadge();
+            }
+
+            e.Handled = true;
+            ChangeZoom(e.Key == System.Windows.Input.Key.Add ? ZoomStepFactor : 1d / ZoomStepFactor);
+            return;
+        }
+
+        var direction = e.Key switch
+        {
+            System.Windows.Input.Key.Left or System.Windows.Input.Key.Up => -1,
+            System.Windows.Input.Key.Right or System.Windows.Input.Key.Down => 1,
+            _ => 0
+        };
+
+        if (direction == 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        NavigateByOneFile(direction);
+    }
+
+    private void OnImageViewportMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        ImageViewport.Focus();
+        System.Windows.Input.Keyboard.Focus(ImageViewport);
+
+        if (_zoomInteractionEnabled && IsSupportedCurrentImage && e.ChangedButton == System.Windows.Input.MouseButton.Left && _zoomLevel > 1d)
+        {
+            _isPanning = true;
+            _lastPanPoint = e.GetPosition(ImageViewport);
+            ImageViewport.CaptureMouse();
+            e.Handled = true;
+        }
+    }
+
+    private void OnImageViewportMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (!_isPanning || e.ChangedButton != System.Windows.Input.MouseButton.Left)
+        {
+            return;
+        }
+
+        _isPanning = false;
+        ImageViewport.ReleaseMouseCapture();
+        e.Handled = true;
+    }
+
+    private void OnImageViewportMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_isPanning)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(ImageViewport);
+        _panTransform.X += point.X - _lastPanPoint.X;
+        _panTransform.Y += point.Y - _lastPanPoint.Y;
+        _lastPanPoint = point;
+        ClampPan();
+        e.Handled = true;
+    }
+
+    private void OnImageViewportRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        _zoomInteractionEnabled = !_zoomInteractionEnabled;
+        if (!_zoomInteractionEnabled)
+        {
+            ResetZoomState();
+            _ = LoadCurrentImageAsync(clearCurrentImage: false);
+        }
+
+        UpdateZoomInteractionBadge();
+    }
+
+    private void OnImageViewportMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (e.Delta == 0)
+        {
+            return;
+        }
+
+        if (_zoomInteractionEnabled && IsSupportedCurrentImage && ImageViewer.Source is not null)
+        {
+            _zoomWheelDeltaRemainder += e.Delta;
+            var zoomNotches = _zoomWheelDeltaRemainder / 120;
+            _zoomWheelDeltaRemainder %= 120;
+            if (zoomNotches != 0)
+            {
+                e.Handled = true;
+                var factor = zoomNotches > 0 ? ZoomStepFactor : 1d / ZoomStepFactor;
+                for (var notch = 0; notch < Math.Abs(zoomNotches); notch++)
+                {
+                    ChangeZoom(factor);
+                }
+            }
+
+            return;
+        }
+
+        _wheelDeltaRemainder += e.Delta;
+        var notches = _wheelDeltaRemainder / 120;
+        _wheelDeltaRemainder %= 120;
+        if (notches == 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var direction = notches < 0 ? 1 : -1;
+        for (var notch = 0; notch < Math.Abs(notches); notch++)
+        {
+            NavigateByOneFile(direction);
+        }
+    }
+
+    private void NavigateByOneFile(int direction)
+    {
+        if (_navigationState.Files.Count == 0)
+        {
+            RegisterBoundaryAttempt(direction);
+            return;
+        }
+
+        var currentIndex = _navigationState.CurrentFile is null
+            ? -1
+            : _navigationState.Files.IndexOf(_navigationState.CurrentFile);
+        var nextIndex = currentIndex + direction;
+        if (nextIndex >= 0 && nextIndex < _navigationState.Files.Count)
+        {
+            ResetBoundaryAttempts();
+            SelectFile(_navigationState.Files[nextIndex]);
+            return;
+        }
+
+        RegisterBoundaryAttempt(direction);
+    }
+
+    private void RegisterBoundaryAttempt(int direction)
+    {
+        if (_overscrollDirection != direction)
+        {
+            _overscrollDirection = direction;
+            _overscrollCount = 0;
+        }
+
+        _overscrollCount++;
+        if (_overscrollCount < OverscrollAttemptsToChangeFolder || _changingFolderFromOverscroll)
+        {
+            return;
+        }
+
+        _overscrollCount = 0;
+        _changingFolderFromOverscroll = true;
+        _ = ActivateAdjacentFolderWithFilesAsync(direction);
+    }
+
+    private async Task ActivateAdjacentFolderWithFilesAsync(int direction)
+    {
+        try
+        {
+            var originalFolder = _navigationState.ActiveFolder;
+            var folders = EnumerateFoldersInTreeOrder(_navigationState.Roots).ToArray();
+            var currentIndex = Array.FindIndex(folders, folder => ReferenceEquals(folder, _navigationState.ActiveFolder));
+            for (var index = currentIndex + direction; index >= 0 && index < folders.Length; index += direction)
+            {
+                var folder = folders[index];
+                await ActivateFolderAsync(folder);
+                folder.IsSelected = true;
+                if (_navigationState.Files.Count > 0)
+                {
+                    ResetBoundaryAttempts();
+                    return;
+                }
+            }
+
+            if (originalFolder is not null)
+            {
+                await ActivateFolderAsync(originalFolder);
+                originalFolder.IsSelected = true;
+            }
+
+            StatusChanged?.Invoke(direction > 0 ? "No files in later folders." : "No files in earlier folders.");
+        }
+        finally
+        {
+            _changingFolderFromOverscroll = false;
+        }
+    }
+
+    private static IEnumerable<FolderTreeEntry> EnumerateFoldersInTreeOrder(IEnumerable<FolderTreeEntry> folders)
+    {
+        foreach (var folder in folders)
+        {
+            yield return folder;
+            foreach (var child in EnumerateFoldersInTreeOrder(folder.Children))
+            {
+                yield return child;
+            }
+        }
+    }
+
+    private void SelectFile(FileEntry file)
+    {
+        var item = CarouselItems.FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
+        var immediatePreview = item?.Thumbnail;
+        _navigationState.SetCurrentFile(file);
+        ResetZoomState();
+        ResetBoundaryAttempts();
+        _ = RefreshCarouselAsync();
+        _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: immediatePreview);
+    }
+
+    private void ResetBoundaryAttempts()
+    {
+        _overscrollDirection = 0;
+        _overscrollCount = 0;
+    }
+
+    private bool IsSupportedCurrentImage => _navigationState.CurrentFile is { } file && SupportedImageExtensions.Contains(file.Extension);
+
+    private void ChangeZoom(double factor)
+    {
+        _zoomLevel = Math.Clamp(_zoomLevel * factor, MinimumZoom, MaximumZoom);
+        _zoomTransform.ScaleX = _zoomLevel;
+        _zoomTransform.ScaleY = _zoomLevel;
+        if (_zoomLevel <= 1d)
+        {
+            _panTransform.X = 0;
+            _panTransform.Y = 0;
+        }
+
+        ClampPan();
+        UpdateZoomInteractionBadge();
+        if (IsSupportedCurrentImage && ImageViewer.Source is not null)
+        {
+            _ = LoadCurrentImageAsync(clearCurrentImage: false);
+        }
+    }
+
+    private void ClampPan()
+    {
+        if (ImageViewer.Source is not BitmapSource source || source.PixelWidth <= 0 || source.PixelHeight <= 0)
+        {
+            _panTransform.X = 0;
+            _panTransform.Y = 0;
+            return;
+        }
+
+        var fitScale = Math.Min(ImageViewport.ActualWidth / source.PixelWidth, ImageViewport.ActualHeight / source.PixelHeight);
+        var maxX = Math.Max(0, source.PixelWidth * fitScale * (_zoomLevel - 1d) / 2d);
+        var maxY = Math.Max(0, source.PixelHeight * fitScale * (_zoomLevel - 1d) / 2d);
+        _panTransform.X = Math.Clamp(_panTransform.X, -maxX, maxX);
+        _panTransform.Y = Math.Clamp(_panTransform.Y, -maxY, maxY);
+    }
+
+    private void ResetZoomState()
+    {
+        _zoomInteractionEnabled = false;
+        _zoomLevel = 1d;
+        _wheelDeltaRemainder = 0;
+        _zoomWheelDeltaRemainder = 0;
+        _zoomTransform.ScaleX = 1d;
+        _zoomTransform.ScaleY = 1d;
+        _panTransform.X = 0;
+        _panTransform.Y = 0;
+        StopPanning();
+        UpdateZoomInteractionBadge();
+    }
+
+    private void StopPanning()
+    {
+        _isPanning = false;
+        if (ImageViewport.IsMouseCaptured)
+        {
+            ImageViewport.ReleaseMouseCapture();
+        }
+    }
+
+    private void UpdateZoomInteractionBadge()
+    {
+        ZoomInteractionBadge.Visibility = _zoomInteractionEnabled ? Visibility.Visible : Visibility.Collapsed;
+        ZoomInteractionText.Text = $"Zoom / pan · {_zoomLevel:P0} · right-click to navigate";
     }
 
     private async Task RefreshCarouselAsync()
@@ -311,8 +636,9 @@ public partial class BrowseView : UserControl
             await Dispatcher.Yield(DispatcherPriority.Loaded);
             cancellationToken.ThrowIfCancellationRequested();
             var dpi = VisualTreeHelper.GetDpi(ImageViewport);
-            var maxPixelWidth = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualWidth * dpi.DpiScaleX));
-            var maxPixelHeight = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualHeight * dpi.DpiScaleY));
+            var decodeScale = Math.Max(1d, _zoomLevel);
+            var maxPixelWidth = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualWidth * dpi.DpiScaleX * decodeScale));
+            var maxPixelHeight = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualHeight * dpi.DpiScaleY * decodeScale));
             BitmapSource image;
             var isThumbnailFallback = !SupportedImageExtensions.Contains(file.Extension);
             if (isThumbnailFallback)
@@ -339,6 +665,7 @@ public partial class BrowseView : UserControl
 
             fullImageLoaded = true;
             ImageViewer.Source = image;
+            ClampPan();
             ImageViewer.Visibility = Visibility.Visible;
             ImageMessagePanel.Visibility = Visibility.Collapsed;
             ThumbnailFallbackBadge.Visibility = isThumbnailFallback ? Visibility.Visible : Visibility.Collapsed;
@@ -396,6 +723,7 @@ public partial class BrowseView : UserControl
     private void ShowImagePreview(BitmapSource preview, FileEntry file)
     {
         ImageViewer.Source = preview;
+        ClampPan();
         ImageViewer.Visibility = Visibility.Visible;
         ImageMessagePanel.Visibility = Visibility.Collapsed;
         ThumbnailFallbackBadge.Visibility = SupportedImageExtensions.Contains(file.Extension) ? Visibility.Collapsed : Visibility.Visible;
@@ -403,6 +731,7 @@ public partial class BrowseView : UserControl
 
     private void ClearActivePresentation(string message, string detail)
     {
+        ResetZoomState();
         _imageLoadCancellation?.Cancel();
         _imageLoadCancellation?.Dispose();
         _imageLoadCancellation = null;

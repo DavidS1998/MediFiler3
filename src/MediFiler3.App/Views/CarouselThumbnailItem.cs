@@ -1,0 +1,45 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Windows.Media.Imaging;
+using MediFiler3.Domain.Files;
+
+namespace MediFiler3.Views;
+
+public sealed class CarouselThumbnailItem : INotifyPropertyChanged
+{
+    private BitmapSource? _thumbnail;
+
+    public FileEntry File { get; }
+    public string Name => File.Name;
+    public string PlaceholderText => string.IsNullOrWhiteSpace(File.Extension) ? "FILE" : File.Extension.TrimStart('.').ToUpperInvariant();
+    public bool IsCurrent { get; }
+    public Task<BitmapSource?>? ThumbnailTask { get; set; }
+    public BitmapSource? Thumbnail
+    {
+        get => _thumbnail;
+        set
+        {
+            if (ReferenceEquals(_thumbnail, value))
+            {
+                return;
+            }
+
+            _thumbnail = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasThumbnail));
+        }
+    }
+
+    public bool HasThumbnail => Thumbnail is not null;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public CarouselThumbnailItem(FileEntry file, bool isCurrent)
+    {
+        File = file;
+        IsCurrent = isCurrent;
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+}

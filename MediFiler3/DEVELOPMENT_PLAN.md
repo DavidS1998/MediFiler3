@@ -14,7 +14,7 @@ Deliver a responsive folder browser with an image viewer. Check the feature acce
 | 1.4 | Enumerate only the active folder's files, apply Windows Explorer-style numeric sorting, and centralize active folder/file navigation state | Complete |
 | 1.5 | Display common images at fit-to-view, preserve aspect ratio, and release viewer resources | Complete |
 | 1.6 | Shared asynchronous thumbnail service, caching, placeholders, and file carousel | Complete |
-| 1.7 | Keyboard and mouse file navigation, image right-click zoom toggle, and Numpad plus/minus zoom | Not started |
+| 1.7 | Keyboard and mouse file navigation, image right-click zoom toggle, and Numpad plus/minus zoom | Complete; manual zoom/pan check pending |
 | 1.8 | Integration checks and refinement for responsiveness, errors, and usability | Not started |
 
 **Phase 1 acceptance:** load separate roots; browse a folder tree; show that folder's sorted files; display and navigate images; update a carousel; preserve UI responsiveness for large folders. File operations, media playback, persistence, gallery, and continuous reader are later phases.
