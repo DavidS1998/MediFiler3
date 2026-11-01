@@ -5,6 +5,7 @@ using MediFiler3.Interop;
 using MediFiler3.Infrastructure.Folders;
 using MediFiler3.Infrastructure.Files;
 using MediFiler3.Application.Navigation;
+using MediFiler3.Services;
 using System.Windows;
 
 namespace MediFiler3;
@@ -25,6 +26,8 @@ public partial class App : System.Windows.Application
                 {
                     services.AddSingleton<MediFiler3.Application.Folders.IFolderTreeService, FileSystemFolderTreeService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
+                    services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();
+                    services.AddSingleton<WicImageDecoder>();
                     services.AddSingleton<NavigationSessionState>();
                     services.AddSingleton<MainWindow>();
                 })

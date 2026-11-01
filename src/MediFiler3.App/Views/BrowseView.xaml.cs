@@ -1,10 +1,15 @@
 using System.Windows.Controls;
 using System.Windows;
 using System.IO;
+using System.Runtime.InteropServices;
 using MediFiler3.Application.Files;
 using MediFiler3.Application.Folders;
 using MediFiler3.Application.Navigation;
 using MediFiler3.Domain.Files;
+using MediFiler3.Services;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 
 namespace MediFiler3.Views;
 
@@ -13,17 +18,26 @@ public partial class BrowseView : UserControl
     private readonly IFolderTreeService _folderTreeService;
     private readonly IFileListingService _fileListingService;
     private readonly NavigationSessionState _navigationState;
+    private readonly WicImageDecoder _imageDecoder;
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _fileLoadCancellation;
+    private CancellationTokenSource? _imageLoadCancellation;
+    private readonly DispatcherTimer _resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private static readonly HashSet<string> SupportedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"
+    };
     public event Action<string>? StatusChanged;
 
-    public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState)
+    public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState, WicImageDecoder imageDecoder)
     {
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
         _navigationState = navigationState;
+        _imageDecoder = imageDecoder;
         InitializeComponent();
         DataContext = navigationState;
+        _resizeTimer.Tick += OnImageResizeTimerTick;
     }
 
     public async Task LoadRootsAsync(IEnumerable<string> paths)
@@ -135,6 +149,102 @@ public partial class BrowseView : UserControl
 
     private void OnFileSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        _navigationState.SetCurrentFile(FileList.SelectedItem as FileEntry);
+        var selectedFile = FileList.SelectedItem as FileEntry;
+        _navigationState.SetCurrentFile(selectedFile);
+        _ = LoadCurrentImageAsync(clearCurrentImage: true);
+    }
+
+    private void OnImageViewportSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_navigationState.CurrentFile is not null && ImageViewer.Source is not null)
+        {
+            _resizeTimer.Stop();
+            _resizeTimer.Start();
+        }
+    }
+
+    private async void OnImageResizeTimerTick(object? sender, EventArgs e)
+    {
+        _resizeTimer.Stop();
+        await LoadCurrentImageAsync(clearCurrentImage: false);
+    }
+
+    private async Task LoadCurrentImageAsync(bool clearCurrentImage)
+    {
+        _imageLoadCancellation?.Cancel();
+        _imageLoadCancellation?.Dispose();
+        _imageLoadCancellation = null;
+        var file = _navigationState.CurrentFile;
+
+        if (clearCurrentImage)
+        {
+            ImageViewer.Source = null;
+            ImageViewer.Visibility = Visibility.Collapsed;
+        }
+
+        if (file is null)
+        {
+            ShowImageMessage("No file selected.", string.Empty);
+            return;
+        }
+
+        if (!SupportedImageExtensions.Contains(file.Extension))
+        {
+            ShowImageMessage("No integrated viewer is available for this file type.", file.Name);
+            return;
+        }
+
+        var cancellationSource = new CancellationTokenSource();
+        _imageLoadCancellation = cancellationSource;
+        var cancellationToken = cancellationSource.Token;
+        if (clearCurrentImage || ImageViewer.Source is null)
+        {
+            ShowImageMessage("Loading image...", file.Name);
+        }
+
+        try
+        {
+            await Dispatcher.Yield(DispatcherPriority.Loaded);
+            cancellationToken.ThrowIfCancellationRequested();
+            var dpi = VisualTreeHelper.GetDpi(ImageViewport);
+            var maxPixelWidth = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualWidth * dpi.DpiScaleX));
+            var maxPixelHeight = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualHeight * dpi.DpiScaleY));
+            var image = await _imageDecoder.LoadAsync(file.FullPath, maxPixelWidth, maxPixelHeight, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(_navigationState.CurrentFile, file))
+            {
+                return;
+            }
+
+            ImageViewer.Source = image;
+            ImageViewer.Visibility = Visibility.Visible;
+            ImageMessagePanel.Visibility = Visibility.Collapsed;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer file selection or viewer size replaced this image load.
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                           System.Security.SecurityException or InvalidDataException or FormatException or
+                                           NotSupportedException or COMException)
+        {
+            if (!ReferenceEquals(_navigationState.CurrentFile, file))
+            {
+                return;
+            }
+
+            ImageViewer.Source = null;
+            ImageViewer.Visibility = Visibility.Collapsed;
+            ShowImageMessage("This image could not be displayed.", exception.Message);
+        }
+    }
+
+    private void ShowImageMessage(string message, string detail)
+    {
+        ImageViewer.Source = null;
+        ImageViewer.Visibility = Visibility.Collapsed;
+        ImageMessage.Text = message;
+        ImageMessageDetail.Text = detail;
+        ImageMessagePanel.Visibility = Visibility.Visible;
     }
 }

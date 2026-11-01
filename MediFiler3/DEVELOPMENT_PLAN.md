@@ -12,7 +12,7 @@ Deliver a responsive folder browser with an image viewer. Check the feature acce
 | 1.2 | Main shell, Home/Browse navigation, high-contrast styling, native runtime-colored title bar, compact WinUI navigation rail in a WPF XAML Island | Complete |
 | 1.3 | Load one or more separate folder roots and display their folder tree asynchronously | Complete |
 | 1.4 | Enumerate only the active folder's files, apply Windows Explorer-style numeric sorting, and centralize active folder/file navigation state | Complete |
-| 1.5 | Display common images at fit-to-view, preserve aspect ratio, and release viewer resources | Not started |
+| 1.5 | Display common images at fit-to-view, preserve aspect ratio, and release viewer resources | Complete |
 | 1.6 | Shared asynchronous thumbnail service, caching, placeholders, and file carousel | Not started |
 | 1.7 | Keyboard and mouse file navigation, image right-click zoom toggle, and Numpad plus/minus zoom | Not started |
 | 1.8 | Integration checks and refinement for responsiveness, errors, and usability | Not started |

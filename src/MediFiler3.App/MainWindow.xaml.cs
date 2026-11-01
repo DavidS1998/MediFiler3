@@ -10,7 +10,7 @@ using MediFiler3.Application.Folders;
 using System.IO;
 using MediFiler3.Application.Files;
 using MediFiler3.Application.Navigation;
-using MediFiler3.Domain.Files;
+using MediFiler3.Services;
 
 namespace MediFiler3;
 
@@ -62,11 +62,12 @@ public partial class MainWindow : Window
         set => SetValue(IsSidebarVisibleProperty, value);
     }
 
-    public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState)
+    public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
+        NavigationSessionState navigationState, WicImageDecoder imageDecoder)
     {
         _logger = logger;
         _navigationState = navigationState;
-        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState);
+        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder);
         InitializeComponent();
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;

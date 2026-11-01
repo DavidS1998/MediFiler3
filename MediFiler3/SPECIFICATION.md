@@ -135,6 +135,7 @@ When displaying an image:
 - Holding the left mouse button should allow panning the image.
 - Provide a way to reset the zoom and return to the default fit-to-view state.
 - Preserve the zoom level and pan position when appropriate, but reset them when moving to another image.
+- Initially support common WIC formats including JPEG, PNG, BMP, GIF, and TIFF. The initial GIF viewer may display its first frame; a future version must support animated GIF playback and WebP images.
 
 Zooming should support viewing the original image resolution without unnecessarily upscaling small images.
 
@@ -176,6 +177,7 @@ Text rendering should be extensible to support additional document formats in th
 
 For file types without an integrated viewer:
 
+- Use the file's thumbnail as the viewer fallback when a thumbnail is available.
 - Display basic file information and an indication that no integrated viewer is available.
 - Allow the user to open the file using its associated default Windows application.
 - Handle missing file associations and launch failures gracefully.

@@ -33,6 +33,10 @@ The application layer describes operations such as loading a folder, moving file
 
 The browsing session state owns loaded roots, the active folder, its sorted file list, and the current file and one-based position. Selecting a folder loads only its direct files asynchronously, excludes Windows Hidden and System attributes, and uses Windows logical filename ordering. The native WPF title displays `(position/total) filename` while a file is active.
 
+The initial image viewer uses WPF/WIC for JPEG, PNG, BMP, GIF, and TIFF. Decode to the viewport's pixel bounds while setting only one decode dimension to preserve aspect ratio; cap decoding at source resolution, freeze the resulting bitmap, and release it when the active file changes. Initial GIF display uses its first frame; animated GIF and WebP support are required future capabilities.
+
+The browsing session state owns loaded roots, the active folder, its sorted file list, and the current file and one-based position. Selecting a folder loads only its direct files asynchronously, excludes Windows Hidden and System attributes, and uses Windows logical filename ordering. The native WPF title displays `(position/total) filename` while a file is active.
+
 ## WPF and WinUI boundary
 
 The WPF app owns the process, top-level window, composition root, and application navigation state. Keep ordinary views and controls in WPF. Use WinUI XAML Islands only for controls where their built-in behavior and Windows consistency justify the interop cost. The Home/Browse navigation rail uses the WinUI `NavigationView` hosted by a WPF `HwndHost`; it stays in compact icon-only mode, with its expand/collapse toggle disabled. Its selected destination is bridged to the WPF page host. The whole rail remains hideable through `MainWindow.IsSidebarVisible` for future fullscreen behavior.
