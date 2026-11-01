@@ -28,6 +28,7 @@ public sealed class WinUiNavigationIsland : HwndHost
 
         _navigationView.SelectedItem = _navigationView.MenuItems
             .OfType<NavigationViewItem>()
+            .Concat(_navigationView.FooterMenuItems.OfType<NavigationViewItem>())
             .FirstOrDefault(item => string.Equals(item.Tag as string, destination, StringComparison.Ordinal));
     }
 
@@ -112,6 +113,12 @@ public sealed class WinUiNavigationIsland : HwndHost
             Content = "Browse",
             Icon = new SymbolIcon(Symbol.Folder),
             Tag = "Browse"
+        });
+        navigationView.FooterMenuItems.Add(new NavigationViewItem
+        {
+            Content = "Settings",
+            Icon = new SymbolIcon(Symbol.Setting),
+            Tag = "Settings"
         });
 
         navigationView.SelectionChanged += OnSelectionChanged;

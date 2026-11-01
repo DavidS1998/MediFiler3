@@ -21,6 +21,7 @@ public sealed class WinUiToolbarIsland : HwndHost
     private TextBlock? _folderTitle;
     private TextBlock? _folderDetails;
     private TextBlock? _zoomText;
+    private AppBarButton? _fitZoomButton;
     private string _folderTitleText = "MediFiler3";
     private string _folderDetailsText = "No folder loaded";
     private double _zoomLevel = 1d;
@@ -48,6 +49,12 @@ public sealed class WinUiToolbarIsland : HwndHost
         {
             _zoomText.Text = $"{zoomLevel:P0}";
         }
+
+        if (_fitZoomButton is not null)
+        {
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fitZoomButton,
+                $"Reset zoom to fit, {zoomLevel:P0}");
+        }
     }
 
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
@@ -73,6 +80,7 @@ public sealed class WinUiToolbarIsland : HwndHost
         _folderTitle = null;
         _folderDetails = null;
         _zoomText = null;
+        _fitZoomButton = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -111,42 +119,35 @@ public sealed class WinUiToolbarIsland : HwndHost
             layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
 
-        var left = CreateCommandBar(CreateFolderContext());
+        var left = CreateFolderContext();
+        left.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
+        Grid.SetColumn(left, 0);
         layout.Children.Add(left);
 
-        var loadButton = CreateButton(Symbol.Add, "Load folders", () => LoadFoldersRequested?.Invoke());
-        var center = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center,
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Spacing = 4
-        };
-        center.Children.Add(loadButton);
-        var middle = CreateCommandBar(center);
+        var middle = CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment.Center, new Thickness(8, 0, 8, 0));
+        middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Load folders", () => LoadFoldersRequested?.Invoke()));
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 
-        var zoomControls = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Spacing = 2
-        };
-        zoomControls.Children.Add(CreateButton(Symbol.ZoomOut, "Zoom out", () => ZoomOutRequested?.Invoke()));
-        zoomControls.Children.Add(CreateButton(Symbol.Zoom, "Reset zoom to fit", () => ResetZoomRequested?.Invoke()));
+        var right = CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment.Right, new Thickness(8, 0, 8, 0));
+        right.PrimaryCommands.Add(CreateButton(Symbol.ZoomOut, "Zoom out", () => ZoomOutRequested?.Invoke()));
+        _fitZoomButton = CreateButton(Symbol.Zoom, "Reset zoom to fit", () => ResetZoomRequested?.Invoke());
+        right.PrimaryCommands.Add(_fitZoomButton);
         _zoomText = new TextBlock
         {
             Text = $"{_zoomLevel:P0}",
             FontSize = 12,
             Foreground = Brush(225, 227, 231),
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Margin = new Thickness(2, 0, 0, 0)
+            Margin = new Thickness(-5, 0, 4, 0)
         };
-        zoomControls.Children.Add(_zoomText);
-        zoomControls.Children.Add(CreateButton(Symbol.ZoomIn, "Zoom in", () => ZoomInRequested?.Invoke()));
-        var right = CreateCommandBar(zoomControls);
+        right.PrimaryCommands.Add(new AppBarElementContainer
+        {
+            Content = _zoomText,
+            Width = 42,
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
+        });
+        right.PrimaryCommands.Add(CreateButton(Symbol.ZoomIn, "Zoom in", () => ZoomInRequested?.Invoke()));
         Grid.SetColumn(right, 2);
         layout.Children.Add(right);
 
@@ -181,21 +182,21 @@ public sealed class WinUiToolbarIsland : HwndHost
         return panel;
     }
 
-    private static CommandBar CreateCommandBar(Microsoft.UI.Xaml.UIElement content)
+    private static CommandBar CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment alignment, Thickness margin)
     {
         return new CommandBar
         {
-            Content = content,
+            IsOpen = false,
             Height = 48,
-            Background = Brush(14, 15, 18),
+            Margin = margin,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(0, 0, 0, 0)),
             Foreground = Brush(245, 245, 245),
             RequestedTheme = ElementTheme.Dark,
             IsDynamicOverflowEnabled = false,
             DefaultLabelPosition = CommandBarDefaultLabelPosition.Collapsed,
             OverflowButtonVisibility = CommandBarOverflowButtonVisibility.Collapsed,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
+            HorizontalAlignment = alignment,
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Top
         };
     }
 
@@ -206,11 +207,7 @@ public sealed class WinUiToolbarIsland : HwndHost
             Icon = new SymbolIcon(symbol),
             Label = accessibleName,
             LabelPosition = CommandBarLabelPosition.Collapsed,
-            Width = 40,
-            Height = 40,
-            MinWidth = 40,
-            MinHeight = 40,
-            Padding = new Thickness(0)
+            Width = 32
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, accessibleName);
         ToolTipService.SetToolTip(button, new ToolTip { Content = accessibleName });

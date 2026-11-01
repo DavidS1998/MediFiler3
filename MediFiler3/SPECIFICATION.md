@@ -216,6 +216,7 @@ Its purpose is to provide visual context for the currently selected file and all
 - Display the current file distinctly.
 - Keep the current file centered in the visible carousel viewport and animate recentering during file navigation to avoid abrupt shifts. Provide blank space before the first file or after the last file as needed to preserve this centered position.
 - Keep spacing between adjacent carousel items compact.
+- Make each thumbnail item clickable across its tile area, use a pointer cursor, and avoid additional hover or selection fills that compete with the current-file highlight.
 - Show each carousel filename on a single line, truncating it when necessary.
 - Preserve mouse-wheel file navigation while the pointer is over the carousel.
 - Hide the horizontal scrollbar while preserving horizontal navigation.
@@ -240,6 +241,8 @@ It should display the hierarchy of the loaded collection and allow the user to p
 ## 5.1 Folder navigation
 
 Left-clicking a folder should load that folder's contents into the main viewer.
+
+Folder rows should provide a full-width click and hover/selection area so the tree remains easy to use when the folder name is short. Reserve about 48 pixels at the bottom of the tree viewport so its last entries can scroll clear of the floating carousel without sacrificing excessive tree height.
 
 The currently selected folder should be visually highlighted.
 
@@ -399,8 +402,8 @@ The main application window should consist of a full-width toolbar above a compa
 
 Suggested layout:
 
-- Three WinUI `CommandBar` controls hosted in a XAML Island span the entire top of the WPF window, including the navigation rail column. Align them left, center, and right in a shared three-column grid, use square `AppBarButton` controls for actions, and keep the toolbar 48 pixels tall with overflow buttons hidden.
-- Divide the toolbar into three sections. The left section shows current folder context (with breadcrumb navigation where practical) and file metadata as handlers provide it, including image resolution, video duration, and file size. The middle section contains common actions such as undo, delete, and folder loading; folder loading uses an Add/Plus icon. The right section contains contextual controls and information such as the current zoom level, adjacent zoom-in/zoom-out buttons, and future media playback controls. The zoom indicator is also a reset-to-fit control.
+- Three WinUI `CommandBar` controls hosted in a XAML Island span the entire top of the WPF window, including the navigation rail column. Align them left, center, and right in a shared three-column grid, place actions in `PrimaryCommands`, use 32-pixel square `AppBarButton` controls for actions, and keep the toolbar 48 pixels tall with overflow buttons hidden.
+- Divide the toolbar into three sections. The left section shows current folder context (with breadcrumb navigation where practical) and file metadata as handlers provide it, including image resolution, video duration, and file size. The middle section contains common actions such as undo, delete, and folder loading; folder loading uses an Add/Plus icon. The right section contains contextual controls and information such as adjacent zoom-in/zoom-out buttons, a reset-to-fit AppBarButton grouped with the current zoom percentage, and future media playback controls.
 - The media viewer or gallery occupies the available canvas beneath the toolbar and beside the navigation rail.
 - The folder tree floats over the left side of the media canvas and the carousel floats over its bottom edge. Both are slightly transparent and slide in when the pointer approaches their respective edge. The tree is hidden by default. The carousel remains mostly hidden with its upper quarter peeking above the bottom edge. They return to their default hidden/peek state when the pointer leaves. A future setting may allow users to adjust the peek amount, keep either panel visible, or toggle this reveal behavior.
 
@@ -410,7 +413,7 @@ The layout should adapt to different window sizes.
 
 - The application remains a WPF desktop application, with WPF owning the top-level window, application startup, and composition root.
 - WinUI controls may be hosted through Windows App SDK XAML Islands when their built-in Windows behavior or consistency provides a clear benefit. Use WinUI `NavigationView` for the primary navigation rail; keep ordinary views in WPF unless there is a specific reason to host them.
-- Keep the application navigation rail in its compact icon-only state at all times; do not provide a pane expand/collapse toggle. The entire rail must remain programmatically hideable so fullscreen mode can remove it.
+- Keep the application navigation rail in its compact icon-only state at all times; do not provide a pane expand/collapse toggle. Keep Settings at the bottom of the rail. The entire rail must remain programmatically hideable so fullscreen mode can remove it.
 - The WPF and WinUI boundary must preserve shared application navigation state and support keyboard focus, resizing, DPI changes, accessibility, and clean shutdown.
 - Prefer the native Windows caption and caption buttons. Its caption and text colors should be changeable at runtime, defaulting to black with white text. Use Windows 11 DWM caption color attributes for the WPF top-level window; WinUI `SetTitleBar` applies only to a WinUI top-level window.
 
@@ -422,6 +425,7 @@ The user should be able to:
 - Resize the main viewer.
 - Show or hide the carousel.
 - Adjust carousel size and number of thumbnails.
+- Use a discrete WinUI slider with visible value ticks to set the total carousel icon count, including the current file, to an odd value from 1 to 25. Default to 11 icons (five neighbors per side); each slider step changes the total by two. Apply the setting immediately; settings persistence is handled by the later persistence phase.
 - Change thumbnail sizes in gallery mode.
 - Change image scaling behavior.
 - Configure keyboard shortcuts.

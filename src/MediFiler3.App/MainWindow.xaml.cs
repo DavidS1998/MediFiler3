@@ -40,6 +40,7 @@ public partial class MainWindow : Window
 
     private readonly HomeView _homeView = new();
     private readonly BrowseView _browseView;
+    private readonly SettingsView _settingsView;
     private readonly ILogger<MainWindow> _logger;
     private readonly NavigationSessionState _navigationState;
     private bool _sourceInitialized;
@@ -68,6 +69,8 @@ public partial class MainWindow : Window
         _logger = logger;
         _navigationState = navigationState;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder, thumbnailService);
+        _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
+        _settingsView.CarouselNeighborCountChanged += _browseView.SetCarouselNeighborCount;
         InitializeComponent();
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
@@ -152,6 +155,7 @@ public partial class MainWindow : Window
         PageContent.Content = destination switch
         {
             "Browse" => _browseView,
+            "Settings" => _settingsView,
             _ => _homeView
         };
     }

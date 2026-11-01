@@ -1,7 +1,16 @@
 # Project status
 
 **Snapshot date:** 2026-11-01  
-**Overall:** Phase 1 in progress; steps 1.1 through 1.6 are implemented. Step 1.7 keyboard/mouse navigation and image zoom/pan are implemented; integration and manual verification remain.
+**Overall:** Phase 1 in progress; steps 1.1 through 1.7 are implemented. The user has reviewed the UI; the latest usability refinements build successfully and await a focused interaction check. Step 1.8 integration work remains.
+
+## Handover: resume here
+
+The latest requested usability fixes are implemented. Run the app to check stable carousel scrolling and clicks, tree expander states and bottom clearance, sidebar item alignment, the WinUI Settings slider, and the native CommandBar structure. The latest build succeeded using a temporary output path. No code work is currently blocked.
+
+1. Verify pointer-anchored zoom and the native CommandBar button placement, including the combined fit/percentage button.
+2. Verify carousel wheel scrolling is smooth and tiles remain clickable during recentering; check tree row/expander visuals and the 48-pixel bottom reserve.
+3. Check consistent Home/Browse sidebar placement and the Settings footer destination. Adjust the tick-marked WinUI slider through odd total counts from 1 to 25 and confirm the carousel updates immediately; the setting is currently session-only.
+4. Fix any issues found, complete Step 1.8 integration/refinement, and update this handover. Phase 2 begins with the persistent operation journal before filesystem mutations.
 
 ## Current implementation
 
@@ -18,9 +27,13 @@
 - When changing files, the viewer shows the selected carousel thumbnail immediately when available, then replaces it with the full image after decoding.
 - Unsupported files use their Shell thumbnail in the main viewer when available, with an explicit thumbnail-preview label.
 - Three 48-pixel WinUI CommandBars share a full-window-width XAML Island above the sidebar and media canvas; they align left, center, and right with overflow buttons hidden. The left section shows folder context, the center Add AppBarButton loads folders, and the right section has zoom-out, reset-to-fit with the zoom percentage, and zoom-in controls. The redundant current filename and inline viewer zoom badge are removed.
+- The toolbar uses native CommandBar primary commands aligned left/center/right, with 32-pixel AppBarButtons and the reset-to-fit button grouped with its zoom-percent readout, following the layout pattern in the user-referenced MediFiler-V2 `MainWindow.xaml`.
+- Zoom-wheel steps preserve the image point under the mouse pointer. The dedicated Settings footer tab hosts a discrete, tick-marked WinUI slider for odd total carousel icon counts from 1 to 25, default 11; this includes the current item, advances by two per slider step, applies immediately, and is not persisted yet.
 - The tree and carousel float over the WPF media canvas with translucent backgrounds. The tree starts hidden; the carousel leaves its upper quarter peeking above the bottom edge with a transparent gradient hint. Hovering at the left/bottom edges slides the corresponding panel out; leaving the panel hides the tree or returns the carousel to its peek state.
-- The scrollbar is hidden while horizontal scrolling remains available, including mouse-wheel file navigation over the carousel. Leading/trailing spacers represent the omitted folder items, so global scroll offsets animate recentering across the entire folder. Thumbnails are explicitly center-cropped, spacing is reduced, and names stay on one line.
-- Carousel hit testing is disabled while its panel or content is moving to prevent clicks from selecting an unintended thumbnail.
+- The scrollbar is hidden while horizontal scrolling remains available, including mouse-wheel file navigation over the carousel. Leading/trailing spacers represent the omitted folder items, so global scroll offsets animate recentering across the entire folder. Adjacent navigation reuses thumbnail items and keeps async thumbnail work alive to avoid flicker. Thumbnails are center-cropped, spacing is compact, names stay on one line, and item hover/selection visuals are suppressed in favor of a pointer cursor.
+- Folder tree rows stretch across the overlay width and use full-row hover/selection backgrounds. The chevron keeps the same shape and rotates when expanded, with a transparent hit area and no default blue open state. A 48-pixel bottom reserve gives the carousel more of the screen while allowing the final tree entries to scroll clear of it.
+- Carousel hit testing is disabled only while its panel slides in or out; it remains active during horizontal recentering so clicked tile identity remains tied to the clicked file.
+- The sidebar uses consistent NavigationView item spacing without a per-item negative margin, avoiding a clipped Home entry.
 - The Home/Browse rail is a WinUI `NavigationView` hosted by a WPF `HwndHost` through Windows App SDK XAML Islands. It is always compact/icon-only; the pane expand/collapse control is disabled. `MainWindow.IsSidebarVisible` can hide the whole rail for future fullscreen mode.
 - WPF retains the native Windows title bar. `TitleBarBackground` and `TitleBarForeground` dependency properties apply runtime caption/text colors through DWM; defaults are black and white.
 - App project references `Microsoft.WindowsAppSDK` 2.6.4 and is configured unpackaged/framework-dependent with automatic bootstrap initialization. The Windows App Runtime 2.6.4 must be installed on deployment computers.
@@ -40,9 +53,9 @@
 
 ## Immediate next tasks
 
-1. Manually check the three 48-pixel CommandBars, square buttons, compact zoom controls, no overflow affordance, absence of the white stripe, and seamless toolbar/sidebar join on Windows 11.
-2. Check wheel navigation over the carousel, scrollbar-free recentering throughout a long folder, center-cropped thumbnails, one-line filenames, quarter-peek gradient, and click safety during both animations.
-3. Manually check full-resolution zoom sharpness, Numpad mode entry, zoom bounds and increments, panning, and immediate reset when returning to navigation mode.
+1. Check pointer-centered wheel zoom and native CommandBar placement and hit targets.
+2. Check that carousel scrolling no longer flickers and tile clicks navigate during recentering; check tree chevrons, 48-pixel bottom clearance, sidebar item alignment, and WinUI Settings slider count/update behavior.
+3. Recheck long-folder recentering and existing full-resolution zoom, Numpad mode entry, bounds, panning, and reset behavior.
 
 ## Known caveats and risks
 
@@ -56,19 +69,16 @@
 - The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
 - Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
 - Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
-- The shell, tree, carousel, image viewer, Shell fallback, and navigation behavior were manually checked by the user before this interface revision. The new toolbar and auto-revealing overlays, and zoom/panning, await manual interaction checks.
+- The user has manually reviewed the interface before the latest refinements. Carousel item reuse/click routing, the tree chevron and smaller reserve, consistent sidebar spacing, the WinUI slider host, and native CommandBar structure need focused manual verification.
 
-## Outstanding decisions
+## Settled interaction behavior and deferred settings
 
 - Step 1.7 boundary behavior is settled: stop at the first/last file, then move to the adjacent nonempty folder after five consecutive overscroll attempts in that direction.
 - Zoom behavior is settled: centered 25% multiplicative steps, 20%–500% limits, mouse wheel and Numpad plus/minus in zoom mode (Numpad activates it automatically), and left-drag panning above fit-to-view. Switching to navigation resets zoom and pan. Decode resolution follows zoom level and is capped at the source image size.
-- Carousel density is currently fixed at five neighboring files on each side and 150 x 150 WPF layout units; user-configurable values remain future settings work.
+- Carousel density defaults to five neighboring files per side, configurable by total icon counts 1, 3, ..., 25 in Settings. The value is session-only until persistence is implemented.
 
 ## Verification record
 
-- `dotnet build MediFiler3.sln` on 2026-11-01 succeeded with 0 warnings and 0 errors.
 - `dotnet test MediFiler3.sln --no-build --verbosity normal` exited 0, but no test projects exist in the solution, so no tests were discovered or executed.
-- The user has manually verified the image viewer, 150 x 150 center-cropped carousel, thumbnail-to-full-image transition, Shell fallback, and navigation stage as sufficiently functional for this stage. Zoom/panning has been build-verified and still needs manual interaction checking on Windows 11.
-- `dotnet build MediFiler3.sln` after navigation implementation on 2026-11-01 succeeded with 0 warnings and 0 errors.
-- A standard build could not overwrite the running app's locked output. `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Build\` succeeded with 0 warnings and 0 errors; zoom remains pending manual verification.
-- `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Build\` after the carousel and toolbar refinements succeeded with 0 warnings and 0 errors. The separate output path avoids the running app's file lock; manual UI validation remains pending.
+- Before the latest interface revisions, the user verified the image viewer, original carousel thumbnails and transitions, Shell fallback, and file navigation as sufficient for the current stage.
+- Latest verification: `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3UiTune\` succeeded with 0 warnings and 0 errors. `git diff --check` found no whitespace errors. The latest refinements have not yet been manually verified in the running app.
