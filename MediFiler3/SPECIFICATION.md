@@ -395,6 +395,14 @@ Suggested layout:
 
 The layout should adapt to different window sizes.
 
+### Windows UI framework integration
+
+- The application remains a WPF desktop application, with WPF owning the top-level window, application startup, and composition root.
+- WinUI controls may be hosted through Windows App SDK XAML Islands when their built-in Windows behavior or consistency provides a clear benefit. Use WinUI `NavigationView` for the primary navigation rail; keep ordinary views in WPF unless there is a specific reason to host them.
+- Keep the application navigation rail in its compact icon-only state at all times; do not provide a pane expand/collapse toggle. The entire rail must remain programmatically hideable so fullscreen mode can remove it.
+- The WPF and WinUI boundary must preserve shared application navigation state and support keyboard focus, resizing, DPI changes, accessibility, and clean shutdown.
+- Prefer the native Windows caption and caption buttons. Its caption and text colors should be changeable at runtime, defaulting to black with white text. Use Windows 11 DWM caption color attributes for the WPF top-level window; WinUI `SetTitleBar` applies only to a WinUI top-level window.
+
 ### Customization
 
 The user should be able to:
@@ -675,6 +683,8 @@ The following principles should guide implementation decisions:
 # 11. Development priorities
 
 Implement the application incrementally.
+
+The detailed milestone breakdown and current completion status are maintained in the repository-level [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md) and [PROJECT_STATUS.md](../PROJECT_STATUS.md).
 
 Do not attempt to implement all features simultaneously.
 
