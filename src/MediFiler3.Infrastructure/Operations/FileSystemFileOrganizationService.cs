@@ -315,27 +315,25 @@ public sealed class FileSystemFileOrganizationService(
     public Task<FileOrganizationBatchResult> RedoAsync(CancellationToken cancellationToken = default) =>
         ApplyHistoryAsync(undo: false, cancellationToken);
 
+    public async Task<FileOrganizationHistoryPreview?> GetHistoryPreviewAsync(
+        FileOrganizationHistoryDirection direction, CancellationToken cancellationToken = default)
+    {
+        var undo = direction == FileOrganizationHistoryDirection.Undo;
+        var plan = await GetHistoryPlanAsync(undo, cancellationToken).ConfigureAwait(false);
+        if (plan is null) return null;
+
+        var items = plan.Operations.Select(operation => CreateHistoryPreviewItem(operation, undo)).ToArray();
+        return new FileOrganizationHistoryPreview(direction, plan.BatchId, items);
+    }
+
     private async Task<FileOrganizationBatchResult> ApplyHistoryAsync(bool undo, CancellationToken cancellationToken)
     {
-        var candidate = undo
-            ? await journal.GetNextUndoAsync(cancellationToken).ConfigureAwait(false)
-            : await journal.GetNextRedoAsync(cancellationToken).ConfigureAwait(false);
-        if (candidate is null)
+        var plan = await GetHistoryPlanAsync(undo, cancellationToken).ConfigureAwait(false);
+        if (plan is null)
             return new FileOrganizationBatchResult(null, [Failure(undo ? "There is nothing to undo." : "There is nothing to redo.")]);
 
-        var entries = candidate.Operation.BatchId is { } batchId
-            ? await journal.GetBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
-            : new[] { candidate };
-        var applicableStates = undo
-            ? new[] { FileOperationEventKind.Completed, FileOperationEventKind.Redone }
-            : new[] { FileOperationEventKind.Undone };
-        IEnumerable<JournaledFileOperation> ordered = entries.Where(entry => entry.Operation.CompensatesOperationId is null &&
-                applicableStates.Contains(entry.State))
-            .OrderBy(entry => entry.Events[0].Sequence);
-        if (undo) ordered = ordered.Reverse();
-
         var results = new List<FileOrganizationResult>();
-        foreach (var entry in ordered)
+        foreach (var entry in plan.Operations)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -348,8 +346,68 @@ public sealed class FileSystemFileOrganizationService(
             }
         }
 
-        return new FileOrganizationBatchResult(candidate.Operation.BatchId, results);
+        return new FileOrganizationBatchResult(plan.BatchId, results);
     }
+
+    private async Task<HistoryPlan?> GetHistoryPlanAsync(bool undo, CancellationToken cancellationToken)
+    {
+        var candidate = undo
+            ? await journal.GetNextUndoAsync(cancellationToken).ConfigureAwait(false)
+            : await journal.GetNextRedoAsync(cancellationToken).ConfigureAwait(false);
+        if (candidate is null) return null;
+
+        var entries = candidate.Operation.BatchId is { } batchId
+            ? await journal.GetBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
+            : new[] { candidate };
+        var applicableStates = undo
+            ? new[] { FileOperationEventKind.Completed, FileOperationEventKind.Redone }
+            : new[] { FileOperationEventKind.Undone };
+        IEnumerable<JournaledFileOperation> ordered = entries.Where(entry => entry.Operation.CompensatesOperationId is null &&
+                applicableStates.Contains(entry.State))
+            .OrderBy(entry => entry.Events[0].Sequence);
+        if (undo) ordered = ordered.Reverse();
+
+        var operations = ordered.ToArray();
+        return operations.Length == 0 ? null : new HistoryPlan(candidate.Operation.BatchId, operations);
+    }
+
+    private static FileOrganizationHistoryPreviewItem CreateHistoryPreviewItem(JournaledFileOperation entry, bool undo)
+    {
+        var operation = entry.Operation;
+        switch (operation.Kind)
+        {
+            case FileOperationKind.Move:
+            case FileOperationKind.Rename:
+            {
+                var payload = JsonSerializer.Deserialize<PathOperationPayload>(operation.PayloadJson ?? "{}")
+                    ?? new PathOperationPayload(false, false);
+                var source = undo ? operation.DestinationPath : operation.SourcePath;
+                var destination = undo ? operation.SourcePath : operation.DestinationPath;
+                var action = operation.Kind == FileOperationKind.Rename
+                    ? $"Rename {(payload.IsDirectory ? "folder" : "file")}"
+                    : $"Move {(payload.IsDirectory ? "folder" : "file")}";
+                return new FileOrganizationHistoryPreviewItem(action, source, destination);
+            }
+            case FileOperationKind.CreateFolder:
+                return undo
+                    ? new FileOrganizationHistoryPreviewItem("Send folder to Recycle Bin", operation.DestinationPath, "Recycle Bin")
+                    : new FileOrganizationHistoryPreviewItem("Recreate folder", "New folder", operation.DestinationPath);
+            case FileOperationKind.SendToRecycleBin:
+            {
+                var payload = JsonSerializer.Deserialize<RecycleBinPayload>(operation.PayloadJson ?? "{}")
+                    ?? new RecycleBinPayload();
+                var action = payload.IsDirectory ? "folder" : "file";
+                return undo
+                    ? new FileOrganizationHistoryPreviewItem($"Restore {action} from Recycle Bin", "Recycle Bin", operation.SourcePath)
+                    : new FileOrganizationHistoryPreviewItem($"Send {action} to Recycle Bin", operation.SourcePath, "Recycle Bin");
+            }
+            default:
+                return new FileOrganizationHistoryPreviewItem(operation.Kind.ToString(), operation.SourcePath,
+                    operation.DestinationPath);
+        }
+    }
+
+    private sealed record HistoryPlan(Guid? BatchId, IReadOnlyList<JournaledFileOperation> Operations);
 
     private async Task<FileOrganizationResult> ApplyCompensationAsync(JournaledFileOperation entry, bool undo,
         CancellationToken cancellationToken)

@@ -447,6 +447,8 @@ The toolbar should be organized into logical groups.
 ### History
 - Undo.
 - Redo.
+- Hovering over Undo or Redo previews the planned actions and paths. For batches, show the first eight entries in execution order and the number of remaining entries.
+- Clicking Undo/Redo or using Ctrl+Z/Ctrl+Y applies the operation immediately; the tooltip is informational and does not introduce a confirmation dialog.
 
 ### File operations
 - Rename selected/current file.

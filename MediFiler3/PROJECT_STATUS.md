@@ -1,17 +1,19 @@
 # Project status
 
 **Snapshot date:** 2026-11-03
-**Overall:** Phase 1 complete. Phase 2.1-2.4 are complete. Step 2.5 is in progress: verified move/rename and folder-creation undo/redo, grouped file moves, and Windows Shell Recycle Bin restore are implemented; interactive Shell verification remains.
+**Overall:** Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and folder-creation undo/redo, grouped file moves, Windows Shell Recycle Bin restore, and Undo/Redo hover previews. The user confirmed the restore and tooltip behavior. Phase 3 is next.
 
 ## Handover: resume here
 
-Phase 1 is closed. Phase 2.1-2.4 are implemented. Step 2.5 now includes verified move/rename and empty-folder compensation, grouped file moves, history UI, and a Shell-based Recycle Bin restore adapter with fake-adapter tests. Continue with interactive Windows verification of matching, restore, redo, and failure reporting.
+Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and empty-folder compensation, grouped file moves, Undo/Redo hover previews, and a Shell-based Recycle Bin restore adapter with fake-adapter tests. The user confirmed that Recycle Bin restoration and the tooltip behavior work. Phase 3 is next; no Phase 3 implementation has started.
+
+The worktree currently contains uncommitted Step 2.5 preview/tooltip code and documentation updates. Inspect `git status` and the diff before editing; preserve these changes.
 
 1. Read `AGENTS.md`, `SPECIFICATION.md`, `ARCHITECTURE.md`, `DEVELOPMENT_PLAN.md`, and this status file before coding.
 2. Inspect the solution and current working tree. Preserve the WPF host and existing WPF/WinUI XAML Island boundary.
 3. Keep journal changes append-only and recovery conservative; ambiguous operations must not be retried automatically.
-4. Implement verified undo/redo and batch grouping in Step 2.5, including safe compensation checks, UI refresh/results, and tests. Never silently overwrite or permanently delete; never fall back to permanent deletion if sending to the Recycle Bin fails.
-5. Build after changes and update the development plan/status as Phase 2 progresses.
+4. Start Phase 3 from `DEVELOPMENT_PLAN.md`: resolve the media backend, supported format, bounded text-reader, and metadata presentation decisions before adding handlers. Keep file navigation state centralized and make content interactions suppress accidental file navigation.
+5. Maintain the no-silent-overwrite/no-permanent-delete safety rules for future filesystem changes. Build and run relevant tests after implementation work, then update the plan and status.
 
 ## Current implementation
 
@@ -44,7 +46,19 @@ Phase 1 is closed. Phase 2.1-2.4 are implemented. Step 2.5 now includes verified
 - WPF retains the native Windows title bar. `TitleBarBackground` and `TitleBarForeground` dependency properties apply runtime caption/text colors through DWM; defaults are black and white.
 - App project references `Microsoft.WindowsAppSDK` 2.6.4 and is configured unpackaged/framework-dependent with automatic bootstrap initialization. The Windows App Runtime 2.6.4 must be installed on deployment computers.
 - WinUI initialization, resources, message pre-translation, island sizing/focus, and shutdown are handled in `src/MediFiler3.App/Interop/`.
-- Step 2.5 is in progress. Move/rename undo/redo verify recorded identities and never overwrite occupied destinations. Empty created folders can be undone only when identity matches and the folder remains empty; undo sends them to the Recycle Bin, and redo recreates them only under the same verified parent. Batch file moves share one journal BatchId; grouped undo runs in reverse order and redo in original order, retaining individual outcomes. Undo/Redo toolbar buttons and Ctrl+Z/Ctrl+Y refresh the tree, active folder, and affected file selection. Recycle Bin restore enumerates the Shell namespace on an STA worker and uniquely matches original path/type/identity before invoking Restore. Verification accepts the original file identity or, for files only, a matching streamed length/SHA-256 fingerprint when Windows assigns a new identity. Automated tests use a fake restore adapter; manual Windows Shell integration has not yet been exercised.
+- Step 2.5 is complete. Move/rename undo/redo verify recorded identities and never overwrite occupied destinations. Empty created folders can be undone only when identity matches and the folder remains empty; undo sends them to the Recycle Bin, and redo recreates them only under the same verified parent. Batch file moves share one journal BatchId; grouped undo runs in reverse order and redo in original order, retaining individual outcomes. Undo/Redo button tooltips show the total change count and up to eight planned actions/paths in execution order; larger batches report how many more items remain. Buttons and Ctrl+Z/Ctrl+Y apply immediately, and existing conflict checks still run during application. Recycle Bin restore enumerates the Shell namespace on an STA worker and uniquely matches original path/type/identity before invoking Restore. Verification accepts the original file identity or, for files only, a matching streamed length/SHA-256 fingerprint when Windows assigns a new identity. Automated tests use a fake restore adapter; the user confirmed that Shell restore and tooltip behavior work.
+
+## Next phase: immediate tasks and open decisions
+
+Phase 3 is the next work item; it has not started. Begin with a small design pass and preserve centralized file navigation and the WPF host.
+
+1. Review the current Browse viewer and define the file-handler capability boundary for loading, presentation, metadata, playback, and input routing.
+2. Decide which Windows-compatible playback backend and initial video/audio formats meet basic playback needs without adding an unnecessary codec runtime.
+3. Set bounded text-viewer behavior: supported encodings, maximum file size or read window, and how unreadable/binary text is reported.
+4. Decide which metadata appears in the toolbar and which belongs in file details, then implement basic text/media handlers and the unsupported-file/Open With fallback.
+5. Cover handler routing, cancellation/resource release, large text files, playback controls, and unsupported formats with tests and interactive checks.
+
+There are no unresolved Step 2.5 decisions. The settled Undo/Redo tooltip is informational: it lists at most eight planned batch entries plus a remaining-item count, while the buttons and shortcuts apply immediately and the operation service revalidates before mutation.
 
 ## Completed work
 
@@ -57,7 +71,7 @@ Phase 1 is closed. Phase 2.1-2.4 are implemented. Step 2.5 now includes verified
 - **1.7:** arrow-key and image-viewport wheel file navigation; five same-direction boundary overscroll attempts advance to the adjacent nonempty folder in loaded tree preorder. Supported-image right-click interaction toggle, Numpad/mouse-wheel zoom from 20%–500%, and drag panning are implemented.
 - Specification and architecture decisions are recorded in `MediFiler3/SPECIFICATION.md` and `MediFiler3/ARCHITECTURE.md`.
 
-## Phase 2 handover: safe file organization
+## Phase 2 completion notes: safe file organization
 
 The append-only SQLite journal and startup assessment, journal tests, and Step 2.4 filesystem operations and UI are in place. Use explicit SQL while the schema remains small. Keep persistence and filesystem inspection behind application contracts and Infrastructure; do not put database or filesystem work in WPF views. Journal reopen/migration, event transitions, redo invalidation, and recovery evidence are covered by automated tests.
 
@@ -68,7 +82,7 @@ Step 2.4 implements moving/renaming files and folders, creating folders, and sen
 ```text
 Continue MediFiler3 from the handover in MediFiler3/PROJECT_STATUS.md. Read AGENTS.md, SPECIFICATION.md, ARCHITECTURE.md, DEVELOPMENT_PLAN.md, and PROJECT_STATUS.md first. Phase 1 is complete and the user reports no UI issues. Preserve the existing WPF host and WPF/WinUI XAML Island boundary.
 
-Phase 2.1-2.4 established and tested an append-only SQLite journal, conservative recovery assessment, safe file/folder operations, and folder menu UI. Step 2.5 implements verified undo/redo and batch grouping, including a Windows Shell Recycle Bin restore adapter and fake-adapter coverage. Perform an interactive Windows check of the Shell Restore verb and user-visible conflict/failure reporting before closing the step. Ambiguous recovery states must remain flagged and must not be retried automatically. Never silently overwrite or permanently delete files; a failed Recycle Bin operation must not fall back to permanent deletion. Build after changes and update the development plan and project status.
+Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative recovery assessment, safe file/folder operations, verified undo/redo and batching, Windows Shell Recycle Bin restore, and Undo/Redo hover previews. The user confirmed Shell restore and tooltip behavior. Ambiguous recovery states must remain flagged and must not be retried automatically. Never silently overwrite or permanently delete files; a failed Recycle Bin operation must not fall back to permanent deletion. Continue with Phase 3 from the development plan.
 ```
 
 ## Known caveats and risks
@@ -79,10 +93,15 @@ Phase 2.1-2.4 established and tested an append-only SQLite journal, conservative
 - DWM caption color attributes are Windows 11-specific, matching the supported OS decision. Failures are logged; there is no separate fallback title bar.
 - The navigation rail currently has no user-facing full-hide command. `IsSidebarVisible` is the intended integration point for future fullscreen behavior.
 - The folder hierarchy is scanned recursively before it is displayed, on a background worker with cancellation. Very large trees may take time to appear; dropped files are ignored with a status message.
+- There is no `FileSystemWatcher` integration yet; external filesystem changes may require an explicit refresh or reload. Continuous reconciliation is future work.
 - Tree item virtualization is disabled so the expanded hierarchy has a stable scrollbar extent; extremely large trees will use more UI memory until a stable virtualized scrolling strategy is added.
 - The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
 - Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
+- Undo/Redo hover tooltips are compact previews: batches show the first eight actions/paths and a count of remaining items. The tooltip is informational; execution rechecks identities and conflicts.
+- `MediFiler3.Infrastructure.Tests` is the only automated test project. Domain and Application do not have separate test projects.
+- The 37 automated tests cover journal and filesystem behavior, including fake-adapter Recycle Bin restoration; they do not directly assert undo/redo preview contents or tooltip rendering. The user verified the tooltip behavior interactively.
 - Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
+- Home remains a placeholder. Recent/frequent/favorite folders and settings persistence are deferred to Phase 4; the Pin state and carousel density are session-only.
 - The user has reviewed the current interface and reports no UI issues. Step 1.8 is complete.
 
 ## Settled interaction behavior and deferred settings
@@ -101,4 +120,4 @@ Phase 2.1-2.4 established and tested an append-only SQLite journal, conservative
 - The Browse tree has a right-aligned folder menu button for create, rename, move, Recycle Bin, refresh, Explorer, and properties actions. The ellipsis button opens a WinUI `MenuFlyout` from the existing toolbar XAML Island. File/folder rename, New Folder, and non-empty folder deletion confirmation use standalone WinUI windows with no nested ContentDialog. Move Folder To uses the basic native folder picker, initially showing the source folder's parent. The existing Add Folders workflow retains its system multi-folder picker; read warnings appear in the Browse status notice. The tree panel has a session-only Pin/Unpin control with inverted selected colors and glyphs rotated 90 degrees counterclockwise; persist its state with the future settings store. Left-click remains navigation; right-click moves the current file to the clicked folder. The WinUI toolbar Island exposes current-file rename and Recycle Bin actions; F2, Delete, and Ctrl+Shift+N provide keyboard shortcuts. Operation outcomes appear in Browse.
 - Step 2.4 filesystem tests cover same-volume move/rename, content preservation, conflicts, folder creation/move, nested-move rejection, confirmation requirements, and cross-volume folder-move refusal where another volume is available.
 - Step 2.4 verification: dotnet test MediFiler3.sln --verbosity minimal -m:1 passed all 25 tests. dotnet build MediFiler3.sln --verbosity minimal -m:1 succeeded with 0 warnings and 0 errors. git diff --check is clean. Recycle Bin shell behavior and the new menu's interactive appearance have not been manually exercised in this verification pass.
-- Step 2.5 verification in progress: `dotnet test tests/MediFiler3.Infrastructure.Tests/MediFiler3.Infrastructure.Tests.csproj --no-restore --verbosity minimal` passed all 37 tests. `dotnet build MediFiler3.sln --no-restore` succeeded with 0 warnings and 0 errors. `git diff --check` is clean. The real Shell restore verb has not been manually exercised.
+- Step 2.5 verification (2026-11-03): `dotnet test MediFiler3.sln --no-restore --verbosity minimal` passed all 37 tests. `dotnet build MediFiler3.sln --no-restore --verbosity minimal` succeeded with 0 warnings and 0 errors. `git diff --check` is clean. The user confirmed that Shell restore and the Undo/Redo tooltips work as expected.

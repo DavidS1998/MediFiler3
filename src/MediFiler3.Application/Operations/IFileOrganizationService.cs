@@ -1,3 +1,5 @@
+using MediFiler3.Domain.Operations;
+
 namespace MediFiler3.Application.Operations;
 
 public enum FileOrganizationOutcome
@@ -29,6 +31,22 @@ public sealed record FileOrganizationBatchResult(Guid? BatchId, IReadOnlyList<Fi
           string.Join(" ", Results.Where(result => !result.Succeeded).Select(result => result.Message));
 }
 
+public enum FileOrganizationHistoryDirection
+{
+    Undo,
+    Redo
+}
+
+public sealed record FileOrganizationHistoryPreviewItem(
+    string Action,
+    string? SourcePath,
+    string? DestinationPath);
+
+public sealed record FileOrganizationHistoryPreview(
+    FileOrganizationHistoryDirection Direction,
+    Guid? BatchId,
+    IReadOnlyList<FileOrganizationHistoryPreviewItem> Items);
+
 /// <summary>Application-owned use cases for journaled file and folder changes.</summary>
 public interface IFileOrganizationService
 {
@@ -39,6 +57,7 @@ public interface IFileOrganizationService
     Task<FileOrganizationResult> MoveFolderAsync(string sourceFolderPath, string destinationParentPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> SendToRecycleBinAsync(string path, bool isDirectory, bool confirmNonEmptyDirectory = false, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> MoveFilesAsync(IReadOnlyList<string> sourceFilePaths, string destinationFolderPath, CancellationToken cancellationToken = default);
+    Task<FileOrganizationHistoryPreview?> GetHistoryPreviewAsync(FileOrganizationHistoryDirection direction, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> UndoAsync(CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> RedoAsync(CancellationToken cancellationToken = default);
 }

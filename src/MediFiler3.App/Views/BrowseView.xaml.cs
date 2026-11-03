@@ -674,7 +674,8 @@ public partial class BrowseView : UserControl
 
     private static bool IsOperationUiException(Exception exception) => exception is IOException or
         UnauthorizedAccessException or ArgumentException or System.Security.SecurityException or
-        System.Runtime.InteropServices.ExternalException or InvalidOperationException or OperationCanceledException;
+        System.Runtime.InteropServices.ExternalException or InvalidOperationException or OperationCanceledException or
+        System.Text.Json.JsonException;
 
     private void OnCarouselSelectionChanged(object sender, SelectionChangedEventArgs e)
     {

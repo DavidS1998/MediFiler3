@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using Windows.Graphics;
+using MediFiler3.Application.Operations;
 using Thickness = Microsoft.UI.Xaml.Thickness;
 using GridLength = Microsoft.UI.Xaml.GridLength;
 using GridUnitType = Microsoft.UI.Xaml.GridUnitType;
@@ -210,10 +211,46 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         if (_deleteFileButton is not null) _deleteFileButton.IsEnabled = enabled;
     }
 
-    public void SetHistoryAvailability(bool canUndo, bool canRedo)
+    public void SetHistoryAvailability(bool canUndo, bool canRedo,
+        FileOrganizationHistoryPreview? undoPreview = null, FileOrganizationHistoryPreview? redoPreview = null)
     {
-        if (_undoButton is not null) _undoButton.IsEnabled = canUndo;
-        if (_redoButton is not null) _redoButton.IsEnabled = canRedo;
+        if (_undoButton is not null)
+        {
+            _undoButton.IsEnabled = canUndo;
+            ToolTipService.SetToolTip(_undoButton, CreateHistoryToolTip("Undo", undoPreview));
+        }
+
+        if (_redoButton is not null)
+        {
+            _redoButton.IsEnabled = canRedo;
+            ToolTipService.SetToolTip(_redoButton, CreateHistoryToolTip("Redo", redoPreview));
+        }
+    }
+
+    private static ToolTip CreateHistoryToolTip(string action, FileOrganizationHistoryPreview? preview)
+    {
+        if (preview is null)
+            return new ToolTip { Content = $"Nothing to {action.ToLowerInvariant()}." };
+
+        const int maxItems = 8;
+        var lines = preview.Items.Take(maxItems).Select(item =>
+            $"{item.Action}: {item.SourcePath ?? "—"} → {item.DestinationPath ?? "—"}").ToList();
+        lines.Insert(0, $"{action} {preview.Items.Count} {(preview.Items.Count == 1 ? "change" : "changes")}:");
+        if (preview.Items.Count > maxItems)
+            lines.Add($"… and {preview.Items.Count - maxItems} more");
+
+        return new ToolTip
+        {
+            MaxWidth = 560,
+            MaxHeight = 480,
+            Content = new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, lines),
+                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
+                Foreground = Brush(231, 232, 234),
+                MaxWidth = 540
+            }
+        };
     }
 
     public void SetFolderContext(string title, string details)
@@ -317,7 +354,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _renameFileButton = CreateButton(Symbol.Edit, "Rename current file", () => RenameFileRequested?.Invoke());
         _deleteFileButton = CreateButton(Symbol.Delete, "Send current file to Recycle Bin", () => DeleteFileRequested?.Invoke());
         _undoButton = CreateButton(Symbol.Undo, "Undo last file operation", () => UndoRequested?.Invoke());
-        _redoButton = CreateButton(Symbol.Redo, "Redo last undone operation", () => RedoRequested?.Invoke());
+        _redoButton = CreateButton(Symbol.Redo, "Redo last file operation", () => RedoRequested?.Invoke());
         _renameFileButton.IsEnabled = _fileActionsEnabled;
         _deleteFileButton.IsEnabled = _fileActionsEnabled;
         middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));

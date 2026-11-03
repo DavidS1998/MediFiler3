@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private readonly ILogger<MainWindow> _logger;
     private readonly NavigationSessionState _navigationState;
     private readonly IFileOperationJournal _operationJournal;
+    private readonly IFileOrganizationService _fileOrganizationService;
     private bool _sourceInitialized;
 
     public Brush TitleBarBackground
@@ -74,6 +75,7 @@ public partial class MainWindow : Window
         _logger = logger;
         _navigationState = navigationState;
         _operationJournal = operationJournal;
+        _fileOrganizationService = fileOrganizationService;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
             thumbnailService, fileOrganizationService);
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
@@ -206,11 +208,19 @@ public partial class MainWindow : Window
             var undo = await _operationJournal.GetNextUndoAsync();
             var redo = await _operationJournal.GetNextRedoAsync();
             var isBrowseVisible = PageContent.Content == _browseView;
-            ToolbarIsland.SetHistoryAvailability(isBrowseVisible && IsHistoryOperationSupported(undo),
-                isBrowseVisible && IsHistoryOperationSupported(redo));
+            var undoPreview = isBrowseVisible
+                ? await _fileOrganizationService.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo)
+                : null;
+            var redoPreview = isBrowseVisible
+                ? await _fileOrganizationService.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo)
+                : null;
+            var canUndo = isBrowseVisible && IsHistoryOperationSupported(undo) && undoPreview is not null;
+            var canRedo = isBrowseVisible && IsHistoryOperationSupported(redo) && redoPreview is not null;
+            ToolbarIsland.SetHistoryAvailability(canUndo, canRedo,
+                canUndo ? undoPreview : null, canRedo ? redoPreview : null);
         }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or
-                                           System.Security.SecurityException)
+                                           System.Security.SecurityException or System.Text.Json.JsonException)
         {
             _logger.LogWarning(exception, "Could not update operation history commands.");
             ToolbarIsland.SetHistoryAvailability(false, false);
