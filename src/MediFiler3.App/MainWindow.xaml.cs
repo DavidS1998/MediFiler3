@@ -220,7 +220,8 @@ public partial class MainWindow : Window
     private static bool IsHistoryOperationSupported(MediFiler3.Domain.Operations.JournaledFileOperation? entry) =>
         entry?.Operation.Kind is MediFiler3.Domain.Operations.FileOperationKind.Move or
             MediFiler3.Domain.Operations.FileOperationKind.Rename or
-            MediFiler3.Domain.Operations.FileOperationKind.CreateFolder;
+            MediFiler3.Domain.Operations.FileOperationKind.CreateFolder or
+            MediFiler3.Domain.Operations.FileOperationKind.SendToRecycleBin;
 
     private void UpdateFileActionAvailability() =>
         ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && _navigationState.CurrentFile is not null);

@@ -1,6 +1,6 @@
 namespace MediFiler3.Domain.Operations;
 
-public enum FileOperationKind { Move, Rename, CreateFolder, SendToRecycleBin }
+public enum FileOperationKind { Move, Rename, CreateFolder, SendToRecycleBin, RestoreFromRecycleBin }
 
 /// <summary>Events are append-only. The most recent event describes the current state.</summary>
 public enum FileOperationEventKind
@@ -57,7 +57,8 @@ public sealed record CreateFolderPayload(
 public sealed record RecycleBinPayload(
     string? RestoreToken = null,
     string? OriginalVolume = null,
-    string? OriginalItemId = null) : FileOperationPayload;
+    string? OriginalItemId = null,
+    bool IsDirectory = false) : FileOperationPayload;
 
 public sealed record OperationEventDetails(
     string? Message = null,

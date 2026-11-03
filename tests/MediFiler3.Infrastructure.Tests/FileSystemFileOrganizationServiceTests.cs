@@ -2,6 +2,7 @@ using MediFiler3.Application.Operations;
 using MediFiler3.Domain.Operations;
 using MediFiler3.Infrastructure.Operations;
 using MediFiler3.Infrastructure.Persistence;
+using System.Text.Json;
 
 namespace MediFiler3.Infrastructure.Tests;
 
@@ -174,6 +175,103 @@ public sealed class FileSystemFileOrganizationServiceTests
     }
 
     [Fact]
+    public async Task RestoresRecycleBinItemOnlyAfterUniqueIdentityMatchAndVerifiesJournalState()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var originalPath = Path.Combine(workspace.Root, "restored.txt");
+        var stagedRecycleItem = Path.Combine(workspace.Root, "recycle-item.bin");
+        await File.WriteAllTextAsync(stagedRecycleItem, "restore me");
+        var identities = new WindowsFileIdentityProvider();
+        var originalIdentity = identities.GetIdentity(stagedRecycleItem).Identity!;
+        var operation = await RecordRecycleBinOperationAsync(tempDb.Journal, originalPath, originalIdentity);
+        var restoreService = new FakeRecycleBinRestoreService(() =>
+        {
+            File.Move(stagedRecycleItem, originalPath);
+            return Task.CompletedTask;
+        });
+        var service = new FileSystemFileOrganizationService(tempDb.Journal, identities, restoreService);
+
+        var result = await service.UndoAsync();
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal("restore me", await File.ReadAllTextAsync(originalPath));
+        Assert.Equal(FileOperationEventKind.Undone, (await tempDb.Journal.GetAsync(operation.Id))!.State);
+        Assert.Equal(1, restoreService.CallCount);
+    }
+
+    [Fact]
+    public async Task RecycleBinRestoreConflictLeavesTheExistingDestinationUntouched()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var originalPath = Path.Combine(workspace.Root, "restored.txt");
+        var stagedRecycleItem = Path.Combine(workspace.Root, "recycle-item.bin");
+        await File.WriteAllTextAsync(stagedRecycleItem, "recycle contents");
+        var identities = new WindowsFileIdentityProvider();
+        var originalIdentity = identities.GetIdentity(stagedRecycleItem).Identity!;
+        var operation = await RecordRecycleBinOperationAsync(tempDb.Journal, originalPath, originalIdentity);
+        await File.WriteAllTextAsync(originalPath, "existing contents");
+        var restoreService = new FakeRecycleBinRestoreService(() => Task.CompletedTask);
+        var service = new FileSystemFileOrganizationService(tempDb.Journal, identities, restoreService);
+
+        var result = await service.UndoAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("existing contents", await File.ReadAllTextAsync(originalPath));
+        Assert.Equal(0, restoreService.CallCount);
+        Assert.Equal(FileOperationEventKind.Completed, (await tempDb.Journal.GetAsync(operation.Id))!.State);
+    }
+
+    [Fact]
+    public async Task RecycleBinRestoreAcceptsMatchingContentWhenTheShellChangesTheFileIdentity()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var originalPath = Path.Combine(workspace.Root, "restored.txt");
+        var stagedRecycleItem = Path.Combine(workspace.Root, "recycle-item.bin");
+        await File.WriteAllTextAsync(stagedRecycleItem, "same verified bytes");
+        var identities = new WindowsFileIdentityProvider();
+        var originalIdentity = identities.GetIdentity(stagedRecycleItem).Identity!;
+        var operation = await RecordRecycleBinOperationAsync(tempDb.Journal, originalPath, originalIdentity);
+        var restoreService = new FakeRecycleBinRestoreService(() =>
+        {
+            File.Copy(stagedRecycleItem, originalPath);
+            File.Delete(stagedRecycleItem);
+            return Task.CompletedTask;
+        }, restoredContentVerified: true);
+        var service = new FileSystemFileOrganizationService(tempDb.Journal, identities, restoreService);
+
+        var result = await service.UndoAsync();
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Contains("content verified", result.Results.Single().Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("same verified bytes", await File.ReadAllTextAsync(originalPath));
+        Assert.Equal(FileOperationEventKind.Undone, (await tempDb.Journal.GetAsync(operation.Id))!.State);
+    }
+
+    [Fact]
+    public async Task MissingRecycleBinItemIsReportedWithoutChangingTheOriginalHistoryState()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var originalPath = Path.Combine(workspace.Root, "missing.txt");
+        var stagedRecycleItem = Path.Combine(workspace.Root, "identity-source.bin");
+        await File.WriteAllTextAsync(stagedRecycleItem, "identity source");
+        var identities = new WindowsFileIdentityProvider();
+        var identity = identities.GetIdentity(stagedRecycleItem).Identity!;
+        var operation = await RecordRecycleBinOperationAsync(tempDb.Journal, originalPath, identity);
+        var fake = new FakeRecycleBinRestoreService(() => Task.CompletedTask, RecycleBinRestoreOutcome.NotFound);
+        var service = new FileSystemFileOrganizationService(tempDb.Journal, identities, fake);
+
+        var result = await service.UndoAsync();
+
+        Assert.Equal(FileOrganizationOutcome.Conflict, result.Results.Single().Outcome);
+        Assert.False(File.Exists(originalPath));
+        Assert.Equal(FileOperationEventKind.Completed, (await tempDb.Journal.GetAsync(operation.Id))!.State);
+    }
+
+    [Fact]
     public async Task BatchMoveUndoAndRedoOperateAsOneGroupInSafeOrder()
     {
         using var tempDb = new TemporaryDatabase();
@@ -293,6 +391,33 @@ public sealed class FileSystemFileOrganizationServiceTests
         public void Dispose()
         {
             if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+        }
+    }
+
+    private static async Task<FileOperationRecord> RecordRecycleBinOperationAsync(IFileOperationJournal journal,
+        string originalPath, string identity)
+    {
+        var operation = new FileOperationRecord(Guid.NewGuid(), null, FileOperationKind.SendToRecycleBin,
+            originalPath, null, DateTimeOffset.UtcNow, 1,
+            JsonSerializer.Serialize(new RecycleBinPayload(OriginalItemId: identity, IsDirectory: false)));
+        await journal.AppendPreparedAsync(operation);
+        await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Completed);
+        return operation;
+    }
+
+    private sealed class FakeRecycleBinRestoreService(Func<Task> restore,
+        RecycleBinRestoreOutcome outcome = RecycleBinRestoreOutcome.Restored,
+        bool restoredContentVerified = false) : IRecycleBinRestoreService
+    {
+        public int CallCount { get; private set; }
+
+        public async Task<RecycleBinRestoreResult> RestoreAsync(string originalPath, string itemIdentity, bool isDirectory,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            await restore();
+            return new RecycleBinRestoreResult(outcome, $"Test adapter outcome: {outcome}.", restoredContentVerified);
         }
     }
 }

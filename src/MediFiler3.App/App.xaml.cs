@@ -31,6 +31,7 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<SqliteDatabase>();
                     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SqliteDatabase>());
                     services.AddSingleton<IFileOperationJournal, SqliteFileOperationJournal>();
+                    services.AddSingleton<IRecycleBinRestoreService, WindowsRecycleBinRestoreService>();
                     services.AddSingleton<IFileOrganizationService, FileSystemFileOrganizationService>();
                     services.AddSingleton<IFileIdentityProvider, WindowsFileIdentityProvider>();
                     services.AddSingleton<IFileOperationRecoveryInspector, FileSystemOperationRecoveryInspector>();

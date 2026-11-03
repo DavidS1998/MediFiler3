@@ -10,7 +10,8 @@ namespace MediFiler3.Infrastructure.Operations;
 
 public sealed class FileSystemFileOrganizationService(
     IFileOperationJournal journal,
-    IFileIdentityProvider identities) : IFileOrganizationService
+    IFileIdentityProvider identities,
+    IRecycleBinRestoreService? recycleBinRestoreService = null) : IFileOrganizationService
 {
     private const int PayloadVersion = 1;
 
@@ -231,7 +232,8 @@ public sealed class FileSystemFileOrganizationService(
 
         var sourceIdentity = RequireIdentity(source);
         var operation = CreateOperation(FileOperationKind.SendToRecycleBin, source, null,
-            new RecycleBinPayload(OriginalVolume: GetVolume(sourceIdentity), OriginalItemId: sourceIdentity));
+            new RecycleBinPayload(OriginalVolume: GetVolume(sourceIdentity), OriginalItemId: sourceIdentity,
+                IsDirectory: isDirectory));
         await journal.AppendPreparedAsync(operation, cancellationToken).ConfigureAwait(false);
 
         try
@@ -355,6 +357,8 @@ public sealed class FileSystemFileOrganizationService(
         var operation = entry.Operation;
         if (operation.Kind == FileOperationKind.CreateFolder)
             return await ApplyFolderCreationCompensationAsync(entry, undo, cancellationToken).ConfigureAwait(false);
+        if (operation.Kind == FileOperationKind.SendToRecycleBin)
+            return await ApplyRecycleBinCompensationAsync(entry, undo, cancellationToken).ConfigureAwait(false);
         if (operation.Kind is not (FileOperationKind.Move or FileOperationKind.Rename) ||
             operation.SourcePath is null || operation.DestinationPath is null)
             return Failure($"Undo and redo are not available for {operation.Kind} operations yet.", operation.Id);
@@ -449,7 +453,8 @@ public sealed class FileSystemFileOrganizationService(
                     $"Cannot undo because '{folderPath}' is no longer empty. Its contents were left untouched.", operation.Id);
 
             var compensation = CreateOperation(FileOperationKind.SendToRecycleBin, folderPath, null,
-                new RecycleBinPayload(OriginalVolume: GetVolume(currentIdentity), OriginalItemId: currentIdentity),
+                new RecycleBinPayload(OriginalVolume: GetVolume(currentIdentity), OriginalItemId: currentIdentity,
+                    IsDirectory: true),
                 operation.BatchId, operation.Id);
             await journal.AppendPreparedAsync(compensation, cancellationToken).ConfigureAwait(false);
             try
@@ -521,6 +526,123 @@ public sealed class FileSystemFileOrganizationService(
             JsonSerializer.Serialize(new OperationEventDetails("Folder creation redone and verified.",
                 VerifiedDestinationIdentity: recreatedIdentity.Identity)), cancellationToken).ConfigureAwait(false);
         return Success("Folder creation redone and verified.", operation.Id, folderPath);
+    }
+
+    private async Task<FileOrganizationResult> ApplyRecycleBinCompensationAsync(JournaledFileOperation entry,
+        bool undo, CancellationToken cancellationToken)
+    {
+        var operation = entry.Operation;
+        if (operation.SourcePath is null ||
+            JsonSerializer.Deserialize<RecycleBinPayload>(operation.PayloadJson ?? "{}") is not { OriginalItemId: not null } payload)
+            return Failure("The Recycle Bin operation has no recorded source identity and cannot be safely reversed.", operation.Id);
+        var originalPath = Path.GetFullPath(operation.SourcePath);
+
+        if (undo)
+        {
+            if (File.Exists(originalPath) || Directory.Exists(originalPath))
+                return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                    $"Cannot restore because '{originalPath}' is occupied. Nothing was overwritten.", operation.Id);
+            if (recycleBinRestoreService is null)
+                return Failure("Recycle Bin restoration is unavailable on this system.", operation.Id);
+
+            var compensation = CreateOperation(FileOperationKind.RestoreFromRecycleBin, null, originalPath,
+                new RecycleBinPayload(payload.RestoreToken, payload.OriginalVolume, payload.OriginalItemId, payload.IsDirectory),
+                operation.BatchId, operation.Id);
+            await journal.AppendPreparedAsync(compensation, cancellationToken).ConfigureAwait(false);
+            var recycledIdentity = entry.State == FileOperationEventKind.Redone
+                ? ReadVerifiedIdentity(entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.Redone))
+                  ?? payload.OriginalItemId
+                : payload.OriginalItemId;
+            var restore = await recycleBinRestoreService.RestoreAsync(originalPath, recycledIdentity,
+                isDirectory: payload.IsDirectory, cancellationToken).ConfigureAwait(false);
+            if (!restore.Succeeded)
+            {
+                await AppendEventAsync(compensation, FileOperationEventKind.Failed, restore.Message, cancellationToken)
+                    .ConfigureAwait(false);
+                var outcome = restore.Outcome is RecycleBinRestoreOutcome.Failed
+                    ? FileOrganizationOutcome.Failed
+                    : FileOrganizationOutcome.Conflict;
+                return new FileOrganizationResult(outcome, restore.Message, operation.Id);
+            }
+
+            var restoredIdentity = identities.GetIdentity(originalPath);
+            var identityVerified = restoredIdentity is { Exists: true, Accessible: true } &&
+                                   restoredIdentity.Identity == recycledIdentity;
+            var contentVerified = !payload.IsDirectory && restore.RestoredContentVerified;
+            if ((!restoredIdentity.Exists || !restoredIdentity.Accessible || restoredIdentity.Identity is null) && !contentVerified ||
+                restoredIdentity.Identity != recycledIdentity && !contentVerified)
+            {
+                await AppendEventAsync(compensation, FileOperationEventKind.RecoveryRequired,
+                    "The Shell restore completed, but the original path did not verify against its recorded identity.",
+                    CancellationToken.None).ConfigureAwait(false);
+                return RecoveryRequired("Windows reported a restore, but neither file identity nor content could verify the item. Review the original path.", operation.Id);
+            }
+
+            await AppendEventAsync(compensation, FileOperationEventKind.DestinationVerified,
+                JsonSerializer.Serialize(new OperationEventDetails(contentVerified && !identityVerified
+                        ? "Recycle Bin restore content verified; the Shell-assigned file identity changed."
+                        : "Recycle Bin restore identity verified.",
+                    VerifiedDestinationIdentity: restoredIdentity.Identity)), cancellationToken).ConfigureAwait(false);
+            await AppendEventAsync(compensation, FileOperationEventKind.Completed, "{}", cancellationToken).ConfigureAwait(false);
+            await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Undone,
+                JsonSerializer.Serialize(new OperationEventDetails(contentVerified && !identityVerified
+                        ? "Recycle Bin item restored and its content fingerprint verified."
+                        : "Recycle Bin item restored and identity verified.",
+                    VerifiedDestinationIdentity: restoredIdentity.Identity)), cancellationToken).ConfigureAwait(false);
+            return Success(contentVerified && !identityVerified
+                ? "Recycle Bin item restored and its content verified; Windows assigned a new file identity."
+                : "Recycle Bin item restored and verified.", operation.Id, originalPath);
+        }
+
+        var current = identities.GetIdentity(originalPath);
+        var expectedRestoredIdentity = ReadVerifiedIdentity(entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.Undone))
+                                       ?? payload.OriginalItemId;
+        if (!current.Exists || !current.Accessible || current.Identity != expectedRestoredIdentity)
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                "Cannot redo because the restored item is missing or its identity changed.", operation.Id);
+        var isDirectory = payload.IsDirectory;
+        RejectReparsePoint(originalPath);
+        if (isDirectory) EnsureNoReparsePoints(originalPath);
+        var redoCompensation = CreateOperation(FileOperationKind.SendToRecycleBin, originalPath, null,
+            new RecycleBinPayload(OriginalVolume: payload.OriginalVolume, OriginalItemId: current.Identity,
+                IsDirectory: isDirectory),
+            operation.BatchId, operation.Id);
+        await journal.AppendPreparedAsync(redoCompensation, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (isDirectory)
+                FileSystem.DeleteDirectory(originalPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
+            else
+                FileSystem.DeleteFile(originalPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            var afterFailure = identities.GetIdentity(originalPath);
+            if (afterFailure is { Exists: true, Accessible: true } && afterFailure.Identity == current.Identity)
+            {
+                await AppendEventAsync(redoCompensation, FileOperationEventKind.Failed, exception.Message, cancellationToken)
+                    .ConfigureAwait(false);
+                return Failure($"Could not redo the Recycle Bin operation: {exception.Message}", operation.Id);
+            }
+
+            await AppendEventAsync(redoCompensation, FileOperationEventKind.RecoveryRequired,
+                $"Recycle Bin redo failed after the source path changed: {exception.Message}", CancellationToken.None)
+                .ConfigureAwait(false);
+            return RecoveryRequired("The item may have moved to the Recycle Bin, but its result could not be verified.", operation.Id);
+        }
+
+        if (identities.GetIdentity(originalPath).Exists)
+        {
+            await AppendEventAsync(redoCompensation, FileOperationEventKind.RecoveryRequired,
+                "Recycle Bin redo returned while the original path remained.", cancellationToken).ConfigureAwait(false);
+            return RecoveryRequired("The item remains at its original path. It was not permanently deleted.", operation.Id);
+        }
+        await AppendEventAsync(redoCompensation, FileOperationEventKind.Completed, "{}", cancellationToken).ConfigureAwait(false);
+        await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Redone,
+            JsonSerializer.Serialize(new OperationEventDetails("Item sent back to the Recycle Bin.",
+                VerifiedDestinationIdentity: current.Identity)), cancellationToken)
+            .ConfigureAwait(false);
+        return Success("Item sent back to the Recycle Bin.", operation.Id, originalPath);
     }
 
     private static string? GetExpectedCurrentIdentity(JournaledFileOperation entry, bool undo,
