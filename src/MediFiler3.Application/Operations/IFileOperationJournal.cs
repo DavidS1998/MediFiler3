@@ -15,6 +15,8 @@ public interface IFileOperationJournal
 
     Task<JournaledFileOperation?> GetAsync(Guid operationId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<JournaledFileOperation>> GetBatchAsync(Guid batchId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<JournaledFileOperation>> GetIncompleteAsync(CancellationToken cancellationToken = default);
 
     Task<JournaledFileOperation?> GetNextUndoAsync(CancellationToken cancellationToken = default);

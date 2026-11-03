@@ -27,6 +27,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private AppBarButton? _fitZoomButton;
     private AppBarButton? _renameFileButton;
     private AppBarButton? _deleteFileButton;
+    private AppBarButton? _undoButton;
+    private AppBarButton? _redoButton;
     private string _folderTitleText = "MediFiler3";
     private string _folderDetailsText = "No folder loaded";
     private double _zoomLevel = 1d;
@@ -38,6 +40,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public event Action? ZoomOutRequested;
     public event Action? RenameFileRequested;
     public event Action? DeleteFileRequested;
+    public event Action? UndoRequested;
+    public event Action? RedoRequested;
 
     public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
     {
@@ -206,6 +210,12 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         if (_deleteFileButton is not null) _deleteFileButton.IsEnabled = enabled;
     }
 
+    public void SetHistoryAvailability(bool canUndo, bool canRedo)
+    {
+        if (_undoButton is not null) _undoButton.IsEnabled = canUndo;
+        if (_redoButton is not null) _redoButton.IsEnabled = canRedo;
+    }
+
     public void SetFolderContext(string title, string details)
     {
         _folderTitleText = title;
@@ -306,12 +316,17 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         var middle = CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment.Center, new Thickness(8, 0, 8, 0));
         _renameFileButton = CreateButton(Symbol.Edit, "Rename current file", () => RenameFileRequested?.Invoke());
         _deleteFileButton = CreateButton(Symbol.Delete, "Send current file to Recycle Bin", () => DeleteFileRequested?.Invoke());
+        _undoButton = CreateButton(Symbol.Undo, "Undo last file operation", () => UndoRequested?.Invoke());
+        _redoButton = CreateButton(Symbol.Redo, "Redo last undone operation", () => RedoRequested?.Invoke());
         _renameFileButton.IsEnabled = _fileActionsEnabled;
         _deleteFileButton.IsEnabled = _fileActionsEnabled;
         middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));
         middle.PrimaryCommands.Add(new AppBarSeparator());
         middle.PrimaryCommands.Add(_renameFileButton);
         middle.PrimaryCommands.Add(_deleteFileButton);
+        middle.PrimaryCommands.Add(new AppBarSeparator());
+        middle.PrimaryCommands.Add(_undoButton);
+        middle.PrimaryCommands.Add(_redoButton);
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 

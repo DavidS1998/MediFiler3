@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private readonly SettingsView _settingsView;
     private readonly ILogger<MainWindow> _logger;
     private readonly NavigationSessionState _navigationState;
+    private readonly IFileOperationJournal _operationJournal;
     private bool _sourceInitialized;
 
     public Brush TitleBarBackground
@@ -68,10 +69,11 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal)
     {
         _logger = logger;
         _navigationState = navigationState;
+        _operationJournal = operationJournal;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
             thumbnailService, fileOrganizationService);
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
@@ -89,9 +91,13 @@ public partial class MainWindow : Window
         ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
         ToolbarIsland.RenameFileRequested += OnRenameFileRequested;
         ToolbarIsland.DeleteFileRequested += OnDeleteFileRequested;
+        ToolbarIsland.UndoRequested += OnUndoRequested;
+        ToolbarIsland.RedoRequested += OnRedoRequested;
         _browseView.ZoomLevelChanged += ToolbarIsland.SetZoomLevel;
+        _browseView.OperationHistoryChanged += () => _ = UpdateHistoryAvailabilityAsync();
         _navigationState.PropertyChanged += OnNavigationStateChanged;
         ToolbarIsland.SetZoomLevel(_browseView.CurrentZoomLevel);
+        _ = UpdateHistoryAvailabilityAsync();
         UpdateFileActionAvailability();
         UpdateToolbarContext();
         UpdateWindowTitle();
@@ -171,6 +177,7 @@ public partial class MainWindow : Window
             _ => _homeView
         };
         UpdateFileActionAvailability();
+        _ = UpdateHistoryAvailabilityAsync();
     }
 
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -188,6 +195,33 @@ public partial class MainWindow : Window
 
     private async void OnDeleteFileRequested() => await _browseView.SendCurrentFileToRecycleBinAsync();
 
+    private async void OnUndoRequested() => await _browseView.UndoLastOperationAsync();
+
+    private async void OnRedoRequested() => await _browseView.RedoLastOperationAsync();
+
+    private async Task UpdateHistoryAvailabilityAsync()
+    {
+        try
+        {
+            var undo = await _operationJournal.GetNextUndoAsync();
+            var redo = await _operationJournal.GetNextRedoAsync();
+            var isBrowseVisible = PageContent.Content == _browseView;
+            ToolbarIsland.SetHistoryAvailability(isBrowseVisible && IsHistoryOperationSupported(undo),
+                isBrowseVisible && IsHistoryOperationSupported(redo));
+        }
+        catch (Exception exception) when (exception is IOException or InvalidOperationException or
+                                           System.Security.SecurityException)
+        {
+            _logger.LogWarning(exception, "Could not update operation history commands.");
+            ToolbarIsland.SetHistoryAvailability(false, false);
+        }
+    }
+
+    private static bool IsHistoryOperationSupported(MediFiler3.Domain.Operations.JournaledFileOperation? entry) =>
+        entry?.Operation.Kind is MediFiler3.Domain.Operations.FileOperationKind.Move or
+            MediFiler3.Domain.Operations.FileOperationKind.Rename or
+            MediFiler3.Domain.Operations.FileOperationKind.CreateFolder;
+
     private void UpdateFileActionAvailability() =>
         ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && _navigationState.CurrentFile is not null);
 
@@ -196,7 +230,17 @@ public partial class MainWindow : Window
         if (PageContent.Content != _browseView || Keyboard.FocusedElement is TextBox or MenuItem)
             return;
 
-        if (e.Key == Key.F2)
+        if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await _browseView.UndoLastOperationAsync();
+        }
+        else if (e.Key == Key.Y && Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            e.Handled = true;
+            await _browseView.RedoLastOperationAsync();
+        }
+        else if (e.Key == Key.F2)
         {
             e.Handled = true;
             await _browseView.PromptRenameCurrentFileAsync();

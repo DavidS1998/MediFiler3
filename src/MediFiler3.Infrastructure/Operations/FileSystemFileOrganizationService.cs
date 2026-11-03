@@ -14,10 +14,17 @@ public sealed class FileSystemFileOrganizationService(
 {
     private const int PayloadVersion = 1;
 
-    public async Task<FileOrganizationResult> MoveFileAsync(
+    public Task<FileOrganizationResult> MoveFileAsync(
         string sourceFilePath,
         string destinationFolderPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        MoveFileCoreAsync(sourceFilePath, destinationFolderPath, null, cancellationToken);
+
+    private async Task<FileOrganizationResult> MoveFileCoreAsync(
+        string sourceFilePath,
+        string destinationFolderPath,
+        Guid? batchId,
+        CancellationToken cancellationToken)
     {
         var source = Path.GetFullPath(sourceFilePath);
         var folder = Path.GetFullPath(destinationFolderPath);
@@ -31,7 +38,7 @@ public sealed class FileSystemFileOrganizationService(
         var folderIdentity = RequireIdentity(folder);
         var crossVolume = GetVolume(sourceIdentity) != GetVolume(folderIdentity);
         var operation = CreateOperation(FileOperationKind.Move, source, destination,
-            new PathOperationPayload(false, crossVolume, sourceIdentity));
+            new PathOperationPayload(false, crossVolume, sourceIdentity), batchId);
         await journal.AppendPreparedAsync(operation, cancellationToken).ConfigureAwait(false);
 
         if (!crossVolume)
@@ -268,6 +275,288 @@ public sealed class FileSystemFileOrganizationService(
         return RecoveryRequired("The Recycle Bin operation did not remove the item. It was not permanently deleted.", operation.Id);
     }
 
+    public async Task<FileOrganizationBatchResult> MoveFilesAsync(IReadOnlyList<string> sourceFilePaths,
+        string destinationFolderPath, CancellationToken cancellationToken = default)
+    {
+        if (sourceFilePaths.Count == 0) return new FileOrganizationBatchResult(null, []);
+        var batchId = Guid.NewGuid();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<FileOrganizationResult>(sourceFilePaths.Count);
+        foreach (var sourcePath in sourceFilePaths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var fullPath = Path.GetFullPath(sourcePath);
+            if (!seen.Add(fullPath))
+            {
+                results.Add(new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                    $"'{fullPath}' appears more than once in this move."));
+                continue;
+            }
+
+            try
+            {
+                results.Add(await MoveFileCoreAsync(fullPath, destinationFolderPath, batchId, cancellationToken)
+                    .ConfigureAwait(false));
+            }
+            catch (Exception exception) when (IsFileSystemException(exception))
+            {
+                results.Add(Failure($"Could not move '{Path.GetFileName(fullPath)}': {exception.Message}"));
+            }
+        }
+
+        return new FileOrganizationBatchResult(batchId, results);
+    }
+
+    public Task<FileOrganizationBatchResult> UndoAsync(CancellationToken cancellationToken = default) =>
+        ApplyHistoryAsync(undo: true, cancellationToken);
+
+    public Task<FileOrganizationBatchResult> RedoAsync(CancellationToken cancellationToken = default) =>
+        ApplyHistoryAsync(undo: false, cancellationToken);
+
+    private async Task<FileOrganizationBatchResult> ApplyHistoryAsync(bool undo, CancellationToken cancellationToken)
+    {
+        var candidate = undo
+            ? await journal.GetNextUndoAsync(cancellationToken).ConfigureAwait(false)
+            : await journal.GetNextRedoAsync(cancellationToken).ConfigureAwait(false);
+        if (candidate is null)
+            return new FileOrganizationBatchResult(null, [Failure(undo ? "There is nothing to undo." : "There is nothing to redo.")]);
+
+        var entries = candidate.Operation.BatchId is { } batchId
+            ? await journal.GetBatchAsync(batchId, cancellationToken).ConfigureAwait(false)
+            : new[] { candidate };
+        var applicableStates = undo
+            ? new[] { FileOperationEventKind.Completed, FileOperationEventKind.Redone }
+            : new[] { FileOperationEventKind.Undone };
+        IEnumerable<JournaledFileOperation> ordered = entries.Where(entry => entry.Operation.CompensatesOperationId is null &&
+                applicableStates.Contains(entry.State))
+            .OrderBy(entry => entry.Events[0].Sequence);
+        if (undo) ordered = ordered.Reverse();
+
+        var results = new List<FileOrganizationResult>();
+        foreach (var entry in ordered)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                results.Add(await ApplyCompensationAsync(entry, undo, cancellationToken).ConfigureAwait(false));
+            }
+            catch (Exception exception) when (IsFileSystemException(exception) || exception is JsonException)
+            {
+                results.Add(Failure($"Could not {(undo ? "undo" : "redo")} the operation: {exception.Message}", entry.Operation.Id));
+            }
+        }
+
+        return new FileOrganizationBatchResult(candidate.Operation.BatchId, results);
+    }
+
+    private async Task<FileOrganizationResult> ApplyCompensationAsync(JournaledFileOperation entry, bool undo,
+        CancellationToken cancellationToken)
+    {
+        var operation = entry.Operation;
+        if (operation.Kind == FileOperationKind.CreateFolder)
+            return await ApplyFolderCreationCompensationAsync(entry, undo, cancellationToken).ConfigureAwait(false);
+        if (operation.Kind is not (FileOperationKind.Move or FileOperationKind.Rename) ||
+            operation.SourcePath is null || operation.DestinationPath is null)
+            return Failure($"Undo and redo are not available for {operation.Kind} operations yet.", operation.Id);
+
+        var payload = JsonSerializer.Deserialize<PathOperationPayload>(operation.PayloadJson ?? "{}")
+            ?? throw new InvalidDataException("The operation payload is missing.");
+        var current = Path.GetFullPath(undo ? operation.DestinationPath : operation.SourcePath);
+        var target = Path.GetFullPath(undo ? operation.SourcePath : operation.DestinationPath);
+        if (!PathExists(current, payload.IsDirectory))
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                $"Cannot {(undo ? "undo" : "redo")} because '{current}' is missing or has changed.", operation.Id);
+        if (PathExists(target, payload.IsDirectory) || File.Exists(target) || Directory.Exists(target))
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                $"Cannot {(undo ? "undo" : "redo")} because '{target}' already exists. Nothing was overwritten.", operation.Id);
+
+        var expectedIdentity = GetExpectedCurrentIdentity(entry, undo, payload);
+        var currentIdentity = RequireIdentity(current);
+        if (expectedIdentity is null || currentIdentity != expectedIdentity)
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                $"Cannot {(undo ? "undo" : "redo")} because '{current}' no longer has its recorded identity.", operation.Id);
+        var targetParent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(target));
+        if (targetParent is null || !Directory.Exists(targetParent))
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                $"Cannot {(undo ? "undo" : "redo")} because the original parent folder is unavailable.", operation.Id);
+        RejectReparsePoint(current);
+        if (payload.IsDirectory) EnsureNoReparsePoints(current);
+
+        var crossVolume = GetVolume(currentIdentity) != GetVolume(RequireIdentity(targetParent));
+        if (payload.IsDirectory && crossVolume)
+            return Failure("Folder undo/redo across volumes is not supported.", operation.Id);
+        var compensation = CreateOperation(operation.Kind, current, target,
+            new PathOperationPayload(payload.IsDirectory, crossVolume, currentIdentity), operation.BatchId,
+            operation.Id);
+        await journal.AppendPreparedAsync(compensation, cancellationToken).ConfigureAwait(false);
+
+        FileOrganizationResult mutation;
+        if (crossVolume)
+        {
+            mutation = await MoveFileAcrossVolumesAsync(compensation, current, target, currentIdentity, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            try
+            {
+                if (payload.IsDirectory) Directory.Move(current, target); else File.Move(current, target);
+                mutation = await VerifySameVolumeMoveAsync(compensation, current, target, currentIdentity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (IsFileSystemException(exception))
+            {
+                mutation = await ClassifyMoveFailureAsync(compensation, current, target, currentIdentity, exception,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (!mutation.Succeeded) return mutation with { OperationId = operation.Id };
+        var resultingIdentity = RequireIdentity(target);
+        await journal.AppendEventAsync(operation.Id,
+            undo ? FileOperationEventKind.Undone : FileOperationEventKind.Redone,
+            JsonSerializer.Serialize(new OperationEventDetails(
+                undo ? "Verified undo completed." : "Verified redo completed.",
+                VerifiedDestinationIdentity: resultingIdentity)), cancellationToken).ConfigureAwait(false);
+        return Success(undo ? "Operation undone and verified." : "Operation redone and verified.",
+            operation.Id, target) with { PreviousPath = current };
+    }
+
+    private async Task<FileOrganizationResult> ApplyFolderCreationCompensationAsync(JournaledFileOperation entry,
+        bool undo, CancellationToken cancellationToken)
+    {
+        var operation = entry.Operation;
+        var payload = JsonSerializer.Deserialize<CreateFolderPayload>(operation.PayloadJson ?? "{}");
+        if (payload is null || operation.DestinationPath is null)
+            return Failure("The folder creation record is incomplete and cannot be safely reversed.", operation.Id);
+
+        var folderPath = Path.GetFullPath(operation.DestinationPath);
+        if (undo)
+        {
+            if (!Directory.Exists(folderPath))
+                return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                    $"Cannot undo because '{folderPath}' is missing.", operation.Id);
+            var expectedIdentity = entry.State == FileOperationEventKind.Redone
+                ? ReadVerifiedIdentity(entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.Redone))
+                : ReadVerifiedIdentity(entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.DestinationVerified))
+                  ?? payload.CreatedFolderIdentity;
+            var currentIdentity = RequireIdentity(folderPath);
+            if (expectedIdentity is null || currentIdentity != expectedIdentity)
+                return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                    $"Cannot undo because '{folderPath}' no longer has its recorded identity.", operation.Id);
+            if (Directory.EnumerateFileSystemEntries(folderPath).Any())
+                return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                    $"Cannot undo because '{folderPath}' is no longer empty. Its contents were left untouched.", operation.Id);
+
+            var compensation = CreateOperation(FileOperationKind.SendToRecycleBin, folderPath, null,
+                new RecycleBinPayload(OriginalVolume: GetVolume(currentIdentity), OriginalItemId: currentIdentity),
+                operation.BatchId, operation.Id);
+            await journal.AppendPreparedAsync(compensation, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                FileSystem.DeleteDirectory(folderPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin,
+                    UICancelOption.ThrowException);
+            }
+            catch (Exception exception) when (IsFileSystemException(exception))
+            {
+                if (Directory.Exists(folderPath) && identities.GetIdentity(folderPath).Identity == currentIdentity)
+                {
+                    await AppendEventAsync(compensation, FileOperationEventKind.Failed, exception.Message, cancellationToken)
+                        .ConfigureAwait(false);
+                    return Failure($"Could not move the empty folder to the Recycle Bin: {exception.Message}", operation.Id);
+                }
+
+                await AppendEventAsync(compensation, FileOperationEventKind.RecoveryRequired,
+                    "The folder path changed during its Recycle Bin operation.", CancellationToken.None).ConfigureAwait(false);
+                return RecoveryRequired("The folder may have moved to the Recycle Bin, but its state could not be verified.", operation.Id);
+            }
+
+            if (Directory.Exists(folderPath))
+            {
+                await AppendEventAsync(compensation, FileOperationEventKind.RecoveryRequired,
+                    "The folder remains at its original path after the Recycle Bin request.", cancellationToken).ConfigureAwait(false);
+                return RecoveryRequired("The empty folder was not removed. It was not permanently deleted.", operation.Id);
+            }
+            await AppendEventAsync(compensation, FileOperationEventKind.Completed, "{}", cancellationToken).ConfigureAwait(false);
+            await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Undone,
+                JsonSerializer.Serialize(new OperationEventDetails("Empty folder sent to the Recycle Bin.")), cancellationToken)
+                .ConfigureAwait(false);
+            return Success("Empty folder sent to the Recycle Bin; creation undone.", operation.Id, folderPath);
+        }
+
+        var parentPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folderPath));
+        if (parentPath is null || !Directory.Exists(parentPath) || Directory.Exists(folderPath) || File.Exists(folderPath))
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                "Cannot redo because the original parent is unavailable or the folder path is occupied.", operation.Id);
+        if (payload.ParentIdentity is null || RequireIdentity(parentPath) != payload.ParentIdentity)
+            return new FileOrganizationResult(FileOrganizationOutcome.Conflict,
+                "Cannot redo because the original parent folder has changed.", operation.Id);
+
+        var createCompensation = CreateOperation(FileOperationKind.CreateFolder, null, folderPath,
+            new CreateFolderPayload(payload.ParentIdentity), operation.BatchId, operation.Id);
+        await journal.AppendPreparedAsync(createCompensation, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            CreateDirectoryExclusively(folderPath);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            await AppendEventAsync(createCompensation, FileOperationEventKind.Failed, exception.Message, cancellationToken)
+                .ConfigureAwait(false);
+            return Failure($"Could not recreate the folder: {exception.Message}", operation.Id);
+        }
+
+        var recreatedIdentity = identities.GetIdentity(folderPath);
+        if (!recreatedIdentity.Exists || !recreatedIdentity.Accessible || recreatedIdentity.Identity is null)
+        {
+            await AppendEventAsync(createCompensation, FileOperationEventKind.RecoveryRequired,
+                "Recreated folder identity could not be read.", cancellationToken).ConfigureAwait(false);
+            return RecoveryRequired("The folder was recreated, but its identity could not be verified.", operation.Id);
+        }
+        await AppendEventAsync(createCompensation, FileOperationEventKind.DestinationVerified,
+            JsonSerializer.Serialize(new OperationEventDetails("Folder recreation verified.",
+                VerifiedDestinationIdentity: recreatedIdentity.Identity)), cancellationToken).ConfigureAwait(false);
+        await AppendEventAsync(createCompensation, FileOperationEventKind.Completed, "{}", cancellationToken).ConfigureAwait(false);
+        await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Redone,
+            JsonSerializer.Serialize(new OperationEventDetails("Folder creation redone and verified.",
+                VerifiedDestinationIdentity: recreatedIdentity.Identity)), cancellationToken).ConfigureAwait(false);
+        return Success("Folder creation redone and verified.", operation.Id, folderPath);
+    }
+
+    private static string? GetExpectedCurrentIdentity(JournaledFileOperation entry, bool undo,
+        PathOperationPayload payload)
+    {
+        if (!undo)
+        {
+            var undoneEvent = entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.Undone);
+            return ReadVerifiedIdentity(undoneEvent) ?? payload.SourceIdentity;
+        }
+
+        if (entry.State == FileOperationEventKind.Redone)
+        {
+            var redoneEvent = entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.Redone);
+            return ReadVerifiedIdentity(redoneEvent) ?? payload.SourceIdentity;
+        }
+
+        var verifiedEvent = entry.Events.LastOrDefault(item => item.Kind == FileOperationEventKind.DestinationVerified);
+        return ReadVerifiedIdentity(verifiedEvent) ?? payload.SourceIdentity;
+    }
+
+    private static string? ReadVerifiedIdentity(FileOperationEvent? operationEvent)
+    {
+        if (operationEvent?.DetailsJson is null) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<OperationEventDetails>(operationEvent.DetailsJson)?.VerifiedDestinationIdentity;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool PathExists(string path, bool isDirectory) => isDirectory ? Directory.Exists(path) : File.Exists(path);
+
     private async Task<FileOrganizationResult> MoveFileAcrossVolumesAsync(
         FileOperationRecord operation,
         string source,
@@ -462,9 +751,11 @@ public sealed class FileSystemFileOrganizationService(
         FileOperationKind kind,
         string? source,
         string? destination,
-        FileOperationPayload payload) => new(
-        Guid.NewGuid(), null, kind, source, destination, DateTimeOffset.UtcNow,
-        PayloadVersion, JsonSerializer.Serialize(payload));
+        FileOperationPayload payload,
+        Guid? batchId = null,
+        Guid? compensatesOperationId = null) => new(
+        Guid.NewGuid(), batchId, kind, source, destination, DateTimeOffset.UtcNow,
+        PayloadVersion, JsonSerializer.Serialize(payload, payload.GetType()), compensatesOperationId);
 
     private string RequireIdentity(string path)
     {

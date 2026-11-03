@@ -85,6 +85,28 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
         };
     }
 
+    public async Task<IReadOnlyList<JournaledFileOperation>> GetBatchAsync(Guid batchId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id FROM FileOperations WHERE BatchId = $batch ORDER BY CreatedUtc, rowid;";
+        command.Parameters.AddWithValue("$batch", batchId.ToString("D"));
+        var ids = new List<Guid>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+        {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) ids.Add(Guid.Parse(reader.GetString(0)));
+        }
+
+        var operations = new List<JournaledFileOperation>(ids.Count);
+        foreach (var id in ids)
+        {
+            var operation = await GetAsync(id, cancellationToken).ConfigureAwait(false);
+            if (operation is not null) operations.Add(operation);
+        }
+        return operations;
+    }
+
     public async Task<IReadOnlyList<JournaledFileOperation>> GetIncompleteAsync(
         CancellationToken cancellationToken = default)
     {

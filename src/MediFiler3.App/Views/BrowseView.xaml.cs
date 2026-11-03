@@ -76,6 +76,7 @@ public partial class BrowseView : UserControl
     };
     public event Action<string>? StatusChanged;
     public event Action<FolderTreeEntry, Point>? FolderMenuRequested;
+    public event Action? OperationHistoryChanged;
     public ObservableCollection<object> CarouselItems { get; } = [];
     public double CurrentZoomLevel => _zoomLevel;
     public int CarouselNeighborCount => _carouselNeighborsOnEachSide;
@@ -162,7 +163,7 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ActivateFolderAsync(FolderTreeEntry folder)
+    private async Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null)
     {
         if (ReferenceEquals(_navigationState.ActiveFolder, folder))
         {
@@ -187,6 +188,11 @@ public partial class BrowseView : UserControl
             }
 
             _navigationState.ReplaceFiles(result.Files);
+            if (preferredFilePath is not null)
+            {
+                var preferredFile = result.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
+                if (preferredFile is not null) _navigationState.SetCurrentFile(preferredFile);
+            }
             EmptyFilesNotice.Visibility = result.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _ = RefreshCarouselAsync();
             _ = LoadCurrentImageAsync(clearCurrentImage: true);
@@ -381,6 +387,7 @@ public partial class BrowseView : UserControl
         try
         {
             var result = await _fileOrganizationService.MoveFileAsync(currentFile.FullPath, destination.Path);
+            if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
                 ShowOperationResult(result);
@@ -406,6 +413,7 @@ public partial class BrowseView : UserControl
         try
         {
             var result = await _fileOrganizationService.RenameFileAsync(currentFile.FullPath, name);
+            if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
                 ShowOperationResult(result);
@@ -437,6 +445,7 @@ public partial class BrowseView : UserControl
         try
         {
             var result = await _fileOrganizationService.SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
+            if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
                 ShowOperationResult(result);
@@ -449,6 +458,47 @@ public partial class BrowseView : UserControl
         catch (Exception exception) when (IsOperationUiException(exception))
         {
             ShowOperationNotice($"Could not send file to the Recycle Bin: {exception.Message}");
+        }
+    }
+
+    public Task UndoLastOperationAsync() => ApplyHistoryOperationAsync(undo: true);
+
+    public Task RedoLastOperationAsync() => ApplyHistoryOperationAsync(undo: false);
+
+    private async Task ApplyHistoryOperationAsync(bool undo)
+    {
+        var activePath = _navigationState.ActiveFolder?.Path;
+        try
+        {
+            var result = undo
+                ? await _fileOrganizationService.UndoAsync()
+                : await _fileOrganizationService.RedoAsync();
+            ShowOperationNotice(result.Message);
+            if (result.SucceededCount > 0) OperationHistoryChanged?.Invoke();
+            if (result.SucceededCount == 0) return;
+
+            var pathMappings = result.Results.Where(item => item.Succeeded && item.PreviousPath is not null &&
+                    item.AffectedPath is not null)
+                .Select(item => (OldPath: item.PreviousPath!, NewPath: item.AffectedPath!)).ToArray();
+            var preferredPath = activePath;
+            foreach (var mapping in pathMappings)
+                preferredPath = MapDescendantPath(preferredPath, mapping.OldPath, mapping.NewPath);
+            if (!Directory.Exists(preferredPath))
+            {
+                preferredPath = result.Results.Select(item => item.AffectedPath)
+                    .FirstOrDefault(path => path is not null && Directory.Exists(path));
+            }
+            while (!string.IsNullOrWhiteSpace(preferredPath) && !Directory.Exists(preferredPath))
+                preferredPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(preferredPath));
+            var preferredFilePath = result.Results.Select(item => item.AffectedPath)
+                .FirstOrDefault(path => path is not null && File.Exists(path) &&
+                    PathsEqual(Path.GetDirectoryName(path) ?? string.Empty, preferredPath ?? string.Empty));
+            await RefreshFolderTreeAsync(preferredPath, pathMappings: pathMappings, preferredFilePath: preferredFilePath,
+                mapPreferredFolderWithMappings: false);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Could not {(undo ? "undo" : "redo")} the operation: {exception.Message}");
         }
     }
 
@@ -477,6 +527,7 @@ public partial class BrowseView : UserControl
         string? deletedPath = null,
         string? preferredFolderPath = null)
     {
+        if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
         if (!result.Succeeded)
         {
             ShowOperationResult(result);
@@ -491,10 +542,21 @@ public partial class BrowseView : UserControl
         string? preferredFolderPath,
         string? oldPath = null,
         string? newPath = null,
-        string? deletedPath = null)
+        string? deletedPath = null,
+        IReadOnlyList<(string OldPath, string NewPath)>? pathMappings = null,
+        string? preferredFilePath = null,
+        bool mapPreferredFolderWithMappings = true)
     {
         var roots = _navigationState.Roots
-            .Select(root => oldPath is not null && PathsEqual(root.Path, oldPath) && newPath is not null ? newPath : root.Path)
+            .Select(root =>
+            {
+                var path = root.Path;
+                if (oldPath is not null && PathsEqual(path, oldPath) && newPath is not null) path = newPath;
+                if (pathMappings is not null)
+                    foreach (var mapping in pathMappings)
+                        path = MapDescendantPath(path, mapping.OldPath, mapping.NewPath) ?? path;
+                return path;
+            })
             .Where(Directory.Exists)
             .ToArray();
         try
@@ -504,13 +566,16 @@ public partial class BrowseView : UserControl
             var preferred = preferredFolderPath;
             if (oldPath is not null && newPath is not null)
                 preferred = MapDescendantPath(preferred, oldPath, newPath);
+            if (mapPreferredFolderWithMappings && pathMappings is not null)
+                foreach (var mapping in pathMappings)
+                    preferred = MapDescendantPath(preferred, mapping.OldPath, mapping.NewPath);
             if (deletedPath is not null && IsPathWithin(preferred, deletedPath))
                 preferred = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(deletedPath));
 
             var active = FindFolder(loaded.Roots, preferred) ?? loaded.Roots.FirstOrDefault();
             if (active is not null)
             {
-                await ActivateFolderAsync(active);
+                await ActivateFolderAsync(active, preferredFilePath);
             }
             else
             {

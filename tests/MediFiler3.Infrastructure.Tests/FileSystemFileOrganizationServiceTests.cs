@@ -66,6 +66,148 @@ public sealed class FileSystemFileOrganizationServiceTests
     }
 
     [Fact]
+    public async Task UndoAndRedoRenameAreVerifiedAndAppendHistoryEvents()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var source = Path.Combine(workspace.Root, "before.txt");
+        var destination = Path.Combine(workspace.Root, "after.txt");
+        await File.WriteAllTextAsync(source, "contents");
+        var renamed = await workspace.Service.RenameFileAsync(source, "after.txt");
+
+        var undone = await workspace.Service.UndoAsync();
+        Assert.True(undone.Succeeded, undone.Message);
+        Assert.Equal("contents", await File.ReadAllTextAsync(source));
+        Assert.False(File.Exists(destination));
+        Assert.Equal(FileOperationEventKind.Undone,
+            (await tempDb.Journal.GetAsync(renamed.OperationId!.Value))!.State);
+
+        var redone = await workspace.Service.RedoAsync();
+        Assert.True(redone.Succeeded, redone.Message);
+        Assert.Equal("contents", await File.ReadAllTextAsync(destination));
+        Assert.False(File.Exists(source));
+        Assert.Equal(FileOperationEventKind.Redone,
+            (await tempDb.Journal.GetAsync(renamed.OperationId.Value))!.State);
+    }
+
+    [Fact]
+    public async Task UndoRefusesToOverwriteAFileCreatedAtTheOriginalPath()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var source = Path.Combine(workspace.Root, "before.txt");
+        await File.WriteAllTextAsync(source, "original");
+        var renamed = await workspace.Service.RenameFileAsync(source, "after.txt");
+        await File.WriteAllTextAsync(source, "external");
+
+        var undone = await workspace.Service.UndoAsync();
+
+        Assert.False(undone.Succeeded);
+        Assert.Equal("original", await File.ReadAllTextAsync(Path.Combine(workspace.Root, "after.txt")));
+        Assert.Equal("external", await File.ReadAllTextAsync(source));
+        Assert.Equal(FileOperationEventKind.Completed,
+            (await tempDb.Journal.GetAsync(renamed.OperationId!.Value))!.State);
+    }
+
+    [Fact]
+    public async Task UndoAndRedoFolderMovePreserveNestedContents()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var source = Directory.CreateDirectory(Path.Combine(workspace.Root, "source")).FullName;
+        var destinationParent = Directory.CreateDirectory(Path.Combine(workspace.Root, "destination")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(source, "inside.txt"), "keep");
+        var moved = await workspace.Service.MoveFolderAsync(source, destinationParent);
+        var movedPath = Path.Combine(destinationParent, "source");
+
+        var undone = await workspace.Service.UndoAsync();
+        Assert.True(undone.Succeeded, undone.Message);
+        Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(source, "inside.txt")));
+        Assert.False(Directory.Exists(movedPath));
+
+        var redone = await workspace.Service.RedoAsync();
+        Assert.True(redone.Succeeded, redone.Message);
+        Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(movedPath, "inside.txt")));
+        Assert.False(Directory.Exists(source));
+        Assert.Equal(FileOperationEventKind.Redone,
+            (await tempDb.Journal.GetAsync(moved.OperationId!.Value))!.State);
+    }
+
+    [Fact]
+    public async Task NewFilesystemOperationAfterUndoInvalidatesRedo()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var first = Path.Combine(workspace.Root, "first.txt");
+        await File.WriteAllTextAsync(first, "one");
+        await workspace.Service.RenameFileAsync(first, "renamed.txt");
+        Assert.True((await workspace.Service.UndoAsync()).Succeeded);
+
+        var second = Path.Combine(workspace.Root, "second.txt");
+        await File.WriteAllTextAsync(second, "two");
+        var newOperation = await workspace.Service.RenameFileAsync(second, "second-renamed.txt");
+
+        Assert.Null(await tempDb.Journal.GetNextRedoAsync());
+        var redo = await workspace.Service.RedoAsync();
+        Assert.False(redo.Succeeded);
+        Assert.True(File.Exists(Path.Combine(workspace.Root, "first.txt")));
+        Assert.True(File.Exists(Path.Combine(workspace.Root, "second-renamed.txt")));
+        Assert.Equal(FileOperationEventKind.Completed,
+            (await tempDb.Journal.GetAsync(newOperation.OperationId!.Value))!.State);
+    }
+
+    [Fact]
+    public async Task UndoDoesNotRemoveContentAddedToACreatedFolder()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var created = await workspace.Service.CreateFolderAsync(workspace.Root, "created");
+        var createdPath = created.AffectedPath!;
+        await File.WriteAllTextAsync(Path.Combine(createdPath, "user-content.txt"), "keep");
+
+        var undone = await workspace.Service.UndoAsync();
+
+        Assert.False(undone.Succeeded);
+        Assert.Equal("keep", await File.ReadAllTextAsync(Path.Combine(createdPath, "user-content.txt")));
+        Assert.Equal(FileOperationEventKind.Completed,
+            (await tempDb.Journal.GetAsync(created.OperationId!.Value))!.State);
+    }
+
+    [Fact]
+    public async Task BatchMoveUndoAndRedoOperateAsOneGroupInSafeOrder()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var sourceA = Path.Combine(workspace.Root, "a.txt");
+        var sourceB = Path.Combine(workspace.Root, "b.txt");
+        var destination = Directory.CreateDirectory(Path.Combine(workspace.Root, "target")).FullName;
+        await File.WriteAllTextAsync(sourceA, "A");
+        await File.WriteAllTextAsync(sourceB, "B");
+
+        var moved = await workspace.Service.MoveFilesAsync([sourceA, sourceB], destination);
+        Assert.True(moved.Succeeded, moved.Message);
+        Assert.Equal(2, moved.Results.Count);
+        Assert.NotNull(moved.BatchId);
+        var grouped = await tempDb.Journal.GetBatchAsync(moved.BatchId!.Value);
+        Assert.Equal(2, grouped.Count);
+
+        var undone = await workspace.Service.UndoAsync();
+        Assert.True(undone.Succeeded, undone.Message);
+        Assert.Equal("A", await File.ReadAllTextAsync(sourceA));
+        Assert.Equal("B", await File.ReadAllTextAsync(sourceB));
+
+        var redone = await workspace.Service.RedoAsync();
+        Assert.True(redone.Succeeded, redone.Message);
+        Assert.Equal("A", await File.ReadAllTextAsync(Path.Combine(destination, "a.txt")));
+        Assert.Equal("B", await File.ReadAllTextAsync(Path.Combine(destination, "b.txt")));
+
+        var undoneAgain = await workspace.Service.UndoAsync();
+        Assert.True(undoneAgain.Succeeded, undoneAgain.Message);
+        Assert.Equal("A", await File.ReadAllTextAsync(sourceA));
+        Assert.Equal("B", await File.ReadAllTextAsync(sourceB));
+    }
+
+    [Fact]
     public async Task CreatesAndMovesFoldersWithoutOverwritingContents()
     {
         using var tempDb = new TemporaryDatabase();
