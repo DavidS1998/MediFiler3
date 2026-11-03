@@ -98,7 +98,7 @@ public sealed class WinUiNavigationIsland : HwndHost
             IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
             PaneTitle = "MediFiler3",
             RequestedTheme = ElementTheme.Dark,
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 14, 15, 18)),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 0, 0, 0)),
             Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 245, 245, 245))
         };
 

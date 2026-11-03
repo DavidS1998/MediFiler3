@@ -70,7 +70,7 @@
                                         <Border Background="Transparent">
                                             <TextBlock x:Name="ExpanderGlyph" Text="›" FontSize="16" FontWeight="SemiBold"
                                                        Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                                       VerticalAlignment="Center" RenderTransformOrigin="0.6,0.6">
                                                 <TextBlock.RenderTransform>
                                                     <RotateTransform Angle="0" />
                                                 </TextBlock.RenderTransform>
@@ -112,8 +112,8 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid x:Name="BrowseSurface" Background="#0B0C0E" SizeChanged="OnBrowseSurfaceSizeChanged">
-        <Grid x:Name="ImageViewport" Background="#0B0C0E" Focusable="True"
+    <Grid x:Name="BrowseSurface" Background="#000000" SizeChanged="OnBrowseSurfaceSizeChanged">
+        <Grid x:Name="ImageViewport" Background="#000000" Focusable="True"
               SizeChanged="OnImageViewportSizeChanged" MouseDown="OnImageViewportMouseDown"
               MouseUp="OnImageViewportMouseUp" MouseMove="OnImageViewportMouseMove"
               MouseRightButtonDown="OnImageViewportRightButtonDown" MouseWheel="OnImageViewportMouseWheel">
@@ -135,7 +135,7 @@
         <Border x:Name="BottomRevealTarget" Height="26" VerticalAlignment="Bottom" Background="Transparent" IsHitTestVisible="True" />
 
         <Border x:Name="FolderOverlay" Width="300" HorizontalAlignment="Left" VerticalAlignment="Stretch"
-                Background="#E6111317" BorderBrush="#55464A52" BorderThickness="0,0,1,0" Padding="8"
+                Background="#E6000000" BorderBrush="#55464A52" BorderThickness="0,0,1,0" Padding="8"
                 IsHitTestVisible="False">
             <Border.RenderTransform>
                 <TranslateTransform x:Name="FolderOverlayTransform" X="-300" />
@@ -172,17 +172,16 @@
             </Grid>
         </Border>
 
-        <Border x:Name="CarouselOverlay" Height="190" HorizontalAlignment="Stretch" VerticalAlignment="Bottom"
-                BorderThickness="0" Padding="2,4" PreviewMouseWheel="OnCarouselPreviewMouseWheel"
+        <Border x:Name="CarouselOverlay" Height="175" HorizontalAlignment="Stretch" VerticalAlignment="Bottom"
+                BorderThickness="0" PreviewMouseWheel="OnCarouselPreviewMouseWheel" Opacity="0.65"
                 IsHitTestVisible="False">
             <Border.RenderTransform>
-                <TranslateTransform x:Name="CarouselOverlayTransform" Y="142.5" />
+                <TranslateTransform x:Name="CarouselOverlayTransform" Y="153.125" />
             </Border.RenderTransform>
             <Border.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#00111317" Offset="0" />
-                    <GradientStop Color="#CC111317" Offset="0.28" />
-                    <GradientStop Color="#E6111317" Offset="1" />
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1" Opacity="0.8">
+                    <GradientStop Color="#00000000" Offset="0" />
+                    <GradientStop Color="#7F000000" Offset="1" />
                 </LinearGradientBrush>
             </Border.Background>
             <Grid>

@@ -13,13 +13,13 @@
         DragEnter="OnWindowDragEnter"
         DragOver="OnWindowDragEnter"
         Drop="OnWindowDrop"
-        Background="#08090B"
+        Background="#000000"
         Foreground="#F5F5F5">
     <Window.Resources>
         <SolidColorBrush x:Key="BorderBrush" Color="#292B31" />
     </Window.Resources>
 
-    <Grid Background="#08090B">
+    <Grid Background="#000000">
         <Grid.RowDefinitions>
             <RowDefinition Height="48" />
             <RowDefinition Height="*" />
@@ -29,14 +29,14 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#0E0F12" BorderThickness="0">
+        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#000000" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0 0 0 1">
             <interop:WinUiToolbarIsland x:Name="ToolbarIsland" Focusable="True" />
         </Border>
 
         <Border x:Name="Sidebar"
                 Grid.Row="1"
                 Grid.Column="0"
-                Background="#0E0F12"
+                Background="#000000"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="0,0,1,0">
             <interop:WinUiNavigationIsland x:Name="NavigationIsland" Focusable="True" />

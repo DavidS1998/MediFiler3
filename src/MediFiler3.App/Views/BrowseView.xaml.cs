@@ -334,7 +334,7 @@ public partial class BrowseView : UserControl
     private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var point = e.GetPosition(BrowseSurface);
-        var showFolder = point.X <= 26 || (_folderOverlayVisible && point.X <= FolderOverlay.Width);
+        var showFolder = point.X <= 32 || (_folderOverlayVisible && point.X <= FolderOverlay.Width);
         var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
                            (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
         SetFolderOverlayVisible(showFolder);
@@ -383,10 +383,16 @@ public partial class BrowseView : UserControl
         CarouselList.IsHitTestVisible = false;
         var animation = new DoubleAnimation
         {
-            To = isVisible ? 0 : CarouselOverlay.Height * 0.75,
+            To = isVisible ? 0 : CarouselOverlay.Height * 0.875,
             Duration = TimeSpan.FromMilliseconds(180),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
+        CarouselOverlay.BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            To = isVisible ? 1 : 0.65,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        });
         animation.Completed += (_, _) =>
         {
             if (_carouselOverlayVisible == isVisible)

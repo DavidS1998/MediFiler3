@@ -1,16 +1,18 @@
 # Project status
 
-**Snapshot date:** 2026-11-01  
-**Overall:** Phase 1 in progress; steps 1.1 through 1.7 are implemented. The user has reviewed the UI; the latest usability refinements build successfully and await a focused interaction check. Step 1.8 integration work remains.
+**Snapshot date:** 2026-11-03
+**Overall:** Phase 1 complete (steps 1.1–1.8). The user has reviewed the UI and reports no issues. Phase 2 has not started.
 
 ## Handover: resume here
 
-The latest requested usability fixes are implemented. Run the app to check stable carousel scrolling and clicks, tree expander states and bottom clearance, sidebar item alignment, the WinUI Settings slider, and the native CommandBar structure. The latest build succeeded using a temporary output path. No code work is currently blocked.
+Phase 1 is closed. The user has reported no UI issues after reviewing the implementation. The final Step 1.8 source review/build completed successfully; there are still no automated test projects. Begin Phase 2 by implementing and testing the persistent SQLite operation journal before adding filesystem mutations.
 
-1. Verify pointer-anchored zoom and the native CommandBar button placement, including the combined fit/percentage button.
-2. Verify carousel wheel scrolling is smooth and tiles remain clickable during recentering; check tree row/expander visuals and the 48-pixel bottom reserve.
-3. Check consistent Home/Browse sidebar placement and the Settings footer destination. Adjust the tick-marked WinUI slider through odd total counts from 1 to 25 and confirm the carousel updates immediately; the setting is currently session-only.
-4. Fix any issues found, complete Step 1.8 integration/refinement, and update this handover. Phase 2 begins with the persistent operation journal before filesystem mutations.
+1. Read `AGENTS.md`, `SPECIFICATION.md`, `ARCHITECTURE.md`, `DEVELOPMENT_PLAN.md`, and this status file before coding.
+2. Inspect the solution and current working tree. Preserve the WPF host and existing WPF/WinUI XAML Island boundary.
+3. Start with Phase 2's operation journal: define application/domain records and contracts; add SQLite through Infrastructure; support durable prepared/completed/failed states and startup detection of interrupted operations.
+4. Add tests around journal creation, persistence across reopen, state transitions, and interrupted-operation recovery before exposing broad mutation UI. No test projects exist yet.
+5. Continue with safe operation services and undo/redo only after the journal design is in place. Never silently overwrite or permanently delete; never fall back to permanent deletion if sending to the Recycle Bin fails.
+6. Build after changes and update the development plan/status as Phase 2 progresses.
 
 ## Current implementation
 
@@ -26,10 +28,10 @@ The latest requested usability fixes are implemented. Run the app to check stabl
 - For supported images, right-click toggles between file navigation and zoom interaction. In zoom mode, mouse-wheel and Numpad plus/minus zoom by 25% multiplicative steps within 20%–500%; Numpad zoom enters zoom mode automatically. Each zoom level requests a decode at the matching viewport pixel scale, capped at source resolution. Left-drag pans above fit-to-view. Zoom and pan reset when switching back to file navigation or changing files.
 - When changing files, the viewer shows the selected carousel thumbnail immediately when available, then replaces it with the full image after decoding.
 - Unsupported files use their Shell thumbnail in the main viewer when available, with an explicit thumbnail-preview label.
-- Three 48-pixel WinUI CommandBars share a full-window-width XAML Island above the sidebar and media canvas; they align left, center, and right with overflow buttons hidden. The left section shows folder context, the center Add AppBarButton loads folders, and the right section has zoom-out, reset-to-fit with the zoom percentage, and zoom-in controls. The redundant current filename and inline viewer zoom badge are removed.
+- Three 48-pixel WinUI CommandBars share a full-window-width XAML Island above the sidebar and media canvas; they align left, center, and right with overflow buttons hidden. Toolbar and sidebar backgrounds are pitch black (#000000). The left section shows folder context, the center Add AppBarButton loads folders, and the right section has zoom-out, reset-to-fit with the zoom percentage, and zoom-in controls. The redundant current filename and inline viewer zoom badge are removed.
 - The toolbar uses native CommandBar primary commands aligned left/center/right, with 32-pixel AppBarButtons and the reset-to-fit button grouped with its zoom-percent readout, following the layout pattern in the user-referenced MediFiler-V2 `MainWindow.xaml`.
 - Zoom-wheel steps preserve the image point under the mouse pointer. The dedicated Settings footer tab hosts a discrete, tick-marked WinUI slider for odd total carousel icon counts from 1 to 25, default 11; this includes the current item, advances by two per slider step, applies immediately, and is not persisted yet.
-- The tree and carousel float over the WPF media canvas with translucent backgrounds. The tree starts hidden; the carousel leaves its upper quarter peeking above the bottom edge with a transparent gradient hint. Hovering at the left/bottom edges slides the corresponding panel out; leaving the panel hides the tree or returns the carousel to its peek state.
+- The tree and carousel float over the WPF media canvas with translucent backgrounds. The tree starts hidden; the carousel initially and subsequently leaves about 22 pixels (one eighth of its height) peeking above the bottom edge at 65% opacity, with a transparent gradient hint. Hovering at the left/bottom edges slides the corresponding panel out; leaving the panel hides the tree or returns the carousel to its peek state.
 - The scrollbar is hidden while horizontal scrolling remains available, including mouse-wheel file navigation over the carousel. Leading/trailing spacers represent the omitted folder items, so global scroll offsets animate recentering across the entire folder. Adjacent navigation reuses thumbnail items and keeps async thumbnail work alive to avoid flicker. Thumbnails are center-cropped, spacing is compact, names stay on one line, and item hover/selection visuals are suppressed in favor of a pointer cursor.
 - Folder tree rows stretch across the overlay width and use full-row hover/selection backgrounds. The chevron keeps the same shape and rotates when expanded, with a transparent hit area and no default blue open state. A 48-pixel bottom reserve gives the carousel more of the screen while allowing the final tree entries to scroll clear of it.
 - Carousel hit testing is disabled only while its panel slides in or out; it remains active during horizontal recentering so clicked tile identity remains tied to the clicked file.
@@ -51,11 +53,19 @@ The latest requested usability fixes are implemented. Run the app to check stabl
 - **1.7:** arrow-key and image-viewport wheel file navigation; five same-direction boundary overscroll attempts advance to the adjacent nonempty folder in loaded tree preorder. Supported-image right-click interaction toggle, Numpad/mouse-wheel zoom from 20%–500%, and drag panning are implemented.
 - Specification and architecture decisions are recorded in `MediFiler3/SPECIFICATION.md` and `MediFiler3/ARCHITECTURE.md`.
 
-## Immediate next tasks
+## Phase 2 handover: safe file organization
 
-1. Check pointer-centered wheel zoom and native CommandBar placement and hit targets.
-2. Check that carousel scrolling no longer flickers and tile clicks navigate during recentering; check tree chevrons, 48-pixel bottom clearance, sidebar item alignment, and WinUI Settings slider count/update behavior.
-3. Recheck long-folder recentering and existing full-resolution zoom, Numpad mode entry, bounds, panning, and reset behavior.
+The first task is a persistent SQLite operation journal. The architecture calls for `Microsoft.Data.Sqlite` with explicit SQL while the schema is small. It is not currently referenced by the Infrastructure project. Keep persistence behind application-owned contracts and the SQLite implementation in Infrastructure; do not put database or filesystem work in WPF views. Persist an operation as prepared before mutation, verify the filesystem result, then persist its terminal state. Detect and recover or report operations left prepared after a crash. Build the journal and its tests before exposing broad file mutation controls.
+
+Planned operations include moving and renaming files/folders, creating folders, and sending files/folders to the Windows Recycle Bin, followed by undo/redo and interrupted-operation recovery. Resolve conflicts explicitly; never overwrite silently. A failed Recycle Bin request must not become permanent deletion. Non-empty folder deletion requires Yes/No confirmation. Recycle Bin restoration is best-effort and must report its outcome.
+
+### Suggested prompt for a new context
+
+```text
+Continue MediFiler3 from the handover in MediFiler3/PROJECT_STATUS.md. Read AGENTS.md, SPECIFICATION.md, ARCHITECTURE.md, DEVELOPMENT_PLAN.md, and PROJECT_STATUS.md first. Phase 1 is complete and the user reports no UI issues. Preserve the existing WPF host and WPF/WinUI XAML Island boundary.
+
+Begin Phase 2 with the persistent SQLite operation journal before implementing filesystem mutations. Inspect the current solution and working tree, then implement the journal contracts and Infrastructure persistence for prepared/completed/failed operations, including detection/reporting of operations left prepared after a crash. Add tests for journal creation, persistence across reopen, state transitions, and interrupted-operation recovery. Do not add broad mutation UI until journal behavior is covered. Never silently overwrite or permanently delete files; a failed Recycle Bin operation must not fall back to permanent deletion. Build after changes and update the development plan and project status.
+```
 
 ## Known caveats and risks
 
@@ -69,7 +79,7 @@ The latest requested usability fixes are implemented. Run the app to check stabl
 - The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
 - Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
 - Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
-- The user has manually reviewed the interface before the latest refinements. Carousel item reuse/click routing, the tree chevron and smaller reserve, consistent sidebar spacing, the WinUI slider host, and native CommandBar structure need focused manual verification.
+- The user has reviewed the current interface and reports no UI issues. Step 1.8 is complete.
 
 ## Settled interaction behavior and deferred settings
 
@@ -81,4 +91,4 @@ The latest requested usability fixes are implemented. Run the app to check stabl
 
 - `dotnet test MediFiler3.sln --no-build --verbosity normal` exited 0, but no test projects exist in the solution, so no tests were discovered or executed.
 - Before the latest interface revisions, the user verified the image viewer, original carousel thumbnails and transitions, Shell fallback, and file navigation as sufficient for the current stage.
-- Latest verification: `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3UiTune\` succeeded with 0 warnings and 0 errors. `git diff --check` found no whitespace errors. The latest refinements have not yet been manually verified in the running app.
+- Step 1.8 verification: user reports no UI issues. Source review found no integration break in folder loading, state propagation, toolbar context/title updates, or selection refresh. `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Step18Final\` succeeded with 0 warnings and 0 errors. `git diff --check` is clean. No automated tests exist yet.

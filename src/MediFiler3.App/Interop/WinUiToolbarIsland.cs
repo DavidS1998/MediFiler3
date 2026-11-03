@@ -112,7 +112,7 @@ public sealed class WinUiToolbarIsland : HwndHost
 
     private Grid CreateToolbarLayout()
     {
-        var background = Brush(14, 15, 18);
+        var background = Brush(0, 0, 0);
         var layout = new Grid { Background = background };
         for (var index = 0; index < 3; index++)
         {
@@ -139,12 +139,12 @@ public sealed class WinUiToolbarIsland : HwndHost
             FontSize = 12,
             Foreground = Brush(225, 227, 231),
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Margin = new Thickness(-5, 0, 4, 0)
+            Margin = new Thickness(-5, 0, 0, 0)
         };
         right.PrimaryCommands.Add(new AppBarElementContainer
         {
             Content = _zoomText,
-            Width = 42,
+            Width = 32,
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
         });
         right.PrimaryCommands.Add(CreateButton(Symbol.ZoomIn, "Zoom in", () => ZoomInRequested?.Invoke()));

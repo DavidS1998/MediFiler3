@@ -220,7 +220,7 @@ Its purpose is to provide visual context for the currently selected file and all
 - Show each carousel filename on a single line, truncating it when necessary.
 - Preserve mouse-wheel file navigation while the pointer is over the carousel.
 - Hide the horizontal scrollbar while preserving horizontal navigation.
-- In the default layout, keep the carousel mostly hidden while allowing its upper quarter to peek above the bottom edge. Use a translucent gradient at the exposed edge to hint at the carousel. Hovering near the bottom fully reveals it; leaving the carousel returns it to the peek state. Make the peek amount and reveal behavior adjustable in future settings.
+- In the default layout, keep the carousel mostly hidden while allowing about one eighth of its height to peek above the bottom edge. The initial peek is slightly transparent, with a translucent gradient at the exposed edge to hint at the carousel. Hovering near the bottom fully reveals it; leaving the carousel returns it to the peek state. Make the peek amount and reveal behavior adjustable in future settings.
 - Use generated thumbnails where possible.
 - Highlight the currently selected file.
 - Update the carousel whenever the current file changes.
@@ -402,10 +402,10 @@ The main application window should consist of a full-width toolbar above a compa
 
 Suggested layout:
 
-- Three WinUI `CommandBar` controls hosted in a XAML Island span the entire top of the WPF window, including the navigation rail column. Align them left, center, and right in a shared three-column grid, place actions in `PrimaryCommands`, use 32-pixel square `AppBarButton` controls for actions, and keep the toolbar 48 pixels tall with overflow buttons hidden.
+- Three WinUI `CommandBar` controls hosted in a XAML Island span the entire top of the WPF window, including the navigation rail column. Align them left, center, and right in a shared three-column grid, place actions in `PrimaryCommands`, use 32-pixel square `AppBarButton` controls for actions, and keep the toolbar 48 pixels tall with overflow buttons hidden. The toolbar and navigation rail backgrounds are pitch black (`#000000`).
 - Divide the toolbar into three sections. The left section shows current folder context (with breadcrumb navigation where practical) and file metadata as handlers provide it, including image resolution, video duration, and file size. The middle section contains common actions such as undo, delete, and folder loading; folder loading uses an Add/Plus icon. The right section contains contextual controls and information such as adjacent zoom-in/zoom-out buttons, a reset-to-fit AppBarButton grouped with the current zoom percentage, and future media playback controls.
 - The media viewer or gallery occupies the available canvas beneath the toolbar and beside the navigation rail.
-- The folder tree floats over the left side of the media canvas and the carousel floats over its bottom edge. Both are slightly transparent and slide in when the pointer approaches their respective edge. The tree is hidden by default. The carousel remains mostly hidden with its upper quarter peeking above the bottom edge. They return to their default hidden/peek state when the pointer leaves. A future setting may allow users to adjust the peek amount, keep either panel visible, or toggle this reveal behavior.
+- The folder tree floats over the left side of the media canvas and the carousel floats over its bottom edge. Both are slightly transparent and slide in when the pointer approaches their respective edge. The tree is hidden by default. The carousel starts mostly hidden with about one eighth of its height peeking above the bottom edge at reduced opacity. They return to their default hidden/peek state when the pointer leaves. A future setting may allow users to adjust the peek amount, keep either panel visible, or toggle this reveal behavior.
 
 The layout should adapt to different window sizes.
 
@@ -699,7 +699,7 @@ The following principles should guide implementation decisions:
 
 Implement the application incrementally.
 
-The detailed milestone breakdown and current completion status are maintained in the repository-level [DEVELOPMENT_PLAN.md](../DEVELOPMENT_PLAN.md) and [PROJECT_STATUS.md](../PROJECT_STATUS.md).
+The detailed milestone breakdown and current completion status are maintained in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 Do not attempt to implement all features simultaneously.
 
