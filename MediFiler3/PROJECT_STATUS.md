@@ -1,20 +1,24 @@
 # Project status
 
 **Snapshot date:** 2026-11-03
-**Overall:** Phase 1 complete (steps 1.1–1.8). The user has reviewed the UI and reports no issues. Phase 2 has not started.
+**Overall:** Phase 1 complete (steps 1.1–1.8), with no UI issues reported by the user. Phase 2.1–2.4 are complete. Step 2.5 (verified undo/redo and batching) is next.
 
 ## Handover: resume here
 
-Phase 1 is closed. The user has reported no UI issues after reviewing the implementation. The final Step 1.8 source review/build completed successfully; there are still no automated test projects. Begin Phase 2 by implementing and testing the persistent SQLite operation journal before adding filesystem mutations.
+Phase 1 is closed. The append-only SQLite journal and startup recovery assessment (2.1–2.2), journal tests (2.3), and safe filesystem operations plus UI (2.4) are implemented. Continue with Step 2.5: verified undo/redo, batch grouping, UI refresh/results, and filesystem-operation coverage.
 
 1. Read `AGENTS.md`, `SPECIFICATION.md`, `ARCHITECTURE.md`, `DEVELOPMENT_PLAN.md`, and this status file before coding.
 2. Inspect the solution and current working tree. Preserve the WPF host and existing WPF/WinUI XAML Island boundary.
-3. Start with Phase 2's operation journal: define application/domain records and contracts; add SQLite through Infrastructure; support durable prepared/completed/failed states and startup detection of interrupted operations.
-4. Add tests around journal creation, persistence across reopen, state transitions, and interrupted-operation recovery before exposing broad mutation UI. No test projects exist yet.
-5. Continue with safe operation services and undo/redo only after the journal design is in place. Never silently overwrite or permanently delete; never fall back to permanent deletion if sending to the Recycle Bin fails.
-6. Build after changes and update the development plan/status as Phase 2 progresses.
+3. Keep journal changes append-only and recovery conservative; ambiguous operations must not be retried automatically.
+4. Implement verified undo/redo and batch grouping in Step 2.5, including safe compensation checks, UI refresh/results, and tests. Never silently overwrite or permanently delete; never fall back to permanent deletion if sending to the Recycle Bin fails.
+5. Build after changes and update the development plan/status as Phase 2 progresses.
 
 ## Current implementation
+
+- Phase 2.1 adds operation records and the application-owned journal contract. Infrastructure owns an idempotently initialized, versioned SQLite database in LocalAppData, initialized by the host before the main window.
+- Phase 2.2 replaces mutable status rows with immutable operation intents and append-only events, migrates the earlier schema, stores versioned typed payload JSON, tracks compensating-operation links, and exposes undo/redo candidates. User operations invalidate outstanding redo candidates transactionally. SQLite uses WAL plus FULL synchronous durability.
+- Startup recovery inspects incomplete operations. Same-volume moves/renames use recorded Windows file identities; cross-volume moves use a verified destination identity plus source absence. Folder creation is only auto-completed when a recorded created-folder identity matches. Recycle Bin and insufficient-evidence cases become `RecoveryRequired`; the service logs each outcome and never retries an ambiguous operation.
+- Step 2.3 adds `MediFiler3.Infrastructure.Tests` with isolated temporary SQLite databases. Coverage includes create/reopen, schema migrations from versions 1 and 2, append-only transitions, redo invalidation, undo/redo candidate selection, same- and cross-volume recovery evidence, folder/Recycle Bin ambiguity, Windows file identity lookup, and recovery-service outcome persistence/retry avoidance. `SqliteDatabase` accepts an explicit database path for isolation; the production default remains in LocalAppData.
 
 - .NET 10 / C# WPF application targeting `net10.0-windows10.0.19041.0`; product target is 64-bit Windows 11.
 - Solution projects: `MediFiler3.App`, `MediFiler3.Application`, `MediFiler3.Domain`, and `MediFiler3.Infrastructure` under `src/`.
@@ -40,7 +44,7 @@ Phase 1 is closed. The user has reported no UI issues after reviewing the implem
 - WPF retains the native Windows title bar. `TitleBarBackground` and `TitleBarForeground` dependency properties apply runtime caption/text colors through DWM; defaults are black and white.
 - App project references `Microsoft.WindowsAppSDK` 2.6.4 and is configured unpackaged/framework-dependent with automatic bootstrap initialization. The Windows App Runtime 2.6.4 must be installed on deployment computers.
 - WinUI initialization, resources, message pre-translation, island sizing/focus, and shutdown are handled in `src/MediFiler3.App/Interop/`.
-- Filesystem mutations have not yet been implemented. No test projects or automated tests currently exist in the solution.
+- Step 2.5 remains: verified undo/redo and batching. Recycle Bin restoration is best-effort and not yet implemented. The folder menu and toolbar have been build-verified but have not received a separate interactive UI review.
 
 ## Completed work
 
@@ -55,16 +59,16 @@ Phase 1 is closed. The user has reported no UI issues after reviewing the implem
 
 ## Phase 2 handover: safe file organization
 
-The first task is a persistent SQLite operation journal. The architecture calls for `Microsoft.Data.Sqlite` with explicit SQL while the schema is small. It is not currently referenced by the Infrastructure project. Keep persistence behind application-owned contracts and the SQLite implementation in Infrastructure; do not put database or filesystem work in WPF views. Persist an operation as prepared before mutation, verify the filesystem result, then persist its terminal state. Detect and recover or report operations left prepared after a crash. Build the journal and its tests before exposing broad file mutation controls.
+The append-only SQLite journal and startup assessment, journal tests, and Step 2.4 filesystem operations and UI are in place. Use explicit SQL while the schema remains small. Keep persistence and filesystem inspection behind application contracts and Infrastructure; do not put database or filesystem work in WPF views. Journal reopen/migration, event transitions, redo invalidation, and recovery evidence are covered by automated tests.
 
-Planned operations include moving and renaming files/folders, creating folders, and sending files/folders to the Windows Recycle Bin, followed by undo/redo and interrupted-operation recovery. Resolve conflicts explicitly; never overwrite silently. A failed Recycle Bin request must not become permanent deletion. Non-empty folder deletion requires Yes/No confirmation. Recycle Bin restoration is best-effort and must report its outcome.
+Step 2.4 implements moving/renaming files and folders, creating folders, and sending files/folders to the Windows Recycle Bin. Step 2.5 will add verified undo/redo and batching. Resolve conflicts explicitly; never overwrite silently. A failed Recycle Bin request must not become permanent deletion. Non-empty folder deletion requires Yes/No confirmation. Recycle Bin restoration is best-effort and must report its outcome.
 
 ### Suggested prompt for a new context
 
 ```text
 Continue MediFiler3 from the handover in MediFiler3/PROJECT_STATUS.md. Read AGENTS.md, SPECIFICATION.md, ARCHITECTURE.md, DEVELOPMENT_PLAN.md, and PROJECT_STATUS.md first. Phase 1 is complete and the user reports no UI issues. Preserve the existing WPF host and WPF/WinUI XAML Island boundary.
 
-Begin Phase 2 with the persistent SQLite operation journal before implementing filesystem mutations. Inspect the current solution and working tree, then implement the journal contracts and Infrastructure persistence for prepared/completed/failed operations, including detection/reporting of operations left prepared after a crash. Add tests for journal creation, persistence across reopen, state transitions, and interrupted-operation recovery. Do not add broad mutation UI until journal behavior is covered. Never silently overwrite or permanently delete files; a failed Recycle Bin operation must not fall back to permanent deletion. Build after changes and update the development plan and project status.
+Phase 2.1–2.4 established and tested an append-only SQLite journal, conservative recovery assessment, safe file/folder operations, and folder menu UI. Implement Step 2.5: verified undo/redo and batch grouping, with tests. Ambiguous recovery states must remain flagged and must not be retried automatically. Never silently overwrite or permanently delete files; a failed Recycle Bin operation must not fall back to permanent deletion. Build after changes and update the development plan and project status.
 ```
 
 ## Known caveats and risks
@@ -89,6 +93,11 @@ Begin Phase 2 with the persistent SQLite operation journal before implementing f
 
 ## Verification record
 
-- `dotnet test MediFiler3.sln --no-build --verbosity normal` exited 0, but no test projects exist in the solution, so no tests were discovered or executed.
+- Step 2.3 verification: `dotnet test MediFiler3.sln --verbosity minimal -m:1` passed all 18 tests. `dotnet build MediFiler3.sln --verbosity minimal -m:1` succeeded with 0 warnings and 0 errors. `git diff --check` is clean.
 - Before the latest interface revisions, the user verified the image viewer, original carousel thumbnails and transitions, Shell fallback, and file navigation as sufficient for the current stage.
 - Step 1.8 verification: user reports no UI issues. Source review found no integration break in folder loading, state propagation, toolbar context/title updates, or selection refresh. `dotnet build MediFiler3.sln -p:BaseOutputPath=C:\Users\xofas\AppData\Local\Temp\MediFiler3Step18Final\` succeeded with 0 warnings and 0 errors. `git diff --check` is clean. No automated tests exist yet.
+
+- Step 2.4 adds journal-backed file moves/renames, folder creation/moves/renames, and Windows Recycle Bin actions. Existing destinations are conflicts and are never overwritten. Cross-volume file moves use a temporary copy with content verification and source revalidation before source removal; cross-volume folder moves are safely rejected. Folder operations reject reparse points. Non-empty folder deletion requires explicit confirmation, and the WinUI confirmation is now implemented. Failed Recycle Bin requests never fall back to permanent deletion.
+- The Browse tree has a right-aligned folder menu button for create, rename, move, Recycle Bin, refresh, Explorer, and properties actions. The ellipsis button opens a WinUI `MenuFlyout` from the existing toolbar XAML Island. File/folder rename, New Folder, and non-empty folder deletion confirmation use standalone WinUI windows with no nested ContentDialog. Move Folder To uses the basic native folder picker, initially showing the source folder's parent. The existing Add Folders workflow retains its system multi-folder picker; read warnings appear in the Browse status notice. The tree panel has a session-only Pin/Unpin control with inverted selected colors and glyphs rotated 90 degrees counterclockwise; persist its state with the future settings store. Left-click remains navigation; right-click moves the current file to the clicked folder. The WinUI toolbar Island exposes current-file rename and Recycle Bin actions; F2, Delete, and Ctrl+Shift+N provide keyboard shortcuts. Operation outcomes appear in Browse.
+- Step 2.4 filesystem tests cover same-volume move/rename, content preservation, conflicts, folder creation/move, nested-move rejection, confirmation requirements, and cross-volume folder-move refusal where another volume is available.
+- Step 2.4 verification: dotnet test MediFiler3.sln --verbosity minimal -m:1 passed all 25 tests. dotnet build MediFiler3.sln --verbosity minimal -m:1 succeeded with 0 warnings and 0 errors. git diff --check is clean. Recycle Bin shell behavior and the new menu's interactive appearance have not been manually exercised in this verification pass.

@@ -6,7 +6,10 @@ using MediFiler3.Infrastructure.Folders;
 using MediFiler3.Infrastructure.Files;
 using MediFiler3.Application.Files;
 using MediFiler3.Application.Navigation;
+using MediFiler3.Application.Operations;
 using MediFiler3.Services;
+using MediFiler3.Infrastructure.Persistence;
+using MediFiler3.Infrastructure.Operations;
 using System.Windows;
 
 namespace MediFiler3;
@@ -25,6 +28,14 @@ public partial class App : System.Windows.Application
             _host = Host.CreateDefaultBuilder(e.Args)
                 .ConfigureServices(services =>
                 {
+                    services.AddSingleton<SqliteDatabase>();
+                    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SqliteDatabase>());
+                    services.AddSingleton<IFileOperationJournal, SqliteFileOperationJournal>();
+                    services.AddSingleton<IFileOrganizationService, FileSystemFileOrganizationService>();
+                    services.AddSingleton<IFileIdentityProvider, WindowsFileIdentityProvider>();
+                    services.AddSingleton<IFileOperationRecoveryInspector, FileSystemOperationRecoveryInspector>();
+                    services.AddSingleton<OperationJournalRecoveryService>();
+                    services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<OperationJournalRecoveryService>());
                     services.AddSingleton<MediFiler3.Application.Folders.IFolderTreeService, FileSystemFolderTreeService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();

@@ -5,11 +5,14 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Interop;
+using System.Windows.Controls;
+using System.Windows.Input;
 using Microsoft.Win32;
 using MediFiler3.Application.Folders;
 using System.IO;
 using MediFiler3.Application.Files;
 using MediFiler3.Application.Navigation;
+using MediFiler3.Application.Operations;
 using MediFiler3.Services;
 
 namespace MediFiler3;
@@ -64,23 +67,32 @@ public partial class MainWindow : Window
     }
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
-        NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService)
+        NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
+        IFileOrganizationService fileOrganizationService)
     {
         _logger = logger;
         _navigationState = navigationState;
-        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder, thumbnailService);
+        _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
+            thumbnailService, fileOrganizationService);
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
         _settingsView.CarouselNeighborCountChanged += _browseView.SetCarouselNeighborCount;
         InitializeComponent();
+        _browseView.DialogService = ToolbarIsland;
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
         ToolbarIsland.LoadFoldersRequested += OnLoadFoldersRequested;
+        _browseView.FolderMenuRequested += (folder, location) =>
+            ToolbarIsland.ShowFolderMenu(location, folder.Name,
+                action => _browseView.ExecuteFolderMenuActionAsync(folder, action));
         ToolbarIsland.ResetZoomRequested += _browseView.ResetZoomToFit;
         ToolbarIsland.ZoomInRequested += _browseView.ZoomInFromToolbar;
         ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
+        ToolbarIsland.RenameFileRequested += OnRenameFileRequested;
+        ToolbarIsland.DeleteFileRequested += OnDeleteFileRequested;
         _browseView.ZoomLevelChanged += ToolbarIsland.SetZoomLevel;
         _navigationState.PropertyChanged += OnNavigationStateChanged;
         ToolbarIsland.SetZoomLevel(_browseView.CurrentZoomLevel);
+        UpdateFileActionAvailability();
         UpdateToolbarContext();
         UpdateWindowTitle();
         SourceInitialized += OnWindowSourceInitialized;
@@ -158,6 +170,7 @@ public partial class MainWindow : Window
             "Settings" => _settingsView,
             _ => _homeView
         };
+        UpdateFileActionAvailability();
     }
 
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -165,8 +178,38 @@ public partial class MainWindow : Window
         if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files) or
             nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.CurrentFile))
         {
+            UpdateFileActionAvailability();
             UpdateWindowTitle();
             UpdateToolbarContext();
+        }
+    }
+
+    private async void OnRenameFileRequested() => await _browseView.PromptRenameCurrentFileAsync();
+
+    private async void OnDeleteFileRequested() => await _browseView.SendCurrentFileToRecycleBinAsync();
+
+    private void UpdateFileActionAvailability() =>
+        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && _navigationState.CurrentFile is not null);
+
+    private async void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (PageContent.Content != _browseView || Keyboard.FocusedElement is TextBox or MenuItem)
+            return;
+
+        if (e.Key == Key.F2)
+        {
+            e.Handled = true;
+            await _browseView.PromptRenameCurrentFileAsync();
+        }
+        else if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            await _browseView.SendCurrentFileToRecycleBinAsync();
+        }
+        else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            e.Handled = true;
+            await _browseView.CreateSubfolderInActiveFolderAsync();
         }
     }
 
@@ -191,17 +234,8 @@ public partial class MainWindow : Window
 
     private async Task OnLoadFoldersClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Load folders",
-            Multiselect = true
-        };
-
-        if (dialog.ShowDialog(this) != true)
-        {
-            return;
-        }
-
+        var dialog = new OpenFolderDialog { Title = "Load folders", Multiselect = true };
+        if (dialog.ShowDialog(this) != true) return;
         await LoadFolderPathsAsync(dialog.FolderNames);
     }
 

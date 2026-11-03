@@ -244,6 +244,8 @@ Left-clicking a folder should load that folder's contents into the main viewer.
 
 Folder rows should provide a full-width click and hover/selection area so the tree remains easy to use when the folder name is short. Reserve about 48 pixels at the bottom of the tree viewport so its last entries can scroll clear of the floating carousel without sacrificing excessive tree height.
 
+Each folder row should include a menu button aligned to its right edge. Activating this button opens that folder's WinUI context menu for folder-management actions. Rename file/folder, new-folder naming, and non-empty folder deletion confirmation use standalone WinUI dialogs without a nested `ContentDialog`. Move-folder destination selection uses the basic native folder picker, initially showing the source folder's parent. Keep the row's left-click behavior for folder navigation and its right-click behavior for moving the currently displayed file to that destination folder; the menu button provides a distinct target for folder interactions so those gestures do not conflict. The folder panel has a top-right Pin/Unpin button using the matching Windows UI icons; pinning prevents automatic hiding and reverses the selected button colors while keeping the icons unchanged. Keep the pin state for the current session and persist it with the future settings store.
+
 The currently selected folder should be visually highlighted.
 
 The tree should support:

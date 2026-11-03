@@ -8,6 +8,7 @@ namespace MediFiler3.Views;
 public sealed class CarouselThumbnailItem : INotifyPropertyChanged
 {
     private BitmapSource? _thumbnail;
+    private BitmapSource? _uncroppedThumbnail;
     private bool _isCurrent;
 
     public FileEntry File { get; }
@@ -29,6 +30,17 @@ public sealed class CarouselThumbnailItem : INotifyPropertyChanged
     }
     public bool IsSpacer => false;
     public Task<BitmapSource?>? ThumbnailTask { get; set; }
+    public BitmapSource? UncroppedThumbnail
+    {
+        get => _uncroppedThumbnail;
+        set
+        {
+            if (ReferenceEquals(_uncroppedThumbnail, value)) return;
+            _uncroppedThumbnail = value;
+            OnPropertyChanged();
+        }
+    }
+
     public BitmapSource? Thumbnail
     {
         get => _thumbnail;

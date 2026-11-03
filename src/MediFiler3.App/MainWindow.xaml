@@ -13,6 +13,7 @@
         DragEnter="OnWindowDragEnter"
         DragOver="OnWindowDragEnter"
         Drop="OnWindowDrop"
+        PreviewKeyDown="OnMainWindowPreviewKeyDown"
         Background="#000000"
         Foreground="#F5F5F5">
     <Window.Resources>

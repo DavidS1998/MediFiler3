@@ -1,8 +1,10 @@
-﻿using Microsoft.UI;
+using Microsoft.UI;
 using Microsoft.UI.Content;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Hosting;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -15,21 +17,194 @@ using GridUnitType = Microsoft.UI.Xaml.GridUnitType;
 
 namespace MediFiler3.Interop;
 
-public sealed class WinUiToolbarIsland : HwndHost
+public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 {
     private DesktopWindowXamlSource? _xamlSource;
     private TextBlock? _folderTitle;
     private TextBlock? _folderDetails;
     private TextBlock? _zoomText;
+    private Grid? _rootElement;
     private AppBarButton? _fitZoomButton;
+    private AppBarButton? _renameFileButton;
+    private AppBarButton? _deleteFileButton;
     private string _folderTitleText = "MediFiler3";
     private string _folderDetailsText = "No folder loaded";
     private double _zoomLevel = 1d;
+    private bool _fileActionsEnabled;
 
     public event Action? LoadFoldersRequested;
     public event Action? ResetZoomRequested;
     public event Action? ZoomInRequested;
     public event Action? ZoomOutRequested;
+    public event Action? RenameFileRequested;
+    public event Action? DeleteFileRequested;
+
+    public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
+    {
+        var owner = System.Windows.Window.GetWindow(this);
+        if (owner is null) return Task.FromResult<string?>(null);
+
+        var window = new System.Windows.Window
+        {
+            Title = title,
+            Width = 480,
+            Height = 220,
+            ResizeMode = System.Windows.ResizeMode.NoResize,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+            Owner = owner,
+            ShowInTaskbar = false,
+            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 0))
+        };
+        var host = new WinUiDialogIsland();
+        window.Content = host;
+        string? result = null;
+        window.ContentRendered += (_, _) =>
+        {
+            var content = new StackPanel
+            {
+                Spacing = 14,
+                VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
+            };
+            content.Children.Add(new TextBlock
+            {
+                Text = message,
+                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
+                Foreground = Brush(231, 232, 234)
+            });
+            var input = new Microsoft.UI.Xaml.Controls.TextBox
+            {
+                Text = initialValue,
+                MinWidth = 380,
+                SelectionStart = initialValue.Length
+            };
+            content.Children.Add(input);
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+                Spacing = 8
+            };
+            var cancel = new Microsoft.UI.Xaml.Controls.Button { Content = "Cancel", MinWidth = 90 };
+            cancel.Click += (_, _) => window.Close();
+            var confirm = new Microsoft.UI.Xaml.Controls.Button
+            {
+                Content = primaryAction,
+                MinWidth = 90
+            };
+            confirm.Click += (_, _) =>
+            {
+                result = input.Text.Trim();
+                window.Close();
+            };
+            input.KeyDown += (_, args) =>
+            {
+                if (args.Key != Windows.System.VirtualKey.Enter) return;
+                result = input.Text.Trim();
+                window.Close();
+                args.Handled = true;
+            };
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(confirm);
+            content.Children.Add(buttons);
+            host.RootElement!.Children.Add(new Border
+            {
+                Padding = new Microsoft.UI.Xaml.Thickness(24),
+                Child = content
+            });
+            input.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+            input.SelectAll();
+        };
+        window.ShowDialog();
+        return Task.FromResult(result);
+    }
+
+    public Task<bool> ConfirmAsync(string title, string message, string confirmAction)
+    {
+        var owner = System.Windows.Window.GetWindow(this);
+        if (owner is null) return Task.FromResult(false);
+
+        var window = CreateDialogWindow(owner, title, 540, 240);
+        var host = new WinUiDialogIsland();
+        window.Content = host;
+        var confirmed = false;
+        window.ContentRendered += (_, _) =>
+        {
+            var content = new StackPanel { Spacing = 18, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
+            content.Children.Add(new TextBlock
+            {
+                Text = message,
+                TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
+                Foreground = Brush(231, 232, 234)
+            });
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+                Spacing = 8
+            };
+            var cancel = new Microsoft.UI.Xaml.Controls.Button { Content = "Cancel", MinWidth = 100 };
+            cancel.Click += (_, _) => window.Close();
+            var confirm = new Microsoft.UI.Xaml.Controls.Button { Content = confirmAction, MinWidth = 150 };
+            confirm.Click += (_, _) =>
+            {
+                confirmed = true;
+                window.Close();
+            };
+            buttons.Children.Add(cancel);
+            buttons.Children.Add(confirm);
+            content.Children.Add(buttons);
+            host.RootElement!.Children.Add(new Border
+            {
+                Padding = new Microsoft.UI.Xaml.Thickness(24),
+                Child = content
+            });
+        };
+        window.ShowDialog();
+        return Task.FromResult(confirmed);
+    }
+
+    private static System.Windows.Window CreateDialogWindow(System.Windows.Window owner, string title, double width, double height) =>
+        new()
+        {
+            Title = title,
+            Width = width,
+            Height = height,
+            ResizeMode = System.Windows.ResizeMode.NoResize,
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
+            Owner = owner,
+            ShowInTaskbar = false,
+            Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 0))
+        };
+
+    public void ShowFolderMenu(System.Windows.Point screenPoint, string folderName, Func<string, Task> actionHandler)
+    {
+        if (_xamlSource is null || _rootElement is null) return;
+
+        var islandHandle = Win32Interop.GetWindowFromWindowId(_xamlSource.SiteBridge.WindowId);
+        if (!GetWindowRect(islandHandle, out var islandRect)) return;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var position = new Windows.Foundation.Point(
+            (screenPoint.X - islandRect.Left) / dpi.DpiScaleX,
+            (screenPoint.Y - islandRect.Top) / dpi.DpiScaleY);
+
+        var menu = new MenuFlyout();
+        AddFolderMenuItem(menu, "New folder", "new-folder", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Rename folder", "rename-folder", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Move folder to…", "move-folder", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Send folder to Recycle Bin", "recycle-folder", folderName, actionHandler);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        AddFolderMenuItem(menu, "Refresh tree", "refresh-tree", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Open in File Explorer", "open-explorer", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Properties", "properties", folderName, actionHandler);
+        menu.ShowAt(_rootElement, new FlyoutShowOptions { Position = position, Placement = FlyoutPlacementMode.Bottom });
+    }
+
+    public void SetFileActionsEnabled(bool enabled)
+    {
+        _fileActionsEnabled = enabled;
+        if (_renameFileButton is not null) _renameFileButton.IsEnabled = enabled;
+        if (_deleteFileButton is not null) _deleteFileButton.IsEnabled = enabled;
+    }
 
     public void SetFolderContext(string title, string details)
     {
@@ -81,6 +256,9 @@ public sealed class WinUiToolbarIsland : HwndHost
         _folderDetails = null;
         _zoomText = null;
         _fitZoomButton = null;
+        _renameFileButton = null;
+        _deleteFileButton = null;
+        _rootElement = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -113,7 +291,8 @@ public sealed class WinUiToolbarIsland : HwndHost
     private Grid CreateToolbarLayout()
     {
         var background = Brush(0, 0, 0);
-        var layout = new Grid { Background = background };
+        var layout = new Grid { Background = background, RequestedTheme = ElementTheme.Dark };
+        _rootElement = layout;
         for (var index = 0; index < 3; index++)
         {
             layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -125,7 +304,14 @@ public sealed class WinUiToolbarIsland : HwndHost
         layout.Children.Add(left);
 
         var middle = CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment.Center, new Thickness(8, 0, 8, 0));
-        middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Load folders", () => LoadFoldersRequested?.Invoke()));
+        _renameFileButton = CreateButton(Symbol.Edit, "Rename current file", () => RenameFileRequested?.Invoke());
+        _deleteFileButton = CreateButton(Symbol.Delete, "Send current file to Recycle Bin", () => DeleteFileRequested?.Invoke());
+        _renameFileButton.IsEnabled = _fileActionsEnabled;
+        _deleteFileButton.IsEnabled = _fileActionsEnabled;
+        middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));
+        middle.PrimaryCommands.Add(new AppBarSeparator());
+        middle.PrimaryCommands.Add(_renameFileButton);
+        middle.PrimaryCommands.Add(_deleteFileButton);
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 
@@ -213,6 +399,28 @@ public sealed class WinUiToolbarIsland : HwndHost
         ToolTipService.SetToolTip(button, new ToolTip { Content = accessibleName });
         button.Click += (_, _) => onClick();
         return button;
+    }
+
+    private void AddFolderMenuItem(MenuFlyout menu, string label, string action, string folderName,
+        Func<string, Task> actionHandler)
+    {
+        var item = new MenuFlyoutItem { Text = label };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, $"{label}: {folderName}");
+        item.Click += async (_, _) => await actionHandler(action);
+        menu.Items.Add(item);
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 
     private static Microsoft.UI.Xaml.Media.SolidColorBrush Brush(byte red, byte green, byte blue) =>

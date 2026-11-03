@@ -25,11 +25,21 @@ Establish the persistent SQLite operation journal before implementing broad file
 
 Recommended order:
 
+| Step | Deliverable | Status |
+|---|---|---|
+| 2.1 | Define operation records/states and journal contract; add SQLite in Infrastructure and initialize/reopen a versioned database safely | Complete |
+| 2.2 | Persist append-only journal events and inspect/report prepared operations left by a crash | Complete |
+| 2.3 | Add journal/recovery tests before filesystem mutations | Complete |
+| 2.4 | Add safe filesystem operation services, conflict handling, and folder/file actions in the UI | Complete |
+| 2.5 | Add verified undo/redo, batch grouping, UI refresh/results, and filesystem-operation coverage | Not started |
+
+Implementation order:
+
 1. Define operation records, journal states, and application-owned journal contracts. Add the SQLite dependency in Infrastructure and create/reopen the database safely.
 2. Implement journal persistence for prepared, completed, failed, and interrupted operations. Persist intent before a filesystem mutation and verify the result before marking it complete. Add startup recovery/reporting for prepared operations left by a crash.
-3. Add filesystem operation services behind application contracts, with conflict checks and safe move/rename/create/Recycle Bin behavior. Do not allow permanent-delete fallback when Recycle Bin operations fail.
-4. Add undo/redo as verified compensating operations, batch grouping, UI refresh, and user-facing conflict/error results.
-5. Add automated domain/application tests and isolated temporary-directory filesystem tests for success, conflicts, failures, restart recovery, undo/redo, and batches. Build and update project status as each step lands.
+3. Add automated tests for journal creation/reopen/migration, event transitions, redo invalidation, and recovery classifications before filesystem mutations.
+4. Add filesystem operation services behind application contracts, with conflict checks and safe move/rename/create/Recycle Bin behavior. Do not allow permanent-delete fallback when Recycle Bin operations fail. **Complete:** file/folder move and rename, folder creation, Recycle Bin actions, and UI integration are implemented; cross-volume folder moves are rejected safely.
+5. Add undo/redo as verified compensating operations, batch grouping, UI refresh, user-facing conflict/error results, and isolated temporary-directory filesystem tests. Build and update project status as each step lands.
 
 ## Phase 3 — Media and text handlers
 

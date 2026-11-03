@@ -6,12 +6,17 @@ using System.Runtime.InteropServices;
 using MediFiler3.Application.Files;
 using MediFiler3.Application.Folders;
 using MediFiler3.Application.Navigation;
+using MediFiler3.Application.Operations;
 using MediFiler3.Domain.Files;
+using MediFiler3.Interop;
 using MediFiler3.Services;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Windows.Media.Animation;
+using System.Windows.Controls.Primitives;
+using System.Diagnostics;
+using System.Windows.Input;
 
 namespace MediFiler3.Views;
 
@@ -22,6 +27,8 @@ public partial class BrowseView : UserControl
     private readonly NavigationSessionState _navigationState;
     private readonly WicImageDecoder _imageDecoder;
     private readonly IThumbnailService _thumbnailService;
+    private readonly IFileOrganizationService _fileOrganizationService;
+    public IWinUiDialogService? DialogService { get; set; }
     private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _fileLoadCancellation;
     private CancellationTokenSource? _imageLoadCancellation;
@@ -36,6 +43,7 @@ public partial class BrowseView : UserControl
     private System.Windows.Point _lastPanPoint;
     private double _zoomLevel = 1d;
     private bool _folderOverlayVisible;
+    private bool _folderOverlayPinned;
     private bool _carouselOverlayVisible;
     private bool _carouselPanelAnimating;
     private CarouselSpacerItem? _carouselLeadingSpacer;
@@ -57,6 +65,7 @@ public partial class BrowseView : UserControl
     private readonly ScaleTransform _zoomTransform = new(1d, 1d);
     private readonly TranslateTransform _panTransform = new();
     private readonly DispatcherTimer _resizeTimer = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private readonly DispatcherTimer _operationNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private const int OverscrollAttemptsToChangeFolder = 5;
     private const double MinimumZoom = 0.2d;
     private const double MaximumZoom = 5d;
@@ -66,19 +75,21 @@ public partial class BrowseView : UserControl
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"
     };
     public event Action<string>? StatusChanged;
+    public event Action<FolderTreeEntry, Point>? FolderMenuRequested;
     public ObservableCollection<object> CarouselItems { get; } = [];
     public double CurrentZoomLevel => _zoomLevel;
     public int CarouselNeighborCount => _carouselNeighborsOnEachSide;
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
-        WicImageDecoder imageDecoder, IThumbnailService thumbnailService)
+        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService)
     {
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
         _navigationState = navigationState;
         _imageDecoder = imageDecoder;
         _thumbnailService = thumbnailService;
+        _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
         ImageViewer.RenderTransform = new TransformGroup
         {
@@ -88,6 +99,11 @@ public partial class BrowseView : UserControl
         CarouselList.ItemsSource = CarouselItems;
         _resizeTimer.Tick += OnImageResizeTimerTick;
         _carouselScrollTimer.Tick += OnCarouselScrollTimerTick;
+        _operationNoticeTimer.Tick += (_, _) =>
+        {
+            _operationNoticeTimer.Stop();
+            OperationNotice.Visibility = Visibility.Collapsed;
+        };
     }
 
     public async Task LoadRootsAsync(IEnumerable<string> paths)
@@ -116,7 +132,7 @@ public partial class BrowseView : UserControl
             if (result.Errors.Count > 0)
             {
                 StatusChanged?.Invoke($"Loaded {result.Roots.Count} root(s); {result.Errors.Count} folder(s) could not be accessed.");
-                MessageBox.Show(string.Join(Environment.NewLine, result.Errors), "Some folders could not be loaded", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowOperationNotice($"Some folders could not be loaded: {string.Join("; ", result.Errors.Take(3))}");
             }
             else
             {
@@ -185,7 +201,7 @@ public partial class BrowseView : UserControl
                     errorSample.Add($"...and {result.Errors.Count - errorSample.Count} more.");
                 }
 
-                MessageBox.Show(string.Join(Environment.NewLine, errorSample), "Some files could not be read", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowOperationNotice($"Some files could not be read: {string.Join("; ", errorSample)}");
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -199,10 +215,401 @@ public partial class BrowseView : UserControl
                 _navigationState.ReplaceFiles([]);
                 EmptyFilesNotice.Visibility = Visibility.Visible;
                 StatusChanged?.Invoke($"Could not read files in {folder.Name}.");
-                MessageBox.Show(exception.Message, "Folder could not be read", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowOperationNotice($"Folder could not be read: {exception.Message}");
             }
         }
     }
+
+    private void OnFolderMenuButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: FolderTreeEntry folder } button) return;
+        e.Handled = true;
+        RequestFolderMenu(button, folder);
+    }
+
+    private void OnFolderMenuButtonPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Button { Tag: FolderTreeEntry folder } button) return;
+        e.Handled = true;
+        RequestFolderMenu(button, folder);
+    }
+
+    private void RequestFolderMenu(Button button, FolderTreeEntry folder)
+    {
+        var location = button.PointToScreen(new Point(button.ActualWidth, 0));
+        FolderMenuRequested?.Invoke(folder, location);
+    }
+
+    public async Task ExecuteFolderMenuActionAsync(FolderTreeEntry folder, string action)
+    {
+        try
+        {
+            switch (action)
+            {
+                case "new-folder": await CreateSubfolderAsync(folder); break;
+                case "rename-folder": await RenameFolderAsync(folder); break;
+                case "move-folder": await MoveFolderAsync(folder); break;
+                case "recycle-folder": await DeleteFolderAsync(folder); break;
+                case "refresh-tree": await RefreshFolderTreeFromMenuAsync(folder); break;
+                case "open-explorer": await OpenFolderInExplorerAsync(folder); break;
+                case "properties": await ShowFolderPropertiesAsync(folder); break;
+                default: throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown folder menu action.");
+            }
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice(exception.Message);
+        }
+    }
+
+    private async void OnFolderTreePreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var item = FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject);
+        if (item?.DataContext is not FolderTreeEntry destination) return;
+        e.Handled = true;
+        await MoveCurrentFileToFolderAsync(destination);
+    }
+
+    private async Task CreateSubfolderAsync(FolderTreeEntry parent)
+    {
+        var name = await RequireDialogService().PromptTextAsync(
+            "New folder", $"Create a folder inside {parent.Name}.", "New folder", "Create");
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        await RunFolderOperationAsync(
+            () => _fileOrganizationService.CreateFolderAsync(parent.Path, name),
+            preferredFolderPath: _navigationState.ActiveFolder?.Path);
+    }
+
+    private IWinUiDialogService RequireDialogService() =>
+        DialogService ?? throw new InvalidOperationException("The WinUI dialog service has not been initialized.");
+
+    private async Task RenameFolderAsync(FolderTreeEntry folder)
+    {
+        var name = await RequireDialogService().PromptTextAsync(
+            "Rename folder", "Enter the folder's new name.", folder.Name, "Rename");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        var destinationPath = Path.Combine(Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path)) ?? "", name);
+        var activePath = _navigationState.ActiveFolder?.Path;
+        var mappedActivePath = MapDescendantPath(activePath, folder.Path, destinationPath);
+
+        await RunFolderOperationAsync(
+            () => _fileOrganizationService.RenameFolderAsync(folder.Path, name),
+            oldPath: folder.Path,
+            newPath: destinationPath,
+            preferredFolderPath: mappedActivePath);
+    }
+
+    private async Task MoveFolderAsync(FolderTreeEntry folder)
+    {
+        var initialPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path)) ?? folder.Path;
+        var picker = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = $"Move {folder.Name} to",
+            InitialDirectory = initialPath,
+            Multiselect = false
+        };
+        var destinationFolder = picker.ShowDialog(Window.GetWindow(this)) == true ? picker.FolderName : null;
+        if (string.IsNullOrWhiteSpace(destinationFolder)) return;
+        var destinationPath = Path.Combine(destinationFolder,
+            Path.GetFileName(Path.TrimEndingDirectorySeparator(folder.Path)));
+        var mappedActivePath = MapDescendantPath(_navigationState.ActiveFolder?.Path, folder.Path, destinationPath);
+
+        await RunFolderOperationAsync(
+            () => _fileOrganizationService.MoveFolderAsync(folder.Path, destinationFolder),
+            oldPath: folder.Path,
+            newPath: destinationPath,
+            preferredFolderPath: mappedActivePath);
+    }
+
+    private async Task DeleteFolderAsync(FolderTreeEntry folder)
+    {
+        var activePath = _navigationState.ActiveFolder?.Path;
+        var fallbackPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path));
+        var mappedActivePath = IsPathWithin(activePath, folder.Path) ? fallbackPath : activePath;
+        var result = await _fileOrganizationService.SendToRecycleBinAsync(folder.Path, isDirectory: true);
+        if (result.Outcome == FileOrganizationOutcome.ConfirmationRequired)
+        {
+            var confirmed = await RequireDialogService().ConfirmAsync(
+                "Send folder to Recycle Bin",
+                $"'{folder.Name}' contains files or subfolders. Send the folder and all its contents to the Windows Recycle Bin?\n\n{folder.Path}",
+                "Send to Recycle Bin");
+            if (!confirmed) return;
+            result = await _fileOrganizationService.SendToRecycleBinAsync(
+                folder.Path, isDirectory: true, confirmNonEmptyDirectory: true);
+        }
+
+        await CompleteFolderOperationAsync(result, deletedPath: folder.Path, preferredFolderPath: mappedActivePath);
+    }
+
+    private async Task RefreshFolderTreeFromMenuAsync(FolderTreeEntry folder) =>
+        await RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path ?? folder.Path);
+
+    private Task OpenFolderInExplorerAsync(FolderTreeEntry folder)
+    {
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder.Path}\"") { UseShellExecute = true });
+        return Task.CompletedTask;
+    }
+
+    private Task ShowFolderPropertiesAsync(FolderTreeEntry folder)
+    {
+        var owner = Window.GetWindow(this);
+        var ownerHandle = owner is null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(owner).Handle;
+        if (!SHObjectProperties(ownerHandle, ShopFilePath, folder.Path, null))
+            throw new IOException($"Windows could not open properties for '{folder.Path}'.", Marshal.GetExceptionForHR(Marshal.GetLastWin32Error()));
+        return Task.CompletedTask;
+    }
+
+    private const uint ShopFilePath = 2;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SHObjectProperties(IntPtr hwnd, uint objectType, string objectName, string? propertyPage);
+
+    private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
+    {
+        var currentFile = _navigationState.CurrentFile;
+        if (currentFile is null)
+        {
+            ShowOperationNotice("Select a file before choosing a destination folder.");
+            return;
+        }
+
+        var files = _navigationState.Files.ToArray();
+        var index = Array.IndexOf(files, currentFile);
+        var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
+        try
+        {
+            var result = await _fileOrganizationService.MoveFileAsync(currentFile.FullPath, destination.Path);
+            if (!result.Succeeded)
+            {
+                ShowOperationResult(result);
+                return;
+            }
+
+            ShowOperationNotice($"Moved {currentFile.Name} to {destination.Name}.");
+            await ReloadFilesInActiveFolderAsync(nextPath);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Could not move file: {exception.Message}");
+        }
+    }
+
+    public async Task PromptRenameCurrentFileAsync()
+    {
+        var currentFile = _navigationState.CurrentFile;
+        if (currentFile is null) return;
+        var name = await RequireDialogService().PromptTextAsync(
+            "Rename file", "Enter the file's new name.", currentFile.Name, "Rename");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
+        {
+            var result = await _fileOrganizationService.RenameFileAsync(currentFile.FullPath, name);
+            if (!result.Succeeded)
+            {
+                ShowOperationResult(result);
+                return;
+            }
+
+            ShowOperationNotice($"Renamed file to {name}.");
+            await ReloadFilesInActiveFolderAsync(result.AffectedPath);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Could not rename file: {exception.Message}");
+        }
+    }
+
+    public async Task CreateSubfolderInActiveFolderAsync()
+    {
+        if (_navigationState.ActiveFolder is { } activeFolder)
+            await CreateSubfolderAsync(activeFolder);
+    }
+
+    public async Task SendCurrentFileToRecycleBinAsync()
+    {
+        var currentFile = _navigationState.CurrentFile;
+        if (currentFile is null) return;
+        var files = _navigationState.Files.ToArray();
+        var index = Array.IndexOf(files, currentFile);
+        var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
+        try
+        {
+            var result = await _fileOrganizationService.SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
+            if (!result.Succeeded)
+            {
+                ShowOperationResult(result);
+                return;
+            }
+
+            ShowOperationNotice($"Sent {currentFile.Name} to the Recycle Bin.");
+            await ReloadFilesInActiveFolderAsync(nextPath);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Could not send file to the Recycle Bin: {exception.Message}");
+        }
+    }
+
+    private async Task RunFolderOperationAsync(
+        Func<Task<FileOrganizationResult>> operation,
+        string? oldPath = null,
+        string? newPath = null,
+        string? deletedPath = null,
+        string? preferredFolderPath = null)
+    {
+        try
+        {
+            var result = await operation();
+            await CompleteFolderOperationAsync(result, oldPath, newPath, deletedPath, preferredFolderPath);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Folder action failed: {exception.Message}");
+        }
+    }
+
+    private async Task CompleteFolderOperationAsync(
+        FileOrganizationResult result,
+        string? oldPath = null,
+        string? newPath = null,
+        string? deletedPath = null,
+        string? preferredFolderPath = null)
+    {
+        if (!result.Succeeded)
+        {
+            ShowOperationResult(result);
+            return;
+        }
+
+        ShowOperationNotice(result.Message);
+        await RefreshFolderTreeAsync(preferredFolderPath, oldPath, newPath, deletedPath);
+    }
+
+    private async Task RefreshFolderTreeAsync(
+        string? preferredFolderPath,
+        string? oldPath = null,
+        string? newPath = null,
+        string? deletedPath = null)
+    {
+        var roots = _navigationState.Roots
+            .Select(root => oldPath is not null && PathsEqual(root.Path, oldPath) && newPath is not null ? newPath : root.Path)
+            .Where(Directory.Exists)
+            .ToArray();
+        try
+        {
+            var loaded = await _folderTreeService.LoadRootsAsync(roots, CancellationToken.None);
+            _navigationState.ReplaceRoots(loaded.Roots);
+            var preferred = preferredFolderPath;
+            if (oldPath is not null && newPath is not null)
+                preferred = MapDescendantPath(preferred, oldPath, newPath);
+            if (deletedPath is not null && IsPathWithin(preferred, deletedPath))
+                preferred = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(deletedPath));
+
+            var active = FindFolder(loaded.Roots, preferred) ?? loaded.Roots.FirstOrDefault();
+            if (active is not null)
+            {
+                await ActivateFolderAsync(active);
+            }
+            else
+            {
+                ClearActivePresentation("No accessible folders are loaded.", string.Empty);
+            }
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Folder tree refresh failed: {exception.Message}");
+        }
+    }
+
+    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath)
+    {
+        var folder = _navigationState.ActiveFolder;
+        if (folder is null) return;
+        try
+        {
+            var listing = await _fileListingService.GetFilesAsync(folder.Path, CancellationToken.None);
+            _navigationState.ReplaceFiles(listing.Files);
+            if (preferredFilePath is not null)
+            {
+                var preferred = listing.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
+                if (preferred is not null) _navigationState.SetCurrentFile(preferred);
+            }
+            EmptyFilesNotice.Visibility = listing.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _ = RefreshCarouselAsync();
+            _ = LoadCurrentImageAsync(clearCurrentImage: true);
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Folder refresh failed: {exception.Message}");
+        }
+    }
+
+    private void ShowOperationResult(FileOrganizationResult result)
+    {
+        var message = result.Outcome == FileOrganizationOutcome.RecoveryRequired
+            ? $"Review needed. {result.Message}"
+            : result.Message;
+        ShowOperationNotice(message);
+    }
+
+    private void ShowOperationNotice(string message)
+    {
+        OperationNoticeText.Text = message;
+        OperationNotice.Visibility = Visibility.Visible;
+        _operationNoticeTimer.Stop();
+        _operationNoticeTimer.Start();
+        StatusChanged?.Invoke(message);
+    }
+
+    private static FolderTreeEntry? FindFolder(IEnumerable<FolderTreeEntry> folders, string? path)
+    {
+        if (path is null) return null;
+        foreach (var folder in folders)
+        {
+            if (PathsEqual(folder.Path, path)) return folder;
+            var child = FindFolder(folder.Children, path);
+            if (child is not null) return child;
+        }
+
+        return null;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
+    {
+        while (current is not null)
+        {
+            if (current is T ancestor) return ancestor;
+            current = VisualTreeHelper.GetParent(current) ?? LogicalTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    private static string? MapDescendantPath(string? path, string source, string destination)
+    {
+        if (path is null || !IsPathWithin(path, source)) return path;
+        var relative = Path.GetRelativePath(source, path);
+        return relative == "." ? destination : Path.Combine(destination, relative);
+    }
+
+    private static bool IsPathWithin(string? path, string root)
+    {
+        if (path is null) return false;
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var normalizedPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        return PathsEqual(normalizedPath, normalizedRoot) ||
+               normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOperationUiException(Exception exception) => exception is IOException or
+        UnauthorizedAccessException or ArgumentException or System.Security.SecurityException or
+        System.Runtime.InteropServices.ExternalException or InvalidOperationException or OperationCanceledException;
 
     private void OnCarouselSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -217,11 +624,10 @@ public partial class BrowseView : UserControl
             return;
         }
 
-        var immediatePreview = selectedItem.Thumbnail;
         _navigationState.SetCurrentFile(selectedItem.File);
         ResetBoundaryAttempts();
         _ = RefreshCarouselAsync();
-        _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: immediatePreview);
+        _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: selectedItem.UncroppedThumbnail);
     }
 
     private void OnCarouselPreviewMouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -334,7 +740,8 @@ public partial class BrowseView : UserControl
     private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var point = e.GetPosition(BrowseSurface);
-        var showFolder = point.X <= 32 || (_folderOverlayVisible && point.X <= FolderOverlay.Width);
+        var showFolder = _folderOverlayPinned || point.X <= 32 ||
+                         (_folderOverlayVisible && point.X <= FolderOverlay.Width);
         var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
                            (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
         SetFolderOverlayVisible(showFolder);
@@ -343,8 +750,18 @@ public partial class BrowseView : UserControl
 
     private void OnBrowseSurfaceMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        SetFolderOverlayVisible(false);
+        SetFolderOverlayVisible(_folderOverlayPinned);
         SetCarouselOverlayVisible(false);
+    }
+
+    private void OnFolderPinButtonClick(object sender, RoutedEventArgs e)
+    {
+        _folderOverlayPinned = FolderPinButton.IsChecked == true;
+        FolderPinGlyph.Text = _folderOverlayPinned ? "\uE77A" : "\uE718";
+        FolderPinButton.ToolTip = _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open";
+        FolderPinButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty,
+            _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open");
+        SetFolderOverlayVisible(_folderOverlayPinned || _folderOverlayVisible);
     }
 
     private void OnBrowseSurfaceSizeChanged(object sender, SizeChangedEventArgs e)
@@ -355,6 +772,7 @@ public partial class BrowseView : UserControl
 
     private void SetFolderOverlayVisible(bool isVisible)
     {
+        isVisible |= _folderOverlayPinned;
         if (_folderOverlayVisible == isVisible)
         {
             return;
@@ -580,13 +998,13 @@ public partial class BrowseView : UserControl
 
     private void SelectFile(FileEntry file)
     {
-        var item = CarouselItems.OfType<CarouselThumbnailItem>().FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
-        var immediatePreview = item?.Thumbnail;
+        var item = CarouselItems.OfType<CarouselThumbnailItem>()
+            .FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
         _navigationState.SetCurrentFile(file);
         ResetZoomState();
         ResetBoundaryAttempts();
         _ = RefreshCarouselAsync();
-        _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: immediatePreview);
+        _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: item?.UncroppedThumbnail);
     }
 
     private void ResetBoundaryAttempts()
@@ -931,12 +1349,15 @@ public partial class BrowseView : UserControl
                 return null;
             }
 
-            var bitmap = await Task.Run(() => DecodeCenterCroppedThumbnail(pngBytes), cancellationToken);
+            var bitmap = await Task.Run(() => DecodePng(pngBytes), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!cancellationToken.IsCancellationRequested && CarouselItems.Contains(item))
             {
-                item.Thumbnail = bitmap;
-                return bitmap;
+                item.UncroppedThumbnail = bitmap;
+                var cropped = await Task.Run(() => CropThumbnail(bitmap), cancellationToken);
+                if (cancellationToken.IsCancellationRequested || !CarouselItems.Contains(item)) return null;
+                item.Thumbnail = cropped;
+                return cropped;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -973,17 +1394,12 @@ public partial class BrowseView : UserControl
         _imageLoadCancellation?.Dispose();
         _imageLoadCancellation = null;
         var file = _navigationState.CurrentFile;
-        var carouselItem = file is null ? null : CarouselItems.OfType<CarouselThumbnailItem>().FirstOrDefault(item => ReferenceEquals(item.File, file));
-        var previewTask = carouselItem?.ThumbnailTask;
         var fullImageLoaded = false;
 
         if (clearCurrentImage)
         {
-            var loadedPreview = immediatePreview ?? carouselItem?.Thumbnail;
-            if (file is not null && loadedPreview is not null)
-            {
-                ShowImagePreview(loadedPreview, file);
-            }
+            if (file is not null && immediatePreview is not null)
+                ShowImagePreview(immediatePreview, file);
             else
             {
                 ImageViewer.Source = null;
@@ -1006,9 +1422,9 @@ public partial class BrowseView : UserControl
             ShowImageMessage("Loading image...", file.Name);
         }
 
-        if (clearCurrentImage && immediatePreview is null && carouselItem?.Thumbnail is null && previewTask is not null)
+        if (clearCurrentImage && immediatePreview is null && SupportedImageExtensions.Contains(file.Extension))
         {
-            _ = ShowCarouselPreviewWhenReadyAsync(previewTask, file, cancellationToken, () => fullImageLoaded);
+            _ = ShowViewerPreviewWhenReadyAsync(file, cancellationToken, () => fullImageLoaded);
         }
 
         try
@@ -1080,13 +1496,19 @@ public partial class BrowseView : UserControl
         ImageMessagePanel.Visibility = Visibility.Visible;
     }
 
-    private async Task ShowCarouselPreviewWhenReadyAsync(Task<BitmapSource?> previewTask, FileEntry file,
+    private async Task ShowViewerPreviewWhenReadyAsync(FileEntry file,
         CancellationToken cancellationToken, Func<bool> isFullImageLoaded)
     {
         try
         {
-            var preview = await previewTask;
-            if (preview is null || cancellationToken.IsCancellationRequested || isFullImageLoaded() ||
+            await Dispatcher.Yield(DispatcherPriority.Loaded);
+            cancellationToken.ThrowIfCancellationRequested();
+            var dpi = VisualTreeHelper.GetDpi(ImageViewport);
+            var decodeScale = Math.Max(1d, _zoomLevel);
+            var width = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualWidth * dpi.DpiScaleX * decodeScale));
+            var height = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualHeight * dpi.DpiScaleY * decodeScale));
+            var preview = await _imageDecoder.LoadAsync(file.FullPath, width, height, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || isFullImageLoaded() ||
                 !ReferenceEquals(_navigationState.CurrentFile, file))
             {
                 return;
@@ -1151,9 +1573,8 @@ public partial class BrowseView : UserControl
         return image;
     }
 
-    private static BitmapSource DecodeCenterCroppedThumbnail(byte[] pngBytes)
+    private static BitmapSource CropThumbnail(BitmapSource source)
     {
-        var source = DecodePng(pngBytes);
         var cropSize = Math.Min(source.PixelWidth, source.PixelHeight);
         var crop = new Int32Rect(
             (source.PixelWidth - cropSize) / 2,
