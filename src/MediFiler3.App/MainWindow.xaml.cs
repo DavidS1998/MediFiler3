@@ -78,6 +78,7 @@ public partial class MainWindow : Window
         _fileOrganizationService = fileOrganizationService;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
             thumbnailService, fileOrganizationService);
+        Closed += (_, _) => _browseView.StopBackgroundFolderCounts();
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
         _settingsView.CarouselNeighborCountChanged += _browseView.SetCarouselNeighborCount;
         InitializeComponent();

@@ -1,13 +1,13 @@
 # Project status
 
-**Snapshot date:** 2026-11-03
+**Snapshot date:** 2026-11-09
 **Overall:** Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and folder-creation undo/redo, grouped file moves, Windows Shell Recycle Bin restore, and Undo/Redo hover previews. The user confirmed the restore and tooltip behavior. Phase 3 is next.
 
 ## Handover: resume here
 
 Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and empty-folder compensation, grouped file moves, Undo/Redo hover previews, and a Shell-based Recycle Bin restore adapter with fake-adapter tests. The user confirmed that Recycle Bin restoration and the tooltip behavior work. Phase 3 is next; no Phase 3 implementation has started.
 
-The worktree currently contains uncommitted Step 2.5 preview/tooltip code and documentation updates. Inspect `git status` and the diff before editing; preserve these changes.
+The working tree was clean at the November 9 read-only review; the previous Step 2.5 uncommitted-change note is obsolete. The subsequent folder-count prerequisite adds implementation, tests, and documentation changes. Inspect `git status` and the diff before editing; preserve existing changes.
 
 1. Read `AGENTS.md`, `SPECIFICATION.md`, `ARCHITECTURE.md`, `DEVELOPMENT_PLAN.md`, and this status file before coding.
 2. Inspect the solution and current working tree. Preserve the WPF host and existing WPF/WinUI XAML Island boundary.
@@ -16,6 +16,11 @@ The worktree currently contains uncommitted Step 2.5 preview/tooltip code and do
 5. Maintain the no-silent-overwrite/no-permanent-delete safety rules for future filesystem changes. Build and run relevant tests after implementation work, then update the plan and status.
 
 ## Current implementation
+
+- Follow-up performance fix: file counting is separate from the initial directory-only hierarchy scan. Rows start at `(?/?)`, then update progressively (including `(direct/?)` while descendants are pending). A cancellable sequential background stream uses cached enumeration attributes, applies UI updates at background priority, and rejects stale results using entry versions. Ancestor totals are cached to avoid repeatedly scanning wide sibling lists. Load/refresh/shutdown cancel old count scans. The hierarchy itself still scans all directories before display, and tree virtualization remains disabled; these are separate remaining large-tree costs.
+
+- November 9 prerequisite before Phase 3: folder rows show `(direct/total) - Name`. Counts exclude Hidden/System files, include unsupported files, and include direct files in the subtree total. Background scans retain the existing junction/symbolic-link exclusions and inaccessible-entry warnings. Counts update on folder selection, successful file moves/deletion, folder operations, undo/redo, and explicit tree refresh. External changes still require refresh/reload. Raw folder names remain unchanged for dialogs and toolbar context.
+- Phase 3 decisions supplied by the user: metadata is file size for all files, image resolution, and duration for video/audio. The zoom toolbar group must become modular, visible only for images, and replaced with appropriate controls for other content. This handler/toolbar work has not started. Proposed playback/text defaults and metadata placement have not yet been approved.
 
 - Phase 2.1 adds operation records and the application-owned journal contract. Infrastructure owns an idempotently initialized, versioned SQLite database in LocalAppData, initialized by the host before the main window.
 - Phase 2.2 replaces mutable status rows with immutable operation intents and append-only events, migrates the earlier schema, stores versioned typed payload JSON, tracks compensating-operation links, and exposes undo/redo candidates. User operations invalidate outstanding redo candidates transactionally. SQLite uses WAL plus FULL synchronous durability.
@@ -111,6 +116,10 @@ Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative
 - Carousel density defaults to five neighboring files per side, configurable by total icon counts 1, 3, ..., 25 in Settings. The value is session-only until persistence is implemented.
 
 ## Verification record
+
+- Progressive-count verification (2026-11-09): all 43 tests passed, covering unknown/partially loaded totals, deferred counting, failed-count reporting, stream cancellation, and the previous count/filtering cases. Solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Large-tree timing and interactive appearance have not been measured/verified in this pass.
+
+- Folder-count prerequisite verification (2026-11-09): `dotnet test MediFiler3.sln --no-restore --verbosity minimal` passed all 40 tests, including new direct/nested counts, hidden/system exclusion, unsupported files, empty folders, ancestor notification, and cancellation coverage. `dotnet build MediFiler3.sln --no-restore --verbosity minimal` succeeded with 0 warnings and 0 errors. `git diff --check` passed. The updated folder-row appearance has not been manually verified.
 
 - Step 2.3 verification: `dotnet test MediFiler3.sln --verbosity minimal -m:1` passed all 18 tests. `dotnet build MediFiler3.sln --verbosity minimal -m:1` succeeded with 0 warnings and 0 errors. `git diff --check` is clean.
 - Before the latest interface revisions, the user verified the image viewer, original carousel thumbnails and transitions, Shell fallback, and file navigation as sufficient for the current stage.

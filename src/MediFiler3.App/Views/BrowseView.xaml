@@ -211,7 +211,7 @@
                                 <ColumnDefinition Width="28" />
                             </Grid.ColumnDefinitions>
                             <Border Grid.ColumnSpan="2" HorizontalAlignment="Stretch" Padding="4,5" CornerRadius="3">
-                                <TextBlock Text="{Binding Name}" Foreground="#E7E8EA" ToolTip="{Binding Path}"
+                                <TextBlock Text="{Binding DisplayName}" Foreground="#E7E8EA" ToolTip="{Binding Path}"
                                            TextTrimming="CharacterEllipsis" />
                             </Border>
                             <Button Grid.Column="1" Width="24" Height="24" Padding="0" Margin="0,2,0,2"

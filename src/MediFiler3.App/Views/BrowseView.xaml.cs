@@ -33,6 +33,7 @@ public partial class BrowseView : UserControl
     private CancellationTokenSource? _fileLoadCancellation;
     private CancellationTokenSource? _imageLoadCancellation;
     private CancellationTokenSource? _carouselLoadCancellation;
+    private CancellationTokenSource? _countCancellation;
     private int _overscrollDirection;
     private int _overscrollCount;
     private int _wheelDeltaRemainder;
@@ -109,6 +110,7 @@ public partial class BrowseView : UserControl
 
     public async Task LoadRootsAsync(IEnumerable<string> paths)
     {
+        CancelFolderCounts();
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
         _loadCancellation = new CancellationTokenSource();
@@ -129,6 +131,7 @@ public partial class BrowseView : UserControl
             var result = await _folderTreeService.LoadRootsAsync(requestedRoots, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _navigationState.ReplaceRoots(result.Roots);
+            StartFolderCounts();
 
             if (result.Errors.Count > 0)
             {
@@ -188,6 +191,7 @@ public partial class BrowseView : UserControl
             }
 
             _navigationState.ReplaceFiles(result.Files);
+            UpdateFolderFileCounts(folder.Path, result.Files.Count);
             if (preferredFilePath is not null)
             {
                 var preferredFile = result.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
@@ -396,6 +400,8 @@ public partial class BrowseView : UserControl
 
             ShowOperationNotice($"Moved {currentFile.Name} to {destination.Name}.");
             await ReloadFilesInActiveFolderAsync(nextPath);
+            var destinationListing = await _fileListingService.GetFilesAsync(destination.Path, CancellationToken.None);
+            UpdateFolderFileCounts(destination.Path, destinationListing.Files.Count);
         }
         catch (Exception exception) when (IsOperationUiException(exception))
         {
@@ -547,6 +553,7 @@ public partial class BrowseView : UserControl
         string? preferredFilePath = null,
         bool mapPreferredFolderWithMappings = true)
     {
+        CancelFolderCounts();
         var roots = _navigationState.Roots
             .Select(root =>
             {
@@ -563,6 +570,7 @@ public partial class BrowseView : UserControl
         {
             var loaded = await _folderTreeService.LoadRootsAsync(roots, CancellationToken.None);
             _navigationState.ReplaceRoots(loaded.Roots);
+            StartFolderCounts();
             var preferred = preferredFolderPath;
             if (oldPath is not null && newPath is not null)
                 preferred = MapDescendantPath(preferred, oldPath, newPath);
@@ -595,6 +603,7 @@ public partial class BrowseView : UserControl
         try
         {
             var listing = await _fileListingService.GetFilesAsync(folder.Path, CancellationToken.None);
+            UpdateFolderFileCounts(folder.Path, listing.Files.Count);
             _navigationState.ReplaceFiles(listing.Files);
             if (preferredFilePath is not null)
             {
@@ -609,6 +618,61 @@ public partial class BrowseView : UserControl
         {
             ShowOperationNotice($"Folder refresh failed: {exception.Message}");
         }
+    }
+
+    private void CancelFolderCounts()
+    {
+        _countCancellation?.Cancel();
+        _countCancellation?.Dispose();
+        _countCancellation = null;
+    }
+
+    private void StartFolderCounts()
+    {
+        CancelFolderCounts();
+        _countCancellation = new CancellationTokenSource();
+        _ = PopulateFolderCountsAsync(_countCancellation.Token);
+    }
+
+    private async Task PopulateFolderCountsAsync(CancellationToken cancellationToken)
+    {
+        // Capture versions on the UI thread. Newer folder listings/file operations win over scan results.
+        var entries = EnumerateFoldersInTreeOrder(_navigationState.Roots)
+            .GroupBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key,
+                group => group.Select(entry => (Entry: entry, Version: entry.CountVersion)).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var errors = new List<string>();
+        try
+        {
+            await foreach (var result in _folderTreeService.CountFilesAsync(entries.Keys, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (result.Count is { } count)
+                    foreach (var snapshot in entries[result.Path])
+                        if (snapshot.Entry.CountVersion == snapshot.Version)
+                            snapshot.Entry.UpdateDirectFileCount(count);
+                errors.AddRange(result.Errors.Take(Math.Max(0, 3 - errors.Count)));
+                // Do not flood the dispatcher; allow input/rendering between progressive updates.
+                await Dispatcher.Yield(DispatcherPriority.Background);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (errors.Count > 0)
+                ShowOperationNotice($"Some folder counts could not be loaded: {string.Join("; ", errors)}");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A new tree load or shutdown superseded this scan.
+        }
+    }
+
+    public void StopBackgroundFolderCounts() => CancelFolderCounts();
+
+    private void UpdateFolderFileCounts(string folderPath, int count)
+    {
+        // A folder can appear beneath more than one loaded root.
+        foreach (var entry in EnumerateFoldersInTreeOrder(_navigationState.Roots))
+            if (PathsEqual(entry.Path, folderPath)) entry.UpdateDirectFileCount(count);
     }
 
     private void ShowOperationResult(FileOrganizationResult result)

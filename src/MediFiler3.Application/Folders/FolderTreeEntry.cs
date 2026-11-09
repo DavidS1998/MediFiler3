@@ -7,6 +7,15 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
 {
     private bool _isExpanded;
     private bool _isSelected;
+    private long? _directFileCount;
+    private long? _totalFileCount;
+    private long _knownChildFileCount;
+    private int _unknownChildCount;
+
+    public long? DirectFileCount => _directFileCount;
+    public long? TotalFileCount => _totalFileCount;
+    public long CountVersion { get; private set; }
+    public string DisplayName => $"({DirectFileCount?.ToString() ?? "?"}/{TotalFileCount?.ToString() ?? "?"}) - {Name}";
 
     public string Name { get; }
     public string Path { get; }
@@ -27,15 +36,58 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public FolderTreeEntry(string name, string path, IReadOnlyList<FolderTreeEntry>? children = null, bool isRoot = false, string? error = null)
+    public FolderTreeEntry(string name, string path, IReadOnlyList<FolderTreeEntry>? children = null, bool isRoot = false, string? error = null,
+        long? directFileCount = null)
     {
         Name = name;
         Path = path;
         Children = children ?? [];
         IsRoot = isRoot;
         Error = error;
+        if (directFileCount < 0) throw new ArgumentOutOfRangeException(nameof(directFileCount));
+        _directFileCount = directFileCount;
+        foreach (var child in Children)
+        {
+            var previousTotal = child.TotalFileCount;
+            if (previousTotal is { } known) _knownChildFileCount += known;
+            else _unknownChildCount++;
+            child.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName != nameof(TotalFileCount)) return;
+                if (previousTotal is { } previous) _knownChildFileCount -= previous;
+                else _unknownChildCount--;
+                previousTotal = child.TotalFileCount;
+                if (previousTotal is { } current) _knownChildFileCount += current;
+                else _unknownChildCount++;
+                NotifyTotalChanged();
+            };
+        }
+        _totalFileCount = CalculateTotal();
         _isExpanded = Children.Count > 0;
     }
+
+    public void UpdateDirectFileCount(long count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        CountVersion++;
+        if (_directFileCount == count) return;
+        _directFileCount = count;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DirectFileCount)));
+        NotifyTotalChanged();
+    }
+
+    private void NotifyTotalChanged()
+    {
+        var previousTotal = _totalFileCount;
+        _totalFileCount = CalculateTotal();
+        if (previousTotal != _totalFileCount)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TotalFileCount)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+    }
+
+    private long? CalculateTotal() => DirectFileCount is null || _unknownChildCount > 0
+        ? null
+        : DirectFileCount + _knownChildFileCount;
 
     private void SetProperty(ref bool field, bool value, [CallerMemberName] string? propertyName = null)
     {
@@ -51,7 +103,10 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
 
 public sealed record FolderTreeLoadResult(IReadOnlyList<FolderTreeEntry> Roots, IReadOnlyList<string> Errors);
 
+public sealed record FolderFileCountResult(string Path, long? Count, IReadOnlyList<string> Errors);
+
 public interface IFolderTreeService
 {
     Task<FolderTreeLoadResult> LoadRootsAsync(IEnumerable<string> folderPaths, CancellationToken cancellationToken);
+    IAsyncEnumerable<FolderFileCountResult> CountFilesAsync(IEnumerable<string> folderPaths, CancellationToken cancellationToken);
 }

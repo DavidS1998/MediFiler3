@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using MediFiler3.Application.Folders;
 
 namespace MediFiler3.Infrastructure.Folders;
@@ -7,6 +8,38 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
 {
     public Task<FolderTreeLoadResult> LoadRootsAsync(IEnumerable<string> folderPaths, CancellationToken cancellationToken) =>
         Task.Run(() => EnumerateRoots(folderPaths, cancellationToken), cancellationToken);
+
+    public async IAsyncEnumerable<FolderFileCountResult> CountFilesAsync(IEnumerable<string> folderPaths,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        foreach (var path in folderPaths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return await Task.Run(() => CountFiles(path, cancellationToken), cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static FolderFileCountResult CountFiles(string path, CancellationToken cancellationToken)
+    {
+        var errors = new List<string>();
+        long count = 0;
+        try
+        {
+            // Enumeration supplies cached attributes, avoiding a separate stat for every file.
+            foreach (var file in new DirectoryInfo(path).EnumerateFiles())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if ((file.Attributes & (FileAttributes.Hidden | FileAttributes.System)) == 0) count++;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
+                                           System.Security.SecurityException)
+        {
+            errors.Add($"{path}: {exception.Message}");
+        }
+
+        return new FolderFileCountResult(path, errors.Count == 0 ? count : null, errors);
+    }
 
     private static FolderTreeLoadResult EnumerateRoots(IEnumerable<string> folderPaths, CancellationToken cancellationToken)
     {

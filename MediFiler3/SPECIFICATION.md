@@ -248,6 +248,10 @@ Each folder row should include a menu button aligned to its right edge. Activati
 
 The currently selected folder should be visually highlighted.
 
+Prefix each folder name with `(direct/total) - `, for example `(7/10) - SomeFolderName`. The first count is the number of browsing files directly in that folder; the second includes those files and all files in its traversed subfolders. Exclude Hidden and System files, count unsupported file types, and do not follow directory junctions or symbolic links. Refresh counts after application file operations and explicit tree refreshes. Inaccessible entries remain reported through the existing scan warnings; counts represent successfully enumerated files.
+
+File counting must not delay publishing the folder hierarchy. Show `(?/?)` while counts are unloaded and `(7/?)` when only the direct count is known. Populate counts progressively in the background, keeping incomplete or failed counts unknown and reporting read failures. Cancel superseded work and prevent older counts from replacing newer file-operation/listing results.
+
 The tree should support:
 - Expanding and collapsing folders.
 - Navigating deeply nested structures.
@@ -476,6 +480,8 @@ The toolbar should be organized into logical groups.
 
 Toolbar actions should be context-sensitive. For example, image-specific controls should only be displayed when relevant.
 
+The zoom-out, reset-to-fit/percentage, and zoom-in group must be modular and visible and available only for image content. Replace this group with relevant controls for other content types, such as playback controls for audio/video.
+
 Actions that cannot currently be performed should be visibly disabled.
 
 All important toolbar actions should have corresponding keyboard shortcuts. Shortcuts should be configurable where appropriate.
@@ -563,6 +569,8 @@ Potential search filters:
 Search results should allow opening files in the main viewer and performing file operations.
 
 ## 8.2 Metadata
+
+The agreed initial metadata scope is file size for all files, image resolution for images, and duration for video and audio. Additional metadata below remains future scope.
 
 Display relevant metadata depending on the file type.
 

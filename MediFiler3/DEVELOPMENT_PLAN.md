@@ -43,6 +43,8 @@ Implementation order:
 
 ## Phase 3 — Media and text handlers
 
+The pre-Phase-3 folder-count prerequisite now populates counts progressively after publishing the directory hierarchy, with unknown placeholders, cancellation, and stale-result protection. Large-tree directory traversal and rendering remain separate future performance concerns.
+
 Add basic video and audio playback, bounded text viewing, unsupported-file details and open-with behavior, relevant metadata, and handler-specific interaction routing. Keep file navigation state centralized.
 
 Recommended order:
@@ -54,6 +56,8 @@ Recommended order:
 5. Add handler metadata and unsupported-file details with an Open With fallback. Test cancellation, resource release, large text files, unsupported formats, and navigation while interacting with content.
 
 Open decisions before implementation: the video/audio backend and supported formats, text encodings and size limits, and the placement of file metadata in the toolbar or a details view. No Phase 3 backend or limits have been selected yet.
+
+Agreed scope after the read-only design review: metadata comprises file size for all files, image resolution, and duration for video/audio. Modularize the toolbar zoom group so it is visible only for images and replaced by appropriate controls for other content types. Before Step 1, implement folder-tree `(direct/total) - Name` prefixes; this prerequisite is complete. Handler implementation has not started; backend, text limits, and metadata placement remain pending approval.
 
 ## Phase 4 — Home and persistence
 
