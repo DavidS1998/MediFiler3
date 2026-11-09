@@ -43,7 +43,7 @@ Implementation order:
 
 ## Phase 3 — Media and text handlers
 
-The pre-Phase-3 folder-count prerequisite now populates counts progressively after publishing the directory hierarchy, with unknown placeholders, cancellation, and stale-result protection. Large-tree directory traversal and rendering remain separate future performance concerns.
+The pre-Phase-3 performance prerequisites now publish shallow roots first, populate the hierarchy through a cancellable breadth-first background stream with bounded UI updates, and then populate file counts progressively. Unknown placeholders, child-discovery completion state, cancellation, and stale-count protection are implemented. Tree virtualization and large expanded-tree rendering/memory remain future performance concerns.
 
 Add basic video and audio playback, bounded text viewing, unsupported-file details and open-with behavior, relevant metadata, and handler-specific interaction routing. Keep file navigation state centralized.
 

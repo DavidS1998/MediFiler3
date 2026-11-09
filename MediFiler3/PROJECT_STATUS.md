@@ -17,7 +17,7 @@ The working tree was clean at the November 9 read-only review; the previous Step
 
 ## Current implementation
 
-- Follow-up performance fix: file counting is separate from the initial directory-only hierarchy scan. Rows start at `(?/?)`, then update progressively (including `(direct/?)` while descendants are pending). A cancellable sequential background stream uses cached enumeration attributes, applies UI updates at background priority, and rejects stale results using entry versions. Ancestor totals are cached to avoid repeatedly scanning wide sibling lists. Load/refresh/shutdown cancel old count scans. The hierarchy itself still scans all directories before display, and tree virtualization remains disabled; these are separate remaining large-tree costs.
+- Follow-up performance fixes: shallow roots are published before descendant discovery or file listing finishes. A separate cancellable breadth-first hierarchy stream enumerates one directory at a time in Infrastructure; WPF appends observable children with a background-priority yield every 32 rows. Unknown subtree totals remain `?` until child discovery completes. After hierarchy discovery, a separate cancellable count stream populates file counts, with entry versions protecting newer listing/operation counts. Ancestor aggregates are cached. Load/refresh/shutdown cancel obsolete streams. Tree virtualization remains disabled, so the fully expanded tree can still consume substantial UI memory.
 
 - November 9 prerequisite before Phase 3: folder rows show `(direct/total) - Name`. Counts exclude Hidden/System files, include unsupported files, and include direct files in the subtree total. Background scans retain the existing junction/symbolic-link exclusions and inaccessible-entry warnings. Counts update on folder selection, successful file moves/deletion, folder operations, undo/redo, and explicit tree refresh. External changes still require refresh/reload. Raw folder names remain unchanged for dialogs and toolbar context.
 - Phase 3 decisions supplied by the user: metadata is file size for all files, image resolution, and duration for video/audio. The zoom toolbar group must become modular, visible only for images, and replaced with appropriate controls for other content. This handler/toolbar work has not started. Proposed playback/text defaults and metadata placement have not yet been approved.
@@ -97,7 +97,7 @@ Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative
 - Current deployment is framework-dependent and unpackaged, so a target machine without the Windows App Runtime 2.6.4 will fail at startup. Self-contained deployment has not been selected.
 - DWM caption color attributes are Windows 11-specific, matching the supported OS decision. Failures are logged; there is no separate fallback title bar.
 - The navigation rail currently has no user-facing full-hide command. `IsSidebarVisible` is the intended integration point for future fullscreen behavior.
-- The folder hierarchy is scanned recursively before it is displayed, on a background worker with cancellation. Very large trees may take time to appear; dropped files are ignored with a status message.
+- Roots appear after root-path validation, before descendant discovery or file listing completes. Subfolders populate progressively in breadth-first order; counts may remain unknown until discovery/counting completes. The tree is not virtualized, so very large expanded trees still have rendering/memory costs. Dropped files are ignored with a status message.
 - There is no `FileSystemWatcher` integration yet; external filesystem changes may require an explicit refresh or reload. Continuous reconciliation is future work.
 - Tree item virtualization is disabled so the expanded hierarchy has a stable scrollbar extent; extremely large trees will use more UI memory until a stable virtualized scrolling strategy is added.
 - The disk thumbnail cache currently has no size or age-based pruning policy; the in-memory cache is limited to 32 MB and 512 entries.
@@ -116,6 +116,8 @@ Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative
 - Carousel density defaults to five neighboring files per side, configurable by total icon counts 1, 3, ..., 25 in Settings. The value is session-only until persistence is implemented.
 
 ## Verification record
+
+- Progressive hierarchy verification (2026-11-09): all 47 tests passed. Added shallow-root/breadth-first ordering, discovery cancellation, dynamic child totals, user-collapse preservation, and removed-folder error isolation coverage. Solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Interactive large-tree timing has not been measured in this pass.
 
 - Progressive-count verification (2026-11-09): all 43 tests passed, covering unknown/partially loaded totals, deferred counting, failed-count reporting, stream cancellation, and the previous count/filtering cases. Solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Large-tree timing and interactive appearance have not been measured/verified in this pass.
 

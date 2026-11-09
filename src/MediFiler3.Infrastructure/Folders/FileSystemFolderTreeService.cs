@@ -9,6 +9,19 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
     public Task<FolderTreeLoadResult> LoadRootsAsync(IEnumerable<string> folderPaths, CancellationToken cancellationToken) =>
         Task.Run(() => EnumerateRoots(folderPaths, cancellationToken), cancellationToken);
 
+    public async IAsyncEnumerable<FolderChildrenResult> LoadHierarchyAsync(IEnumerable<FolderTreeEntry> roots,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var pending = new Queue<FolderTreeEntry>(roots);
+        while (pending.TryDequeue(out var parent))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await Task.Run(() => EnumerateChildren(parent, cancellationToken), cancellationToken).ConfigureAwait(false);
+            foreach (var child in result.Children) pending.Enqueue(child);
+            yield return result;
+        }
+    }
+
     public async IAsyncEnumerable<FolderFileCountResult> CountFilesAsync(IEnumerable<string> folderPaths,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -58,7 +71,8 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
                 }
 
                 var rootName = Path.GetFileName(Path.TrimEndingDirectorySeparator(fullPath));
-                roots.Add(EnumerateFolder(fullPath, string.IsNullOrWhiteSpace(rootName) ? fullPath : rootName, true, errors, cancellationToken));
+                roots.Add(new FolderTreeEntry(string.IsNullOrWhiteSpace(rootName) ? fullPath : rootName,
+                    fullPath, isRoot: true, areChildrenLoaded: false));
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
             {
@@ -69,18 +83,24 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
         return new FolderTreeLoadResult(roots, errors);
     }
 
-    private static FolderTreeEntry EnumerateFolder(string path, string name, bool isRoot, List<string> errors, CancellationToken cancellationToken)
+    private static FolderChildrenResult EnumerateChildren(FolderTreeEntry parent, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var path = parent.Path;
+        var errors = new List<string>();
         var children = new List<FolderTreeEntry>();
         try
         {
-            foreach (var childPath in Directory.EnumerateDirectories(path))
+            // A directory may have been replaced by a junction since it was discovered.
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                return new FolderChildrenResult(parent, [], [$"Skipped linked folder: {path}"]);
+            foreach (var childInfo in new DirectoryInfo(path).EnumerateDirectories())
             {
+                var childPath = childInfo.FullName;
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    var attributes = File.GetAttributes(childPath);
+                    var attributes = childInfo.Attributes;
                     // Do not traverse junctions or symbolic links; they can create loops or escape the selected tree.
                     if ((attributes & FileAttributes.ReparsePoint) != 0)
                     {
@@ -88,7 +108,7 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
                     }
 
                     var childName = Path.GetFileName(Path.TrimEndingDirectorySeparator(childPath));
-                    children.Add(EnumerateFolder(childPath, childName, false, errors, cancellationToken));
+                    children.Add(new FolderTreeEntry(childName, childPath, areChildrenLoaded: false));
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                                    System.Security.SecurityException)
@@ -104,6 +124,6 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
         }
 
         children.Sort((left, right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
-        return new FolderTreeEntry(name, path, children, isRoot);
+        return new FolderChildrenResult(parent, children, errors);
     }
 }

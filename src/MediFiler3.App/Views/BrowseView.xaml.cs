@@ -131,7 +131,7 @@ public partial class BrowseView : UserControl
             var result = await _folderTreeService.LoadRootsAsync(requestedRoots, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _navigationState.ReplaceRoots(result.Roots);
-            StartFolderCounts();
+            _ = PopulateHierarchyAsync(result.Roots, cancellationToken);
 
             if (result.Errors.Count > 0)
             {
@@ -145,7 +145,7 @@ public partial class BrowseView : UserControl
 
             if (result.Roots.FirstOrDefault() is { } firstRoot)
             {
-                await ActivateFolderAsync(firstRoot);
+                _ = ActivateFolderAsync(firstRoot);
             }
             else
             {
@@ -554,6 +554,10 @@ public partial class BrowseView : UserControl
         bool mapPreferredFolderWithMappings = true)
     {
         CancelFolderCounts();
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+        var cancellationToken = _loadCancellation.Token;
         var roots = _navigationState.Roots
             .Select(root =>
             {
@@ -568,9 +572,9 @@ public partial class BrowseView : UserControl
             .ToArray();
         try
         {
-            var loaded = await _folderTreeService.LoadRootsAsync(roots, CancellationToken.None);
+            var loaded = await _folderTreeService.LoadRootsAsync(roots, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             _navigationState.ReplaceRoots(loaded.Roots);
-            StartFolderCounts();
             var preferred = preferredFolderPath;
             if (oldPath is not null && newPath is not null)
                 preferred = MapDescendantPath(preferred, oldPath, newPath);
@@ -579,6 +583,8 @@ public partial class BrowseView : UserControl
                     preferred = MapDescendantPath(preferred, mapping.OldPath, mapping.NewPath);
             if (deletedPath is not null && IsPathWithin(preferred, deletedPath))
                 preferred = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(deletedPath));
+
+            _ = PopulateHierarchyAsync(loaded.Roots, cancellationToken, preferred, preferredFilePath);
 
             var active = FindFolder(loaded.Roots, preferred) ?? loaded.Roots.FirstOrDefault();
             if (active is not null)
@@ -589,6 +595,10 @@ public partial class BrowseView : UserControl
             {
                 ClearActivePresentation("No accessible folders are loaded.", string.Empty);
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer tree load superseded this refresh.
         }
         catch (Exception exception) when (IsOperationUiException(exception))
         {
@@ -617,6 +627,54 @@ public partial class BrowseView : UserControl
         catch (Exception exception) when (IsOperationUiException(exception))
         {
             ShowOperationNotice($"Folder refresh failed: {exception.Message}");
+        }
+    }
+
+    private async Task PopulateHierarchyAsync(IReadOnlyList<FolderTreeEntry> roots, CancellationToken cancellationToken,
+        string? preferredFolderPath = null, string? preferredFilePath = null)
+    {
+        var errors = new List<string>();
+        try
+        {
+            // Publish roots and allow a render before requesting descendants.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            var initialFolder = _navigationState.ActiveFolder;
+            await foreach (var result in _folderTreeService.LoadHierarchyAsync(roots, cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                for (var index = 0; index < result.Children.Count; index++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    result.Parent.AddChild(result.Children[index]);
+                    if (index % 32 == 31) await Dispatcher.Yield(DispatcherPriority.Background);
+                }
+                // Failed discovery leaves subtree totals unknown.
+                if (result.Errors.Count == 0) result.Parent.CompleteChildrenLoad();
+                errors.AddRange(result.Errors.Take(Math.Max(0, 3 - errors.Count)));
+                if (preferredFolderPath is not null &&
+                    (_navigationState.ActiveFolder is null || ReferenceEquals(_navigationState.ActiveFolder, initialFolder)))
+                {
+                    var preferred = FindFolder(roots, preferredFolderPath);
+                    if (preferred is not null)
+                    {
+                        await ActivateFolderAsync(preferred, preferredFilePath);
+                        preferredFolderPath = null;
+                    }
+                }
+                await Dispatcher.Yield(DispatcherPriority.Background);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (errors.Count > 0)
+                ShowOperationNotice($"Some folders could not be loaded: {string.Join("; ", errors)}");
+            StartFolderCounts();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A new load, refresh, or shutdown replaced this tree.
+        }
+        catch (Exception exception) when (IsOperationUiException(exception))
+        {
+            ShowOperationNotice($"Folder hierarchy loading failed: {exception.Message}");
         }
     }
 
@@ -666,7 +724,11 @@ public partial class BrowseView : UserControl
         }
     }
 
-    public void StopBackgroundFolderCounts() => CancelFolderCounts();
+    public void StopBackgroundFolderCounts()
+    {
+        _loadCancellation?.Cancel();
+        CancelFolderCounts();
+    }
 
     private void UpdateFolderFileCounts(string folderPath, int count)
     {

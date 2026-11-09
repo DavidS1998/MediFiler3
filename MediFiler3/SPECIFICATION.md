@@ -78,6 +78,8 @@ The application must support loading:
 
 When a folder is loaded, the application should scan its directory structure and construct a navigable folder tree.
 
+Publish the selected roots without waiting for their descendants or initial file listing. Discover and append subfolders progressively in the background, keeping input and rendering responsive through bounded UI update batches. Cancel old hierarchy discovery when loading or refreshing another context. Show unknown counts while child discovery or file counting is incomplete.
+
 The folder tree should reflect the actual filesystem hierarchy.
 
 Files should be indexed sufficiently to support fast navigation, sorting, thumbnail generation, and file operations.

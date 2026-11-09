@@ -32,6 +32,14 @@ public sealed class FolderTreeFileCountTests
 
             Assert.Empty(result.Errors);
             var entry = Assert.Single(result.Roots);
+            Assert.Empty(entry.Children);
+            Assert.False(entry.AreChildrenLoaded);
+            await foreach (var discovered in service.LoadHierarchyAsync(result.Roots, CancellationToken.None))
+            {
+                Assert.Empty(discovered.Errors);
+                foreach (var childEntry in discovered.Children) discovered.Parent.AddChild(childEntry);
+                discovered.Parent.CompleteChildrenLoad();
+            }
             var entries = Flatten(entry).ToDictionary(item => item.Path);
             Assert.All(entries.Values, item => Assert.Equal($"(?/?) - {item.Name}", item.DisplayName));
             await foreach (var count in service.CountFilesAsync(entries.Keys, CancellationToken.None))
