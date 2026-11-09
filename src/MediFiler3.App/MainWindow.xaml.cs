@@ -14,6 +14,7 @@ using MediFiler3.Application.Files;
 using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Operations;
 using MediFiler3.Services;
+using MediFiler3.Application.Viewing;
 
 namespace MediFiler3;
 
@@ -97,6 +98,8 @@ public partial class MainWindow : Window
         ToolbarIsland.UndoRequested += OnUndoRequested;
         ToolbarIsland.RedoRequested += OnRedoRequested;
         _browseView.ZoomLevelChanged += ToolbarIsland.SetZoomLevel;
+        _browseView.PresentationChanged += UpdateViewerControls;
+        _browseView.PresentationChanged += UpdateToolbarContext;
         _browseView.OperationHistoryChanged += () => _ = UpdateHistoryAvailabilityAsync();
         _navigationState.PropertyChanged += OnNavigationStateChanged;
         ToolbarIsland.SetZoomLevel(_browseView.CurrentZoomLevel);
@@ -104,6 +107,8 @@ public partial class MainWindow : Window
         UpdateFileActionAvailability();
         UpdateToolbarContext();
         UpdateWindowTitle();
+        _browseView.SetViewerActive(false);
+        UpdateViewerControls();
         SourceInitialized += OnWindowSourceInitialized;
         ApplySidebarLayout();
         logger.LogInformation("Main window initialized.");
@@ -179,7 +184,10 @@ public partial class MainWindow : Window
             "Settings" => _settingsView,
             _ => _homeView
         };
+        _browseView.SetViewerActive(destination == "Browse");
+        UpdateViewerControls();
         UpdateFileActionAvailability();
+        UpdateToolbarContext();
         _ = UpdateHistoryAvailabilityAsync();
     }
 
@@ -272,8 +280,15 @@ public partial class MainWindow : Window
     private void UpdateToolbarContext()
     {
         var folder = _navigationState.ActiveFolder;
-        ToolbarIsland.SetFolderContext(folder?.Name ?? "MediFiler3", folder?.Path ?? "No folder loaded · file metadata will appear here");
+        ToolbarIsland.SetFolderContext(folder?.Name ?? "MediFiler3", folder?.Path ?? "No folder loaded");
+        var metadata = PageContent.Content == _browseView && _navigationState.CurrentFile is { } file
+            ? _browseView.GetViewerMetadata(file) : null;
+        ToolbarIsland.SetFileMetadata(ViewerMetadataFormatter.Format(metadata));
     }
+
+    private void UpdateViewerControls() => ToolbarIsland.SetViewerCapabilities(
+        PageContent.Content == _browseView && _navigationState.CurrentFile is not null
+            ? _browseView.ViewerCapabilities : MediFiler3.Application.Viewing.ViewerCapabilities.None, _browseView.CanZoom);
 
     private async void OnLoadFoldersRequested()
     {
@@ -324,6 +339,7 @@ public partial class MainWindow : Window
     private async Task LoadFolderPathsAsync(IEnumerable<string> folderPaths)
     {
         PageContent.Content = _browseView;
+        _browseView.SetViewerActive(true);
         NavigationIsland.SelectDestination("Browse");
         try
         {

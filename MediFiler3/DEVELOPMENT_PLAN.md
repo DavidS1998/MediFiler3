@@ -47,17 +47,16 @@ The pre-Phase-3 performance prerequisites now publish shallow roots first, popul
 
 Add basic video and audio playback, bounded text viewing, unsupported-file details and open-with behavior, relevant metadata, and handler-specific interaction routing. Keep file navigation state centralized.
 
-Recommended order:
+Agreed implementation order (metadata moved ahead of text/media):
 
-1. Review the current Browse viewer and define the handler capability boundary for file detection, loading, presentation, metadata, resource lifetime, and input routing.
-2. Resolve the playback backend and initial video/audio format set. Prefer a small Windows-compatible solution for basic playback; avoid a broad codec runtime unless a demonstrated format requirement justifies it.
-3. Resolve text-viewer encoding and size/read-window limits. Implement bounded reads, scrolling, and clear handling for unreadable or binary files.
-4. Implement basic audio/video playback and controls, route interaction so playback gestures do not trigger file navigation, and preserve central navigation state.
-5. Add handler metadata and unsupported-file details with an Open With fallback. Test cancellation, resource release, large text files, unsupported formats, and navigation while interacting with content.
+1. **Complete:** viewer/navigation extraction, handler capability and metadata/resource contracts, input policy, and modular image-only toolbar controls.
+2. **Complete:** metadata presentation in the toolbar's left section: file size for all current files and original image resolution after decoding. Use a metadata-only top line and a full-path bottom line with the current folder name in white, clear stale metadata on selection changes, and preserve known resolution during same-file zoom/resize reloads. Duration formatting is ready for later media handlers.
+3. **Next:** agree on text encodings and read-window limits, then implement bounded text viewing, scrolling, and navigation/content interaction switching.
+4. Complete unsupported-file fallback with default-application and Open With actions, retaining thumbnail previews and clear errors.
+5. Choose the audio/video backend and initial format targets, then add playback, seeking, volume, speed where supported, duration metadata, and contextual controls. Prefer a small Windows-compatible solution without a broad codec runtime unless justified.
+6. Run Phase 3 integration checks across content types: navigation, input routing, cancellation, resource release, metadata updates, and file operations.
 
-Open decisions before implementation: the video/audio backend and supported formats, text encodings and size limits, and the placement of file metadata in the toolbar or a details view. No Phase 3 backend or limits have been selected yet.
-
-Agreed scope after the read-only design review: metadata comprises file size for all files, image resolution, and duration for video/audio. Modularize the toolbar zoom group so it is visible only for images and replaced by appropriate controls for other content types. Before Step 1, implement folder-tree `(direct/total) - Name` prefixes; this prerequisite is complete. Handler implementation has not started; backend, text limits, and metadata placement remain pending approval.
+Open decisions: video/audio backend and supported formats; text encodings and size/read-window limits. Metadata placement is settled in the left toolbar top line; the full path remains below with its current folder name white. Metadata scope remains file size, image resolution, and audio/video duration. Text/media handlers and external-opening fallback have not been implemented.
 
 ## Phase 4 — Home and persistence
 

@@ -1,26 +1,30 @@
 # Project status
 
 **Snapshot date:** 2026-11-09
-**Overall:** Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and folder-creation undo/redo, grouped file moves, Windows Shell Recycle Bin restore, and Undo/Redo hover previews. The user confirmed the restore and tooltip behavior. Phase 3 is next.
+**Overall:** Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and folder-creation undo/redo, grouped file moves, Windows Shell Recycle Bin restore, and Undo/Redo hover previews. The user confirmed the restore and tooltip behavior. Phase 3 Step 1 is implemented; metadata UI is implemented; bounded text viewing is next after encoding/window-limit decisions.
 
 ## Handover: resume here
 
-Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and empty-folder compensation, grouped file moves, Undo/Redo hover previews, and a Shell-based Recycle Bin restore adapter with fake-adapter tests. The user confirmed that Recycle Bin restoration and the tooltip behavior work. Phase 3 is next; no Phase 3 implementation has started.
+Phase 1 and Phase 2.1-2.5 are complete. Step 2.5 includes verified move/rename and empty-folder compensation, grouped file moves, Undo/Redo hover previews, and a Shell-based Recycle Bin restore adapter with fake-adapter tests. The user confirmed that Recycle Bin restoration and the tooltip behavior work. Phase 3 Step 1 is implemented: viewer/handler boundaries, centralized navigation and input policy, and modular image toolbar controls. Metadata UI is implemented. The agreed remaining order is bounded text, external-opening fallback, media playback/duration, and integration checks.
 
 The working tree was clean at the November 9 read-only review; the previous Step 2.5 uncommitted-change note is obsolete. The subsequent folder-count prerequisite adds implementation, tests, and documentation changes. Inspect `git status` and the diff before editing; preserve existing changes.
 
 1. Read `AGENTS.md`, `SPECIFICATION.md`, `ARCHITECTURE.md`, `DEVELOPMENT_PLAN.md`, and this status file before coding.
 2. Inspect the solution and current working tree. Preserve the WPF host and existing WPF/WinUI XAML Island boundary.
 3. Keep journal changes append-only and recovery conservative; ambiguous operations must not be retried automatically.
-4. Start Phase 3 from `DEVELOPMENT_PLAN.md`: resolve the media backend, supported format, bounded text-reader, and metadata presentation decisions before adding handlers. Keep file navigation state centralized and make content interactions suppress accidental file navigation.
+4. Continue Phase 3 after the completed Step 1 extraction: implement the agreed order: metadata UI (complete), bounded text after encoding/window-limit decisions, external-opening fallback, then media after backend/format decisions. Keep file navigation state centralized and make content interactions suppress accidental file navigation.
 5. Maintain the no-silent-overwrite/no-permanent-delete safety rules for future filesystem changes. Build and run relevant tests after implementation work, then update the plan and status.
 
 ## Current implementation
 
+- Metadata UI step is complete: the left toolbar top line displays metadata only, for example `1.1 MB - [128×128]`, with one fractional digit and a period by default. File sizes retain 1024-based scaling but use B/KB/MB/etc. labels. The full folder path remains below in its original gray with only the current folder name white. Dimensions arrive with decoding and remain stable during zoom/resize reloads. Selection identity checks clear stale dimensions immediately. Metadata is hidden on Home/Settings. Duration formatting is implemented but awaits video/audio handlers. No new content reads or dependencies were added.
+
+- Phase 3 Step 1: App's ViewerHostView owns the bitmap viewport and image gestures; image decoding and unsupported-thumbnail fallback use separate handlers. Application owns generic handler/capability/metadata contracts, cancellation and generation-checked viewer coordination, disposable results, navigation commands, and input policy. Available carousel thumbnails still preview immediately; duplicate full-image preview decoding is removed. The extracted WinUI image toolbar group appears only for image content and is disabled until an image/preview is usable. Leaving Browse clears its presentation/cancels loading; returning reloads the selected file and retains zoom/pan state. File size and original resolution now appear in the left toolbar; media/text/external-opening features remain future work.
+
 - Follow-up performance fixes: shallow roots are published before descendant discovery or file listing finishes. A separate cancellable breadth-first hierarchy stream enumerates one directory at a time in Infrastructure; WPF appends observable children with a background-priority yield every 32 rows. Unknown subtree totals remain `?` until child discovery completes. After hierarchy discovery, a separate cancellable count stream populates file counts, with entry versions protecting newer listing/operation counts. Ancestor aggregates are cached. Load/refresh/shutdown cancel obsolete streams. Tree virtualization remains disabled, so the fully expanded tree can still consume substantial UI memory.
 
 - November 9 prerequisite before Phase 3: folder rows show `(direct/total) - Name`. Counts exclude Hidden/System files, include unsupported files, and include direct files in the subtree total. Background scans retain the existing junction/symbolic-link exclusions and inaccessible-entry warnings. Counts update on folder selection, successful file moves/deletion, folder operations, undo/redo, and explicit tree refresh. External changes still require refresh/reload. Raw folder names remain unchanged for dialogs and toolbar context.
-- Phase 3 decisions supplied by the user: metadata is file size for all files, image resolution, and duration for video/audio. The zoom toolbar group must become modular, visible only for images, and replaced with appropriate controls for other content. This handler/toolbar work has not started. Proposed playback/text defaults and metadata placement have not yet been approved.
+- Phase 3 decisions supplied by the user: metadata is file size for all files, image resolution, and duration for video/audio. The zoom toolbar group must become modular, visible only for images, and replaced with appropriate controls for other content. The image handler/toolbar extraction is complete. File size and original image resolution are exposed through metadata contracts; metadata presentation is implemented; playback/text defaults and later contextual groups remain pending.
 
 - Phase 2.1 adds operation records and the application-owned journal contract. Infrastructure owns an idempotently initialized, versioned SQLite database in LocalAppData, initialized by the host before the main window.
 - Phase 2.2 replaces mutable status rows with immutable operation intents and append-only events, migrates the earlier schema, stores versioned typed payload JSON, tracks compensating-operation links, and exposes undo/redo candidates. User operations invalidate outstanding redo candidates transactionally. SQLite uses WAL plus FULL synchronous durability.
@@ -55,12 +59,12 @@ The working tree was clean at the November 9 read-only review; the previous Step
 
 ## Next phase: immediate tasks and open decisions
 
-Phase 3 is the next work item; it has not started. Begin with a small design pass and preserve centralized file navigation and the WPF host.
+Phase 3 viewer extraction and metadata UI are implemented. Continue with bounded text viewing after agreeing on encoding/window limits, followed by external-opening fallback and then media playback after backend/format decisions. Preserve centralized navigation and the WPF host.
 
-1. Review the current Browse viewer and define the file-handler capability boundary for loading, presentation, metadata, playback, and input routing.
+1. Complete: extracted ViewerHostView, image/thumbnail handlers, generic coordinator and metadata/resource contracts, NavigationController/input policy, and a modular image-only toolbar group.
 2. Decide which Windows-compatible playback backend and initial video/audio formats meet basic playback needs without adding an unnecessary codec runtime.
-3. Set bounded text-viewer behavior: supported encodings, maximum file size or read window, and how unreadable/binary text is reported.
-4. Decide which metadata appears in the toolbar and which belongs in file details, then implement basic text/media handlers and the unsupported-file/Open With fallback.
+3. Next implementation task: set bounded text-viewer behavior: supported encodings, maximum file size or read window, and how unreadable/binary text is reported.
+4. Metadata UI is complete: file size and original image resolution in the metadata-only top line of the left toolbar, above the highlighted folder path. After text viewing, implement default-application/Open With actions, then media playback with duration metadata.
 5. Cover handler routing, cancellation/resource release, large text files, playback controls, and unsupported formats with tests and interactive checks.
 
 There are no unresolved Step 2.5 decisions. The settled Undo/Redo tooltip is informational: it lists at most eight planned batch entries plus a remaining-item count, while the buttons and shortcuts apply immediately and the operation service revalidates before mutation.
@@ -104,7 +108,7 @@ Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative
 - Shell thumbnails depend on the file type's installed Windows Shell thumbnail provider. The service requests thumbnail-only results and uses a placeholder when no thumbnail is available.
 - Undo/Redo hover tooltips are compact previews: batches show the first eight actions/paths and a count of remaining items. The tooltip is informational; execution rechecks identities and conflicts.
 - `MediFiler3.Infrastructure.Tests` is the only automated test project. Domain and Application do not have separate test projects.
-- The 37 automated tests cover journal and filesystem behavior, including fake-adapter Recycle Bin restoration; they do not directly assert undo/redo preview contents or tooltip rendering. The user verified the tooltip behavior interactively.
+- The 61 automated tests cover journal/filesystem behavior, progressive hierarchy/counts, navigation, handler routing, cancellation/stale results, presentation disposal, and input policy. They do not directly assert WinUI rendering, WPF image gestures, or tooltip appearance; current handler/toolbar changes need interactive regression checks.
 - Animated GIF playback is not implemented; current GIF viewing uses the first frame. WebP is not currently supported. Both are required for a future version.
 - Home remains a placeholder. Recent/frequent/favorite folders and settings persistence are deferred to Phase 4; the Pin state and carousel density are session-only.
 - The user has reviewed the current interface and reports no UI issues. Step 1.8 is complete.
@@ -116,6 +120,12 @@ Phase 2.1-2.5 established and tested an append-only SQLite journal, conservative
 - Carousel density defaults to five neighboring files per side, configurable by total icon counts 1, 3, ..., 25 in Settings. The value is session-only until persistence is implemented.
 
 ## Verification record
+
+- Toolbar formatting follow-up: metadata-only top line, one decimal digit, invariant-period default, KB/MB labels, compact bracketed dimensions; current folder segment is white in the muted full-path line. Decimal-separator settings UI remains deferred; formatter supports an explicit culture override. Verification: all 76 tests passed, solution build succeeded with 0 warnings/errors, and diff checks passed. Interactive appearance remains to be reviewed.
+
+- Metadata UI verification (2026-11-09): all 75 tests passed; solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Coverage adds binary size boundaries/large sizes, incomplete dimensions, missing metadata, localized decimals, duration formatting, and stale decode metadata suppression. Toolbar appearance still needs interactive review.
+
+- Phase 3 Step 1 verification (2026-11-09): all 61 tests passed; solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Added routing/capabilities, same-file supersession, late success/failure suppression, cancellation, disposable-result lifetime, input ownership, selection validation, and boundary navigation coverage. Interactive image/toolbar/focus regression checks have not been performed in this pass.
 
 - Progressive hierarchy verification (2026-11-09): all 47 tests passed. Added shallow-root/breadth-first ordering, discovery cancellation, dynamic child totals, user-collapse preservation, and removed-folder error isolation coverage. Solution build succeeded with 0 warnings and 0 errors; `git diff --check` passed. Interactive large-tree timing has not been measured in this pass.
 

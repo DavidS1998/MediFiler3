@@ -21,11 +21,13 @@ namespace MediFiler3.Interop;
 public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 {
     private DesktopWindowXamlSource? _xamlSource;
-    private TextBlock? _folderTitle;
     private TextBlock? _folderDetails;
-    private TextBlock? _zoomText;
+    private TextBlock? _fileMetadata;
+    private string _fileMetadataText = string.Empty;
+    private ImageToolbarGroup? _imageToolbar;
+    private bool _imageControlsVisible;
+    private bool _imageControlsEnabled;
     private Grid? _rootElement;
-    private AppBarButton? _fitZoomButton;
     private AppBarButton? _renameFileButton;
     private AppBarButton? _deleteFileButton;
     private AppBarButton? _undoButton;
@@ -195,7 +197,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         var menu = new MenuFlyout();
         AddFolderMenuItem(menu, "New folder", "new-folder", folderName, actionHandler);
         AddFolderMenuItem(menu, "Rename folder", "rename-folder", folderName, actionHandler);
-        AddFolderMenuItem(menu, "Move folder to…", "move-folder", folderName, actionHandler);
+        AddFolderMenuItem(menu, "Move folder toâ€¦", "move-folder", folderName, actionHandler);
         AddFolderMenuItem(menu, "Send folder to Recycle Bin", "recycle-folder", folderName, actionHandler);
         menu.Items.Add(new MenuFlyoutSeparator());
         AddFolderMenuItem(menu, "Refresh tree", "refresh-tree", folderName, actionHandler);
@@ -234,10 +236,10 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 
         const int maxItems = 8;
         var lines = preview.Items.Take(maxItems).Select(item =>
-            $"{item.Action}: {item.SourcePath ?? "—"} → {item.DestinationPath ?? "—"}").ToList();
+            $"{item.Action}: {item.SourcePath ?? "â€”"} â†’ {item.DestinationPath ?? "â€”"}").ToList();
         lines.Insert(0, $"{action} {preview.Items.Count} {(preview.Items.Count == 1 ? "change" : "changes")}:");
         if (preview.Items.Count > maxItems)
-            lines.Add($"… and {preview.Items.Count - maxItems} more");
+            lines.Add($"â€¦ and {preview.Items.Count - maxItems} more");
 
         return new ToolTip
         {
@@ -257,25 +259,55 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     {
         _folderTitleText = title;
         _folderDetailsText = details;
-        if (_folderTitle is not null)
+        UpdateFolderPath();
+    }
+
+    private void UpdateFolderPath()
+    {
+        if (_folderDetails is null) return;
+        _folderDetails.Inlines.Clear();
+        var trimmed = _folderDetailsText.TrimEnd('\\', '/');
+        var name = _folderTitleText.TrimEnd('\\', '/');
+        if (!string.IsNullOrEmpty(name) && trimmed.EndsWith(name, StringComparison.OrdinalIgnoreCase))
         {
-            _folderTitle.Text = title;
-            _folderDetails!.Text = details;
+            var offset = trimmed.Length - name.Length;
+            _folderDetails.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = trimmed[..offset] });
+            _folderDetails.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
+            {
+                Text = trimmed[offset..],
+                Foreground = Brush(255, 255, 255)
+            });
+            _folderDetails.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = _folderDetailsText[trimmed.Length..] });
         }
+        else _folderDetails.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = _folderDetailsText });
+        ToolTipService.SetToolTip(_folderDetails, _folderDetailsText);
     }
 
     public void SetZoomLevel(double zoomLevel)
     {
         _zoomLevel = zoomLevel;
-        if (_zoomText is not null)
-        {
-            _zoomText.Text = $"{zoomLevel:P0}";
-        }
+        _imageToolbar?.SetZoom(zoomLevel);
+    }
 
-        if (_fitZoomButton is not null)
+    public void SetFileMetadata(string metadata)
+    {
+        _fileMetadataText = metadata;
+        if (_fileMetadata is null) return;
+        _fileMetadata.Text = metadata;
+        _fileMetadata.Visibility = string.IsNullOrEmpty(metadata)
+            ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+        ToolTipService.SetToolTip(_fileMetadata, metadata);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fileMetadata, metadata);
+    }
+
+    public void SetViewerCapabilities(MediFiler3.Application.Viewing.ViewerCapabilities capabilities, bool canInteract)
+    {
+        _imageControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.Zoom);
+        _imageControlsEnabled = _imageControlsVisible && canInteract;
+        if (_imageToolbar is not null)
         {
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fitZoomButton,
-                $"Reset zoom to fit, {zoomLevel:P0}");
+            _imageToolbar.Control.Visibility = _imageControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+            _imageToolbar.Control.IsEnabled = _imageControlsEnabled;
         }
     }
 
@@ -299,10 +331,9 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             _xamlSource = null;
         }
 
-        _folderTitle = null;
         _folderDetails = null;
-        _zoomText = null;
-        _fitZoomButton = null;
+        _fileMetadata = null;
+        _imageToolbar = null;
         _renameFileButton = null;
         _deleteFileButton = null;
         _rootElement = null;
@@ -346,7 +377,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         }
 
         var left = CreateFolderContext();
-        left.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left;
+        left.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch;
         Grid.SetColumn(left, 0);
         layout.Children.Add(left);
 
@@ -367,27 +398,14 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 
-        var right = CreateCommandBar(Microsoft.UI.Xaml.HorizontalAlignment.Right, new Thickness(8, 0, 8, 0));
-        right.PrimaryCommands.Add(CreateButton(Symbol.ZoomOut, "Zoom out", () => ZoomOutRequested?.Invoke()));
-        _fitZoomButton = CreateButton(Symbol.Zoom, "Reset zoom to fit", () => ResetZoomRequested?.Invoke());
-        right.PrimaryCommands.Add(_fitZoomButton);
-        _zoomText = new TextBlock
-        {
-            Text = $"{_zoomLevel:P0}",
-            FontSize = 12,
-            Foreground = Brush(225, 227, 231),
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Margin = new Thickness(-5, 0, 0, 0)
-        };
-        right.PrimaryCommands.Add(new AppBarElementContainer
-        {
-            Content = _zoomText,
-            Width = 32,
-            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
-        });
-        right.PrimaryCommands.Add(CreateButton(Symbol.ZoomIn, "Zoom in", () => ZoomInRequested?.Invoke()));
-        Grid.SetColumn(right, 2);
-        layout.Children.Add(right);
+        _imageToolbar = new ImageToolbarGroup(() => ZoomOutRequested?.Invoke(),
+            () => ResetZoomRequested?.Invoke(), () => ZoomInRequested?.Invoke());
+        _imageToolbar.SetZoom(_zoomLevel);
+        _imageToolbar.Control.Margin = new Thickness(8, 0, 8, 0);
+        _imageToolbar.Control.Visibility = _imageControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        _imageToolbar.Control.IsEnabled = _imageControlsEnabled;
+        Grid.SetColumn(_imageToolbar.Control, 2);
+        layout.Children.Add(_imageToolbar.Control);
 
         return layout;
     }
@@ -400,14 +418,6 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             Spacing = 0,
             Margin = new Thickness(12, 0, 4, 0)
         };
-        _folderTitle = new TextBlock
-        {
-            Text = _folderTitleText,
-            FontSize = 13,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = Brush(245, 245, 245),
-            TextTrimming = Microsoft.UI.Xaml.TextTrimming.CharacterEllipsis
-        };
         _folderDetails = new TextBlock
         {
             Text = _folderDetailsText,
@@ -415,8 +425,18 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             Foreground = Brush(163, 166, 174),
             TextTrimming = Microsoft.UI.Xaml.TextTrimming.CharacterEllipsis
         };
-        panel.Children.Add(_folderTitle);
+        _fileMetadata = new TextBlock
+        {
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = Brush(245, 245, 245),
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+            TextWrapping = Microsoft.UI.Xaml.TextWrapping.NoWrap
+        };
+        SetFileMetadata(_fileMetadataText);
+        panel.Children.Add(_fileMetadata);
         panel.Children.Add(_folderDetails);
+        UpdateFolderPath();
         return panel;
     }
 

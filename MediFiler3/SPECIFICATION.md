@@ -1,4 +1,4 @@
-﻿# 1. Project overview
+# 1. Project overview
 
 ## 1.1 Product description
 
@@ -573,6 +573,8 @@ Search results should allow opening files in the main viewer and performing file
 ## 8.2 Metadata
 
 The agreed initial metadata scope is file size for all files, image resolution for images, and duration for video and audio. Additional metadata below remains future scope.
+
+Display these values in the left toolbar alongside folder context, using the top line exclusively for metadata and the bottom line for the full folder path. Keep the path muted gray except for its final/current folder name, which is white. Show file size immediately, add original pixel dimensions after image loading, and show duration once a media handler provides it. Clear previous-file metadata immediately on selection changes. Keep known image dimensions stable during same-file zoom/resize reloads; hide file metadata outside Browse. Use KB/MB/GB labels with the existing 1024-based scaling, exactly one fractional digit, and a period by default. Format image metadata as `1.1 MB - [128×128]`. A future settings option may select the decimal separator.
 
 Display relevant metadata depending on the file type.
 

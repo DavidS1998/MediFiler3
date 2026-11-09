@@ -7,6 +7,10 @@ namespace MediFiler3.Services;
 public sealed class WicImageDecoder(IFileContentService fileContentService)
 {
     public async Task<BitmapSource> LoadAsync(string filePath, int maxPixelWidth, int maxPixelHeight, CancellationToken cancellationToken)
+        => (await LoadWithDimensionsAsync(filePath, maxPixelWidth, maxPixelHeight, cancellationToken)).Source;
+
+    public async Task<(BitmapSource Source, int Width, int Height)> LoadWithDimensionsAsync(
+        string filePath, int maxPixelWidth, int maxPixelHeight, CancellationToken cancellationToken)
     {
         maxPixelWidth = Math.Max(1, maxPixelWidth);
         maxPixelHeight = Math.Max(1, maxPixelHeight);
@@ -27,7 +31,7 @@ public sealed class WicImageDecoder(IFileContentService fileContentService)
         await using var imageStream = await fileContentService.OpenReadAsync(filePath, cancellationToken);
         var bitmap = await Task.Run(() => Decode(imageStream, decodeWidth), cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        return bitmap;
+        return (bitmap, originalWidth, originalHeight);
     }
 
     private static (int Width, int Height) ReadDimensions(Stream stream)
