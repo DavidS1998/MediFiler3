@@ -61,6 +61,8 @@ Favorites apply only to saved root folders and are added/removed from Home, not 
 
 Use a native WinUI card layout within the WPF host: Recent, Frequent and Favorites sections, standard Windows spacing (16 px card insets, 12 px content spacing, 8 px action spacing) and responsive columns. Show compact root names and visit counts with relative last-visited times. Full paths and exact local timestamps belong in hover text. Relative times use seconds, minutes, hours, days, 30-day months and 365-day years, with singular/plural forms and live updates while Home is open. Retain clear empty states and Add folders. Large saved lists may use explicit Show more controls without removing persisted history.
 
+Keep the header compact: omit the library subtitle, use a 16 px top inset and a 12 px gap between commands and cards. Center the header/card block in the viewport at every width, capped at 1600 px with 32 px side margins.
+
 ### Home screen behavior
 
 - Clicking a folder opens it in the main application interface.
@@ -97,7 +99,7 @@ Files should be indexed sufficiently to support fast navigation, sorting, thumbn
 - The application should handle inaccessible directories and files gracefully.
 - Symbolic links and directory junctions should be handled safely, avoiding infinite traversal loops.
 - The user should be able to refresh or rescan a collection.
-- Filesystem changes made outside the application should eventually be reflected in the interface.
+- Filesystem changes made outside the application should eventually be reflected in the interface. While Browse is active, watch all loaded-root hierarchies with duplicate/nested coverage reduced. Coalesce events with 500 ms quiet debounce/2 s maximum batching delay and a 1,024-path bound; overflow/error triggers rescan. Stop watchers outside Browse and on root replacement/shutdown. Reconcile on return/reconnection, defer during commands/dialogs, preserve selection/expansion and unaffected presentation, reopen affected media paused, and never count automatic work as root visits. Unavailable coverage reports degraded status, retries up to 60 s and polls the active folder; F5 remains available.
 
 # 3. Main viewer
 
@@ -142,7 +144,7 @@ When displaying an image:
 - Holding the left mouse button should allow panning the image.
 - Provide a way to reset the zoom and return to the default fit-to-view state.
 - Preserve the zoom level and pan position when appropriate, but reset them when moving to another image.
-- Initially support common WIC formats including JPEG, PNG, BMP, GIF, and TIFF. WebP also routes through the image viewer and thumbnail decoder using the installed Windows WIC codec. Missing codec/decoding errors retain external-opening actions. Animated GIFs play automatically using embedded frame delays and loop counts, including transparency, offset frames and disposal methods. Show animated GIF duration for one cycle (sum of effective frame delays), without multiplying by finite/infinite loop counts, after its dimensions: `1.1 MB - [128×128] - [00:14]`. Zero or absent delays use the player's 100 ms fallback; static GIFs omit duration. Keep the image zoom/pan controls and original logical-canvas resolution metadata; zoom/resize must not restart playback. Stop and release animation when changing files, leaving Browse or shutting down, and close the source file after loading so operations can proceed. Single-frame GIFs and WebP use static image decoding; animated WebP remains future scope.
+- Initially support common WIC formats including JPEG (including .jfif), PNG, BMP, GIF, and TIFF. WebP also routes through the image viewer and thumbnail decoder using the installed Windows WIC codec. Missing codec/decoding errors retain external-opening actions. Animated GIFs play automatically using embedded frame delays and loop counts, including transparency, offset frames and disposal methods. Show animated GIF duration for one cycle (sum of effective frame delays), without multiplying by finite/infinite loop counts, after its dimensions: `1.1 MB - [128×128] - [00:14]`. Zero or absent delays use the player's 100 ms fallback; static GIFs omit duration. Keep the image zoom/pan controls and original logical-canvas resolution metadata; zoom/resize must not restart playback. Stop and release animation when changing files, leaving Browse or shutting down, and close the source file after loading so operations can proceed. Single-frame GIFs and WebP use static image decoding; animated WebP remains future scope.
 
 Zooming should support viewing the original image resolution without unnecessarily upscaling small images.
 
@@ -231,7 +233,7 @@ Its purpose is to provide visual context for the currently selected file and all
 
 ### Requirements
 
-- Display a configurable number of previous and upcoming files.
+- Display a configurable number of previous and upcoming files. A persisted Show carousel setting (default on) disables the entire carousel, its peek/reveal interaction and carousel thumbnail work without disabling viewer navigation. Retain the configured density while off.
 - Use 150 × 150 pixel square thumbnail tiles by default; fill each tile while preserving aspect ratio and cropping from the center as needed.
 - Display the current file distinctly.
 - Keep the current file centered in the visible carousel viewport and animate recentering during file navigation to avoid abrupt shifts. Provide blank space before the first file or after the last file as needed to preserve this centered position.
@@ -438,7 +440,7 @@ The layout should adapt to different window sizes.
 ### Windows UI framework integration
 
 - The application remains a WPF desktop application, with WPF owning the top-level window, application startup, and composition root.
-- WinUI controls may be hosted through Windows App SDK XAML Islands when their built-in Windows behavior or consistency provides a clear benefit. Use WinUI `NavigationView` for the primary navigation rail; keep ordinary views in WPF unless there is a specific reason to host them.
+- Prefer suitable WinUI controls over WPF equivalents through Windows App SDK XAML Islands for native behavior and consistent styling. Retain WPF as the host and use WPF where rendering/interop needs make it appropriate. Settings buttons, toggle, slider and scroll container use WinUI; the navigation rail uses WinUI `NavigationView`.
 - Keep the application navigation rail in its compact icon-only state at all times; do not provide a pane expand/collapse toggle. Keep Settings at the bottom of the rail. The entire rail must remain programmatically hideable so fullscreen mode can remove it.
 - The WPF and WinUI boundary must preserve shared application navigation state and support keyboard focus, resizing, DPI changes, accessibility, and clean shutdown.
 - Prefer the native Windows caption and caption buttons. Its caption and text colors should be changeable at runtime, defaulting to black with white text. Use Windows 11 DWM caption color attributes for the WPF top-level window; WinUI `SetTitleBar` applies only to a WinUI top-level window.
@@ -493,6 +495,10 @@ The toolbar should be organized into logical groups.
 - Toggle folder tree.
 - Toggle file carousel.
 - Fullscreen.
+
+### Fullscreen
+
+F11 and a toggle at the far right of the toolbar enter/exit borderless fullscreen on the current monitor. Hide the caption, toolbar, sidebar and carousel peek. Hover near the top edge to reveal the native title bar and toolbar, the left edge to reveal sidebar and folder tree together, or the bottom edge to reveal the carousel; a disabled carousel stays disabled. Keep tree pin/reveal behavior. Preserve playback, selection and viewer interaction on transitions. Restore the preceding normal/maximized bounds on exit, and preserve that layout for restart even when closing fullscreen. Fullscreen itself is not persisted.
 
 ### Application
 - Settings.
@@ -709,7 +715,7 @@ Persist the following between sessions:
 - Favorite folders.
 - Application settings, including cross-session media volume and mute, carousel density and folder pin.
 - Window and panel layout.
-- Thumbnail cache information.
+- Thumbnail cache information. Retain the existing PNG cache and memory bounds; record owned filename/key, byte size and last access with 30-second batched writes/shutdown flush. Invalidate changed paths and F5 active-folder results even when size/timestamp match. Idle maintenance removes entries unused for 90 days and, above 1 GiB, prunes least-recently-used entries toward 900 MiB. Start after 30 s idle, then at most hourly; locked/in-use entries may delay reaching the target. Settings shows usage and Clear thumbnail cache. Coordinate readers/writers/decoders and remove only verified owned cache artifacts, rejecting links and retaining unknown files. Never prune source media, overwrite backups or operation/state history as cache.
 - Optional saved collections.
 
 Use a suitable local persistence mechanism.
@@ -799,7 +805,7 @@ Do not attempt to implement all features simultaneously.
 
 **Goal:** Make the application convenient for repeated daily use.
 
-Phase 4 steps 4.1 through 4.3 are implemented: typed storage, schema-4 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; step 4.5 implements monitor-aware window layout persistence; filesystem reconciliation/cache maintenance is next (4.6). Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
+Phase 4 steps 4.1 through 4.6 are implemented: typed storage, current schema-7 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; step 4.5 implements monitor-aware window layout persistence; step 4.6 implements loaded-root reconciliation and agreed thumbnail-cache maintenance; 4.7 automated acceptance is complete, with physical review still open in PHASE4_ACCEPTANCE.md. Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
 
 ## Phase 5 – Alternative viewing modes
 
@@ -876,3 +882,7 @@ After each development phase:
 When requirements are ambiguous, propose a solution consistent with the product's core philosophy and explain the trade-offs before making significant architectural decisions.
 
 **The ultimate goal is to create a fast, intuitive, extensible Windows application that makes browsing, viewing, and organizing large collections of files feel like one continuous activity.**
+
+Carousel visual updates should coalesce during rapid scrolling without losing navigation steps. Keep surviving tiles stable, cancel obsolete thumbnail work and fade entering/departing edge tiles without delaying input or removal. Honor the Windows animation preference.
+
+Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.

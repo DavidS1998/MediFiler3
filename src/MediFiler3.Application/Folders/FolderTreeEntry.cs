@@ -10,9 +10,11 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
     private bool _isSelected;
     private long? _directFileCount;
     private long? _totalFileCount;
+    private string? _publishedDisplayName;
     private long _knownChildFileCount;
     private int _unknownChildCount;
     private readonly ObservableCollection<FolderTreeEntry> _children = [];
+    private readonly Dictionary<FolderTreeEntry, PropertyChangedEventHandler> _childHandlers = [];
     public bool AreChildrenLoaded { get; private set; }
 
     public long? DirectFileCount => _directFileCount;
@@ -54,6 +56,7 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         foreach (var child in children ?? []) AddChild(child);
         _totalFileCount = CalculateTotal();
         _isExpanded = Children.Count > 0;
+        _publishedDisplayName = DisplayName;
     }
 
     public void AddChild(FolderTreeEntry child)
@@ -63,7 +66,7 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         var previousTotal = child.TotalFileCount;
         if (previousTotal is { } known) _knownChildFileCount += known;
         else _unknownChildCount++;
-        child.PropertyChanged += (_, args) =>
+        PropertyChangedEventHandler handler = (_, args) =>
         {
             if (args.PropertyName != nameof(TotalFileCount)) return;
             if (previousTotal is { } previous) _knownChildFileCount -= previous;
@@ -73,10 +76,63 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
             else _unknownChildCount++;
             NotifyTotalChanged();
         };
+        _childHandlers[child] = handler;
+        child.PropertyChanged += handler;
         // Expand when the first children arrive, but preserve a later user collapse.
         if (Children.Count == 1) IsExpanded = true;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasChildren)));
         NotifyTotalChanged();
+    }
+
+    public void ReconcileChildren(IReadOnlyList<FolderTreeEntry> children) =>
+        ReconcileChildrenAsync(children).GetAwaiter().GetResult();
+
+    public async Task ReconcileChildrenAsync(IReadOnlyList<FolderTreeEntry> children,
+        Func<Task>? yieldBatch = null, CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        // A rescan of an unchanged subtree must not publish known -> unknown -> known
+        // totals through every ancestor. Large trees otherwise repeatedly repaint the root.
+        if (AreChildrenLoaded && _children.Select(c => c.Path).SequenceEqual(children.Select(c => c.Path), StringComparer.OrdinalIgnoreCase)) return;
+        var names = children.Select(c => c.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!names.SetEquals(_children.Select(c => c.Path)))
+        {
+            AreChildrenLoaded = false;
+            NotifyTotalChanged();
+        }
+        var batch = 0;
+        async Task YieldAsync()
+        {
+            token.ThrowIfCancellationRequested();
+            if (++batch % 32 == 0 && yieldBatch is not null) await yieldBatch();
+            token.ThrowIfCancellationRequested();
+        }
+        foreach (var old in _children.Where(c => !names.Contains(c.Path)).ToArray())
+        {
+            old.PropertyChanged -= _childHandlers[old];
+            _childHandlers.Remove(old);
+            _children.Remove(old);
+            if (old.TotalFileCount is { } count) _knownChildFileCount -= count;
+            else _unknownChildCount--;
+            old.Parent = null;
+            await YieldAsync();
+        }
+        var expanded = IsExpanded;
+        var existingByPath = _children.ToDictionary(c => c.Path, StringComparer.OrdinalIgnoreCase);
+        foreach (var child in children)
+        {
+            if (!existingByPath.ContainsKey(child.Path)) { AddChild(child); existingByPath.Add(child.Path, child); }
+            await YieldAsync();
+        }
+        for (var i = 0; i < children.Count; i++)
+        {
+            if (!string.Equals(_children[i].Path, children[i].Path, StringComparison.OrdinalIgnoreCase))
+                _children.Move(_children.IndexOf(existingByPath[children[i].Path]), i);
+            await YieldAsync();
+        }
+        IsExpanded = expanded;
+        CompleteChildrenLoad();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasChildren)));
     }
 
     public void CompleteChildrenLoad()
@@ -102,7 +158,12 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         _totalFileCount = CalculateTotal();
         if (previousTotal != _totalFileCount)
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TotalFileCount)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+        var displayName = DisplayName;
+        if (_publishedDisplayName != displayName)
+        {
+            _publishedDisplayName = displayName;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+        }
     }
 
     private long? CalculateTotal() => !AreChildrenLoaded || DirectFileCount is null || _unknownChildCount > 0

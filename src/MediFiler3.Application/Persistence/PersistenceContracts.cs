@@ -1,7 +1,7 @@
 namespace MediFiler3.Application.Persistence;
 
 public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5,
-    int CarouselIconCount = 11, bool FolderTreePinned = false)
+    int CarouselIconCount = 11, bool FolderTreePinned = false, bool CarouselEnabled = true)
 {
     public void Validate()
     {
@@ -36,7 +36,7 @@ public sealed record RootFolderHistory(string Path, long OpenCount, DateTimeOffs
 
 // CacheFileName is a leaf name inside the existing owned thumbnail directory, never a source path.
 public sealed record ThumbnailCacheEntry(string Key, string CacheFileName, long SizeBytes,
-    DateTimeOffset LastAccessUtc);
+    DateTimeOffset LastAccessUtc, string? SourcePath = null, bool Invalidated = false);
 
 public interface IApplicationSettingsStore
 {

@@ -19,6 +19,15 @@ public sealed class WindowLayoutController : IDisposable
     private WindowLayout? _lastCapture;
     private bool _ready, _applying, _maximized, _disposed, _reconcileQueued;
     private bool _inMoveSize, _pendingDisplayChange;
+    private bool _transientPresentation;
+    public event Action? TransientDisplayChanged;
+    public void SetTransientPresentation(bool transient)
+    {
+        if (_transientPresentation == transient) return;
+        if (transient) { _captureTimer.Stop(); CaptureChange(); }
+        _transientPresentation = transient;
+        if (!transient) ReconcileDisplays();
+    }
     public event Action<Exception>? PlacementFailed;
 
     public WindowLayoutController(Window window, WindowLayoutService service, IWindowPlacementPlatform platform)
@@ -74,13 +83,13 @@ public sealed class WindowLayoutController : IDisposable
     private void OnSizeChanged(object sender, SizeChangedEventArgs args) => ScheduleCapture();
     private void OnStateChanged(object? sender, EventArgs args)
     {
-        if (_ready && !_applying && _window.WindowState != WindowState.Minimized)
+        if (_ready && !_applying && !_transientPresentation && _window.WindowState != WindowState.Minimized)
             _maximized = _window.WindowState == WindowState.Maximized;
         ScheduleCapture();
     }
     private void ScheduleCapture()
     {
-        if (!_ready || _applying || _disposed) return;
+        if (!_ready || _applying || _disposed || _transientPresentation) return;
         _captureTimer.Stop();
         _captureTimer.Start();
     }
@@ -88,7 +97,7 @@ public sealed class WindowLayoutController : IDisposable
     private WindowLayout Capture() => _platform.Capture(_window, _maximized, _service.Current?.FolderTreeWidth ?? 300);
     private void CaptureChange()
     {
-        if (!_ready || _disposed) return;
+        if (!_ready || _disposed || _transientPresentation) return;
         TryPlace(() =>
         {
             var value = Capture();
@@ -136,6 +145,7 @@ public sealed class WindowLayoutController : IDisposable
     public void ReconcileDisplays()
     {
         if (!_ready || _disposed) return;
+        if (_transientPresentation) { TransientDisplayChanged?.Invoke(); return; }
         _captureTimer.Stop();
         TryPlace(() =>
         {

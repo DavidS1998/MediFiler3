@@ -56,7 +56,9 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<MediFiler3.Application.Folders.IFolderTreeService, FileSystemFolderTreeService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();
-                    services.AddSingleton<IThumbnailService, FileSystemThumbnailService>();
+                    services.AddSingleton<IFolderChangeMonitor, FileSystemFolderChangeMonitor>();
+                    services.AddSingleton<FileSystemThumbnailService>();
+                    services.AddSingleton<IThumbnailService>(p => p.GetRequiredService<FileSystemThumbnailService>());
                     services.AddSingleton<IFileCollisionPreviewService, FileSystemCollisionPreviewService>();
                     services.AddSingleton<ITextContentService, FileSystemTextContentService>();
                     services.AddSingleton<IWindowsFileLaunchAdapter, WindowsFileLaunchAdapter>();
@@ -77,6 +79,8 @@ public partial class App : System.Windows.Application
             layout.PersistenceFailed += exception => _host.Services.GetRequiredService<ILogger<App>>()
                 .LogWarning(exception, "Could not load/save window layout; safe placement or current session values remain available.");
             Task.Run(() => Task.WhenAll(settings.InitializeAsync(), layout.InitializeAsync())).GetAwaiter().GetResult();
+            _host.Services.GetRequiredService<FileSystemThumbnailService>().MaintenanceFailed += exception =>
+                _host.Services.GetRequiredService<ILogger<App>>().LogWarning(exception, "Thumbnail maintenance failed; cleanup will retry.");
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             MainWindow = mainWindow;
             mainWindow.Closing += (_, _) =>
@@ -103,6 +107,8 @@ public partial class App : System.Windows.Application
         {
             if (!_settingsFlushedBeforeClose) FlushSettingsWithWarning();
             _host.Services.GetRequiredService<RootFolderHistoryService>().FlushAsync().GetAwaiter().GetResult();
+            try { _host.Services.GetRequiredService<FileSystemThumbnailService>().FlushAsync().GetAwaiter().GetResult(); }
+            catch (Exception exception) { _host.Services.GetRequiredService<ILogger<App>>().LogWarning(exception, "Could not flush thumbnail index."); }
             _host.StopAsync().GetAwaiter().GetResult();
             _host.Dispose();
         }

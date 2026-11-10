@@ -260,10 +260,14 @@ internal static partial class Program
                     var callback = settingsView.ClearBackupsRequested!;
                     Task? request = null;
                     settingsView.ClearBackupsRequested = () => request = callback();
-                    var clearButton = (System.Windows.Controls.Button)settingsView.FindName("ClearBackupsButton");
+                    var settingsIsland = (WinUiCarouselSettingsIsland)settingsView.FindName("CarouselSliderIsland");
+                    await WaitUntil(() => Field(settingsIsland, "_clearBackups") is not null);
+                    var clearButton = (Microsoft.UI.Xaml.Controls.Button)Field(settingsIsland, "_clearBackups")!;
                     try
                     {
-                        clearButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
+                        ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(clearButton)
+                            .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+                        await WaitUntil(() => request is not null);
                         await request!;
                         if (failure is not null) throw failure;
                         Require(clicked, "Cleanup confirmation never appeared");
@@ -273,7 +277,7 @@ internal static partial class Program
                         if (confirm)
                         {
                             Require((await journal.GetAllAsync()).Any(e => e.State == MediFiler3.Domain.Operations.FileOperationEventKind.HistoryDiscarded), "History was not retired");
-                            Require(((System.Windows.Controls.TextBlock)settingsView.FindName("BackupCleanupStatus")).Text.Contains("Cleared"), "Cleanup status missing");
+                            Require(((Microsoft.UI.Xaml.Controls.TextBlock)Field(settingsIsland, "_backupStatus")!).Text.Contains("Cleared"), "Cleanup status missing");
                         }
                     }
                     finally { timer.Stop(); settingsView.ClearBackupsRequested = callback; }

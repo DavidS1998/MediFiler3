@@ -75,7 +75,7 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability, IFileCollisionPreviewService collisionPreviews, IOperationBackupMaintenance backupMaintenance, WindowLayoutService windowLayout, IWindowPlacementPlatform windowPlacement)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability, IFileCollisionPreviewService collisionPreviews, IOperationBackupMaintenance backupMaintenance, WindowLayoutService windowLayout, IWindowPlacementPlatform windowPlacement, IFolderChangeMonitor? changeMonitor = null)
     {
         _homeView = new HomeView(rootHistory, rootAvailability);
         _homeView.AddFoldersRequested += OnLoadFoldersRequested;
@@ -92,20 +92,32 @@ public partial class MainWindow : Window
         _fileOrganizationService = fileOrganizationService;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
             thumbnailService, fileOrganizationService, textContentService, externalFileService, defaultApplications,
-            new MediaAudioSettings(settings.Current.Volume, settings.Current.Muted), rootHistory);
+            new MediaAudioSettings(settings.Current.Volume, settings.Current.Muted), rootHistory, changeMonitor);
         _browseView.RootHistoryPersistenceFailed += exception => _logger.LogWarning(exception, "Could not save root-folder history.");
         _browseView.SetCarouselNeighborCount((settings.Current.CarouselIconCount - 1) / 2);
         _browseView.SetFolderPinned(settings.Current.FolderTreePinned);
+        _browseView.SetCarouselEnabled(settings.Current.CarouselEnabled);
         _browseView.AudioSettingsChanged += (volume, muted) => settings.Update(s => s with { Volume = volume, Muted = muted });
         _browseView.FolderPinChanged += pinned => settings.Update(s => s with { FolderTreePinned = pinned });
         Closed += (_, _) => { _historyAvailabilityCancellation?.Cancel(); _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
-        _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
+        _settingsView = new SettingsView(_browseView.CarouselNeighborCount, settings.Current.CarouselEnabled);
         _settingsView.CarouselNeighborCountChanged += count =>
         {
             _browseView.SetCarouselNeighborCount(count);
             settings.Update(s => s with { CarouselIconCount = count * 2 + 1 });
         };
+        _settingsView.CarouselEnabledChanged += enabled =>
+        {
+            _browseView.SetCarouselEnabled(enabled);
+            settings.Update(s => s with { CarouselEnabled = enabled });
+        };
         InitializeComponent();
+        ToolbarIsland.FullscreenRequested += ToggleFullscreen;
+        if (thumbnailService is IThumbnailCacheMaintenance thumbnailCache)
+        {
+            _settingsView.CacheUsageRequested = () => thumbnailCache.GetUsageAsync();
+            _settingsView.ClearThumbnailCacheRequested = () => thumbnailCache.MaintainAsync(clear: true);
+        }
         ToolbarIsland.CollisionPreviews = collisionPreviews;
         _settingsView.ClearBackupsRequested = async () =>
         {
@@ -133,8 +145,12 @@ public partial class MainWindow : Window
         ToolbarIsland.RefreshRequested += async () => await RefreshBrowseAsync();
         _browseView.RefreshRequested += async () => await RefreshBrowseAsync();
         _browseView.FolderMenuRequested += (folder, location) =>
-            ToolbarIsland.ShowFolderMenu(location, folder.Name,
-                action => _browseView.ExecuteFolderMenuActionAsync(folder, action));
+        {
+            if (IsFullscreen) SetFullscreenChrome(true, _fullscreenSidebarVisible);
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+                ToolbarIsland.ShowFolderMenu(location, folder.Name,
+                    action => _browseView.ExecuteFolderMenuActionAsync(folder, action))));
+        };
         ToolbarIsland.ResetZoomRequested += _browseView.ResetZoomToFit;
         ToolbarIsland.ZoomInRequested += _browseView.ZoomInFromToolbar;
         ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
@@ -170,6 +186,7 @@ public partial class MainWindow : Window
         ApplySidebarLayout();
         _windowLayout = new WindowLayoutController(this, windowLayout, windowPlacement);
         _windowLayout.PlacementFailed += exception => _logger.LogWarning(exception, "Could not capture or reconcile window placement.");
+        InitializeFullscreen();
         logger.LogInformation("Main window initialized.");
     }
 
@@ -231,8 +248,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        Sidebar.Visibility = IsSidebarVisible ? Visibility.Visible : Visibility.Collapsed;
-        SidebarColumn.Width = IsSidebarVisible ? new GridLength(CompactSidebarWidth) : new GridLength(0);
+        Sidebar.Visibility = IsSidebarVisible && (!IsFullscreen || _fullscreenSidebarVisible) ? Visibility.Visible : Visibility.Collapsed;
+        SidebarColumn.Width = IsSidebarVisible && !IsFullscreen ? new GridLength(CompactSidebarWidth) : new GridLength(0);
     }
 
     private void OnNavigationSelectionChanged(string destination)
@@ -310,6 +327,12 @@ public partial class MainWindow : Window
 
     private async void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.F11 || IsFullscreen && e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            if (!e.IsRepeat) ToggleFullscreen();
+            return;
+        }
         if (PageContent.Content == _browseView && e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
         {
             e.Handled = true;

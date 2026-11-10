@@ -20,9 +20,9 @@
         <SolidColorBrush x:Key="BorderBrush" Color="#292B31" />
     </Window.Resources>
 
-    <Grid Background="#000000">
+    <Grid x:Name="ShellGrid" Background="#000000">
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition x:Name="ToolbarRow" Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
@@ -30,11 +30,12 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="#000000" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0 0 0 1">
+        <Border x:Name="ToolbarFrame" Panel.ZIndex="20" Grid.Row="0" Grid.ColumnSpan="2" Background="#000000" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0 0 0 1">
             <interop:WinUiToolbarIsland x:Name="ToolbarIsland" Focusable="True" />
         </Border>
 
         <Border x:Name="Sidebar"
+                Panel.ZIndex="21"
                 Grid.Row="1"
                 Grid.Column="0"
                 Background="#000000"

@@ -18,6 +18,37 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
     private DesktopWindowXamlSource? _xamlSource;
     private Slider? _slider;
     private int _neighborCount = 5;
+    private ToggleSwitch? _carouselToggle;
+    private Button? _clearBackups;
+    private Button? _clearCache;
+    private TextBlock? _backupStatus;
+    private TextBlock? _cacheStatus;
+    private bool _carouselEnabled = true;
+    private bool _backupsBusy, _cacheBusy;
+    private string _backupText = "", _cacheText = "";
+    public event Action<bool>? CarouselEnabledChanged;
+    public event Action? ClearBackupsRequested;
+    public event Action? ClearCacheRequested;
+    public void SetCarouselEnabled(bool enabled)
+    {
+        _carouselEnabled = enabled;
+        if (_carouselToggle is not null) _carouselToggle.IsOn = enabled;
+        if (_slider is not null) _slider.IsEnabled = enabled;
+    }
+    public void SetBackupState(bool busy, string? text = null)
+    {
+        _backupsBusy = busy;
+        if (text is not null) _backupText = text;
+        if (_clearBackups is not null) _clearBackups.IsEnabled = !busy;
+        if (_backupStatus is not null) _backupStatus.Text = _backupText;
+    }
+    public void SetCacheState(bool busy, string? text = null)
+    {
+        _cacheBusy = busy;
+        if (text is not null) _cacheText = text;
+        if (_clearCache is not null) _clearCache.IsEnabled = !busy;
+        if (_cacheStatus is not null) _cacheStatus.Text = _cacheText;
+    }
 
     public event Action<int>? NeighborCountChanged;
     public int NeighborCount => _neighborCount;
@@ -61,16 +92,63 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
             NeighborCountChanged?.Invoke(_neighborCount);
         };
 
-        var content = new Grid
+        var page = new StackPanel { Spacing = 12, MaxWidth = 640, HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+            Margin = new Microsoft.UI.Xaml.Thickness(32) };
+        page.Children.Add(new TextBlock { Text = "Settings", FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        page.Children.Add(Heading("Carousel"));
+        _carouselToggle = new ToggleSwitch { Header = "Show carousel", IsOn = _carouselEnabled };
+        _carouselToggle.Toggled += (_, _) =>
         {
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 11, 12, 14))
+            _carouselEnabled = _carouselToggle.IsOn;
+            _slider.IsEnabled = _carouselEnabled;
+            CarouselEnabledChanged?.Invoke(_carouselEnabled);
         };
-        content.Children.Add(_slider);
+        page.Children.Add(_carouselToggle);
+        page.Children.Add(Description("Nearby thumbnails shown on each side of the current file."));
+        var sliderRow = new Grid { ColumnSpacing = 16 };
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) });
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
+        _slider.IsEnabled = _carouselEnabled;
+        sliderRow.Children.Add(_slider);
+        var count = new TextBlock { Text = $"{_neighborCount * 2 + 1} icons", VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
+        _slider.ValueChanged += (_, _) => count.Text = $"{_neighborCount * 2 + 1} icons";
+        Grid.SetColumn(count, 1); sliderRow.Children.Add(count); page.Children.Add(sliderRow);
+        page.Children.Add(Heading("Overwrite backups"));
+        page.Children.Add(Description("Replaced files are kept for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."));
+        _clearBackups = new Button { Content = "Clear overwrite backups" };
+        _clearBackups.Click += (_, _) =>
+        {
+            if (_backupsBusy) return;
+            SetBackupState(true);
+            Dispatcher.BeginInvoke(new Action(() => ClearBackupsRequested?.Invoke()));
+        };
+        page.Children.Add(_clearBackups);
+        _backupStatus = Description(_backupText); page.Children.Add(_backupStatus);
+        page.Children.Add(Heading("Thumbnail cache"));
+        page.Children.Add(Description("Thumbnails are regenerated as needed. Idle cleanup targets 1 GiB and removes entries unused for 90 days."));
+        _clearCache = new Button { Content = "Clear thumbnail cache" };
+        _clearCache.Click += (_, _) =>
+        {
+            if (_cacheBusy) return;
+            SetCacheState(true);
+            Dispatcher.BeginInvoke(new Action(() => ClearCacheRequested?.Invoke()));
+        };
+        page.Children.Add(_clearCache);
+        _cacheStatus = Description(_cacheText); page.Children.Add(_cacheStatus);
+        SetBackupState(_backupsBusy); SetCacheState(_cacheBusy);
+        var content = new Grid { Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 11, 12, 14)), RequestedTheme = ElementTheme.Dark };
+        content.Children.Add(new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch });
         _xamlSource.Content = content;
 
         var islandHandle = Win32Interop.GetWindowFromWindowId(_xamlSource.SiteBridge.WindowId);
         return new HandleRef(this, islandHandle);
     }
+
+    private static TextBlock Heading(string text) => new() { Text = text, FontSize = 18,
+        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Microsoft.UI.Xaml.Thickness(0, 12, 0, 0) };
+    private static TextBlock Description(string text) => new() { Text = text, TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
+        Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 163, 166, 174)) };
 
     protected override void DestroyWindowCore(HandleRef hwnd)
     {
@@ -81,7 +159,7 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
             _xamlSource = null;
         }
 
-        _slider = null;
+        _slider = null; _carouselToggle = null; _clearBackups = null; _clearCache = null; _backupStatus = null; _cacheStatus = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)

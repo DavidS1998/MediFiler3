@@ -1,129 +1,97 @@
-# Phase 4 handover: Home and persistence
+# Phase 4 continuation handover
 
-Updated: 2026-11-10. Steps 4.1 through 4.5 are implemented; 4.6 is next. New Home interactive acceptance remains open. Phase 3 manual interactive review is accepted by the user.
+Updated 2026-11-10. Read PROJECT_STATUS.md for the consolidated current snapshot and SPECIFICATION.md/ARCHITECTURE.md/DEVELOPMENT_PLAN.md for requirements, boundaries and sequence. This replaces the old pre-4.1 proposals; those are no longer instructions to reimplement completed work.
 
-Approved policy updates supersede the original proposals below: usage counts explicit opens of a specific root only, with no persisted subfolder history. Missing/renamed roots stay listed for user-directed manual location or removal. Persist both volume and mute. Settings, Home and window layout are implemented; external-change/cache wiring remains pending.
+## Current baseline and scope
 
-Implemented storage: schema 7; ApplicationSettings, WindowLayout, RootFolderHistory and ThumbnailCacheIndex contain independently versioned JSON payloads. Typed contracts live in Application/Persistence; SqliteApplicationStateStore is registered in App. Migration from schemas 1/2/3 is transactional through the final version update. 151 unit/filesystem tests pass, including upgrade/reopen and failure rollback/retry. The original baseline/code-map details below describe the pre-4.1 starting point where stated.
+Phase 3 is complete and manually accepted. Phase 4 steps 4.1-4.6 are implemented; 4.7 automated acceptance is complete; physical acceptance remains pending. Home/dialog/backup/layout changes have automated coverage but still need the physical review listed in PROJECT_STATUS.md. Last full runs: 276 unit/filesystem tests and 144 native checks passed, no skips. Final build clean. The monitor-enumeration fallback is included in the current regression build; physical hot-plug and the forced failure branch remain unverified.
 
-## Start here
+Implementation is at `master`, `b0b3ec1` (`WinUI dialogs and window state saving`) as the committed baseline before this uncommitted 4.6 implementation. Inspect current Git history/status; preserve subsequent work. The user explicitly approved the proposed 4.6 watcher/cache scope and authorized its implementation. Preserve existing work when continuing.
 
-Read [AGENTS.md](AGENTS.md), [SPECIFICATION.md](SPECIFICATION.md), [ARCHITECTURE.md](ARCHITECTURE.md), [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md), and [PROJECT_STATUS.md](PROJECT_STATUS.md). Phase 3 evidence and user interactive acceptance are in [PHASE3_INTEGRATION.md](PHASE3_INTEGRATION.md).
-
-The working tree was clean before this documentation pass, on `master` at `c903b68`. GIF support and the integration runner are tracked files. Inspect the current status/diff when resuming and preserve subsequent work. This handover does not create a commit.
-
-**Next implementation task: Step 4.6, external filesystem reconciliation and cache metadata/maintenance.** Step 4.4 Home is implemented with native WinUI cards and user visual/input/DPI/picker/drop review pending. Step 4.2 restores/saves volume, mute, carousel density and pin, coalesces writes and flushes on shutdown. The added center-toolbar Refresh/F5 preserves file path or nearest valid index. Verification: 157 unit/filesystem tests and 87 native checks, zero skips; build clean.
-
-## Baseline before step 4.1 (historical)
-
-| Area | Implemented | Phase 4 gap |
-|---|---|---|
-| Host | .NET 10 WPF; Windows 11 x64; Windows App SDK 2.6.4 islands for toolbar/navigation/native controls | Preserve this boundary and the compact navigation rail |
-| Home | Three placeholder sections for recent, frequent and favorite folders; Home is the startup destination | Real data, folder activation, remove-from-recent and favorites actions |
-| SQLite | `%LOCALAPPDATA%\MediFiler3\medi-filer.db`; schema version 3; append-only operation journal; WAL/FULL durability; startup recovery | Settings, folder usage/favorites, layout and cache-index records |
-| Settings UI | Carousel density, applied immediately; 1-25 odd total icons, default 11 | Save/restore existing values and add the necessary settings wiring |
-| Audio settings | Shared mute/volume across media in the current viewer session; new players apply them before opening | Persist mute across sessions as explicitly required; saving volume is required |
-| Layout | Fixed initial window/panel dimensions; folder pin is session-only | Restore window bounds/state and supported panel preferences safely |
-| Thumbnails | PNG disk cache plus 32 MB/512-entry memory LRU; three workers; cache keys include path/size/time/dimensions | Persist cache information, invalidate/prune safely, define limits |
-| Filesystem changes | Application operations refresh affected state; external changes need explicit refresh/reload | Availability reporting and bounded reconciliation/watchers |
-| Viewers | Static images/WebP, animated GIF with one-cycle duration, bounded text, audio/video, external opening | Preserve behavior and resource release while adding settings/history |
-
-Pre-4.1 functional verification: **141 unit/filesystem tests and 81 native integration checks passed**, with zero skips using the complete local fixture set. The subsequent tooltip fix changed display separators to ASCII and was build-checked. The documentation pass does not rerun those functional suites.
-
-## Recommended implementation sequence
-
-| Step | Deliverable | Acceptance focus |
-|---|---|---|
-| 4.1 (complete) | Typed Application contracts/models; Infrastructure stores; migration from journal-only schema | New/reopened databases and all supported upgrade paths preserve journal intents, events, compensation links and undo/redo candidates |
-| 4.2 | Persist existing settings, restoring volume and mute before any media opens; carousel density and folder pin | Restart round trips, defaults/invalid-value handling, current-session updates and orderly flush |
-| 4.3 (complete) | Root-only usage/favorites service and bounded availability checks | Defined visit counting, stable path keys, recent/frequent ordering, independent recent removal/favorites, retained unavailable entries |
-| 4.4 (implemented; manual review pending) | Populate Home with synchronized root-favorite stars and missing-root actions | Open through the existing root/folder navigation workflow; new-folder loading, empty states, async unavailable/error handling and refresh |
-| 4.5 (implemented; physical review pending) | Persist normal window bounds and maximized state; existing panel pin already persists | Automated restart/minimized/maximized/display reconciliation checks pass; physical multi-monitor/DPI review remains |
-| 4.6 | Reconcile external filesystem changes and add cache metadata/maintenance | Debounced/cancellable refresh, watcher overflow recovery, coherent selection/counts/thumbnails, deletion restricted to owned cache entries |
-| 4.7 | Restart and integration acceptance | Settings/history/favorites/layout survive sessions; journal behavior and existing viewers remain correct; regress accepted Phase 3 interactions |
-
-Keep each step reviewable. Do not add gallery/continuous-reader modes, animated WebP, broad codecs, playback speed, adjustable text page sizes, new themes or shortcut editors as incidental work.
-
-## Persistence design guidance
-
-Keep contracts and typed values in Application; keep SQL, path availability checks and watchers in Infrastructure. WPF/WinUI objects and UI dispatch stay in App. The existing `SqliteDatabase` is a suitable store boundary; settings/root-history/layout/cache-index tables are separate from journal tables. Reuse the existing database unless implementation evidence warrants a different store.
-
-The current schema is version 7. Fresh creation and upgrades from supported versions 1 through 6 run transactionally; only the final migration sets user_version. Rollback/retry, reopening and unknown-newer-version rejection are tested. Keep prepared-operation recovery conservative and journal writes append-only.
-
-Give settings explicit defaults and validation. Persist changes through application-owned services, coalesce rapid slider/window updates, and flush outstanding writes during shutdown. Avoid dispatching settings SQL on every media progress tick. Capture UI state while the dispatcher is alive; hosted-service shutdown should flush captured data without waiting for a stopped UI dispatcher. Local store loading must not trigger filesystem scans or block the initial Home view on missing network roots.
-
-Restore shared volume and mute before constructing/opening a media session. `MediaAudioSettings` currently lives inside `ViewerHostView`; persistence will need deliberate injection/initialization and change propagation through the existing viewer/Browse/shell boundary. Saving only when leaving media would miss changes at shutdown. Preserve paused media opening and the existing per-session resource lifetimes.
-
-Store layout in logical units and use the normal restore bounds for a maximized/minimized window. Validate dimensions, clamp the window into a visible work area, and restore only normal/maximized state. The specification starts at Home; restoring recent history does not itself imply reopening the previous collection or starting playback.
-
-Thumbnail images already persist on disk. Add metadata/retention around that service instead of generating a second cache. Cache maintenance must stay inside the resolved application-owned cache directory and must never remove source files. Missing/corrupt cache data should remain recoverable through regeneration.
-
-## Policies to settle during their step
-
-Rows marked approved record user decisions. Other entries remain proposed defaults or unresolved details for their step.
-
-| Topic | Recommended starting point / decision needed |
+| Step | Status |
 |---|---|
-| What counts as a visit? | Approved: count successful explicit opens of the root only. Subfolder browsing/overscroll has no persisted history; exclude refresh, reconciliation and probing. |
-| Entry removal | One Remove entry action removes the root from all Home lists, including favorites and saved usage; source folders remain untouched. |
-| Folder identity | Reuse current Windows path-normalization conventions and keep the original display path. Approved: renamed/missing roots remain until the user manually locates or removes them; never guess identity from names. Locate rejects a destination that already has a saved entry; no automatic merging. |
-| Frequent ordering | Persist integer counts; define deterministic tie-breaking, such as last-opened time then path. No silent retention pruning is implemented. Home display limits can be chosen separately. |
-| Unavailable folders | Distinguish missing, access-denied and temporarily unavailable; retain saved entries and check asynchronously, especially network/removable roots. |
-| Settings scope | Volume and mute persistence are both required. Start with existing controls/defaults; extra preferences require separate discussion. A decimal-separator setting and additional customization remain optional follow-ups. |
-| Layout/navigation | Save existing window bounds/state and panel preferences first. Define which expansion/selection preferences are worth persisting; startup Home remains the current requirement. |
-| Watcher scope | Start with active/loaded context, debounce bursts, handle overflow with refresh, release watchers on root/tab/shutdown changes, and coordinate with application-initiated mutations. Avoid a watcher for every discovered folder. |
-| Cache limits | Choose age/size limits, last-access bookkeeping and cleanup timing before implementing pruning; there is currently no disk quota. |
+| 4.1 | Typed Application contracts, SQLite state stores and journal-preserving migrations implemented. Current database schema is 7; do not revert it to the original step-4.1 schema 4. |
+| 4.2 | Volume/mute restored before media, carousel density and folder pin persistence, coalesced saves/flush. Refresh/F5 implemented. |
+| 4.3 | Root-only usage/favorites, normalized explicit-open counting, bounded availability, Locate/Remove service. |
+| 4.4 | Native responsive Home cards, shared root stars, root opening, compact relative time/tooltips and unified Remove entry. Ignore is removed. |
+| Follow-ups | Root-scoped history, collision previews/automatic numbered Rename, app-managed backups/Settings cleanup and ContentDialog migration implemented. |
+| 4.5 | Monitor-aware normal bounds/maximized persistence, minimized-state handling and runtime work-area reconciliation implemented. No extra navigation preferences or adjustable panel widths were added. |
+| 4.6 | Implemented: loaded-root reconciliation, thumbnail index/invalidation and agreed retention/Settings maintenance. |
+| 4.7 | Automated restart/integration and viewer/operation regressions complete; physical checklist remains open in PHASE4_ACCEPTANCE.md. |
 
-Step 4.3 implementation: RootFolderHistoryService provides lists, RecordOpenedRootsAsync, SetFavoriteAsync, CheckAvailabilityAsync, LocateAsync and RemoveAsync. Changed may run on a worker; Home must dispatch and reject obsolete results. Explicit root loads record accepted paths centrally in BrowseView.LoadRootsAsync, so Home must call the existing shell root-load workflow rather than count separately. Favorites are root-only, alphabetical and Home-managed; all Home list entries derive their star state from the same record. Locate preserves stats/favorite state without adding a visit, requires accessibility and atomically rejects destination collisions. Availability uses two worker slots and three-second caller timeouts. Tests: 167 unit/filesystem and 89 native checks passed; build clean. Home controls are now implemented: WinUiHomeIsland owns native cards/control intents; HomeView owns async orchestration and dispatcher/generation checks; MainWindow bridges pickers and the existing root-loading workflow. Lists publish before progressive availability. Native checks cover service-backed actions, responsive spacing, star/unstar, root opening, empty states, reopen and stale probes. Current verification: 167 unit/filesystem tests, 99 native checks, zero skips; solution build clean. Home physical keyboard/focus, DPI, picker/drop and appearance await review.
+## Step 4.6 implemented policy (2026-11-10)
+
+The user approved and implementation now includes loaded-root filesystem reconciliation and thumbnail maintenance. Schema stays 7; cache payload version stays 1 with additive optional SourcePath/Invalidated fields. No operation journal or backup lifecycle changes.
+
+- FileSystemFolderChangeMonitor uses recursive coverage for all loaded roots while Browse is active, including inactive roots. Duplicate/nested coverage is reduced. Leaving Browse, new root loads and shutdown cancel the old session; returning starts a rescan. Refreshes with unchanged paths retain watcher coverage. Hierarchy reconciliation retains existing reparse/owned-backup exclusions and existing nodes/expansion, applying updates in batches of 32.
+- FolderChangeBuffer coalesces paths case-insensitively: 500 ms quiet debounce, 2 s maximum continuous-event delay, at most 1,024 pending distinct paths. Overflow/error requests root rescans. One awaited dispatcher consumer prevents unbounded callback queues. Commands, loading, dialogs and external-opening actions defer application; context revisions/cancellation reject obsolete work. App-generated changes merge through rescanning actual current state.
+- Watcher setup/health probes run off UI, with two shared probe permits, five-second healthy-root checks and failed-root exponential retries from 1 to 60 s. Failed coverage reports degraded status and polls the active folder during retries. Reconnection rescans hierarchy. A blocked Windows network call cannot be forcibly interrupted; permits bound simultaneous probes. Saved Home paths/history are never inferred or pruned.
+- Reconciliation retains the selected path or nearest bounded position. Unaffected image/text/media presentation remains active. Affected media reloads paused. Automatic work never records root visits. F5 remains available and force-invalidates active-folder thumbnails, including same-length/timestamp edits. Change hints force invalidation too; unsupported/missed notifications without changed metadata still require F5.
+- Existing PNG keys, three decoder workers and 32 MiB/512-entry memory LRU remain. ThumbnailCacheIndex now records owned filename/key, encoded byte size, last access and optional source mapping. Access writes batch every 30 s and flush at shutdown; failed writes retain pending state. Invalidated locked files remain marked invalid across restart and are retried rather than served as stale thumbnails. In-flight decoders cannot publish results from before invalidation/clear.
+- Idle housekeeping starts after 30 s without thumbnail requests, then at most hourly. Remove entries unused for 90 days; over 1 GiB, prune least recently used toward 900 MiB. Locked/unsafe entries may keep usage above target until retry. Maintenance runs off UI, serializes passes and yields cache access between 32-entry batches. Settings displays indexed usage and offers Clear thumbnail cache. Usage can undercount legacy files until adoption.
+- Only verified owned cache leaf names inside the resolved cache directory are eligible. Reject reparse directories/ancestors/leaves. Adopt valid legacy hash-named PNGs conservatively (unknown-age adoption starts at current time); unknown files remain. Legacy entries without source mapping invalidate conservatively. Recognized abandoned temporary writes older than one day can be removed. Source media, UndoBackups, saved settings/history and operation journal records are never cache-pruned. Explicit overwrite-backup cleanup and its confirmation/history-retirement rules remain separate.
+
+Automated coverage includes debounce/overflow, duplicate/nested roots, real nested/inactive-root notifications and cancellation, tree identity/count propagation, expiry/LRU, access bookkeeping, invalidation and queued decoders, locked deletion/restart, legacy/missing/corrupt entries, temporary ownership and linked-cache rejection. Native Browse checks cover insertion/deletion, inactive hierarchy, same-metadata edits, command deferral, overflow, tab lifetime, missing nested-folder fallback, visit counts and media continuity/paused reload.
+
+Step 4.7 automated restart/integration acceptance is complete (PHASE4_ACCEPTANCE.md). Physical review remains for network/removable disconnect/reconnect, live notification storms/large trees, new Settings cache controls and all previously recorded Home/dialog/backup/display checks. Existing codec limits and deferred feature scope remain unchanged.
 
 ## Code map
 
-| Entry point | Why it matters |
+| Location | Continuation relevance |
 |---|---|
-| `src/MediFiler3.Infrastructure/Persistence/SqliteDatabase.cs` | Database location, schema/version, durability and hosted startup |
-| `src/MediFiler3.Infrastructure/Persistence/SqliteFileOperationJournal.cs` | Existing journal persistence to preserve |
-| `src/MediFiler3.App/App.xaml.cs` | DI, database/recovery startup, host shutdown |
-| `src/MediFiler3.App/MainWindow.xaml.cs` | Home/Settings construction, settings/viewer bridging, folder picker/drop flow and window lifecycle |
-| `src/MediFiler3.App/Views/HomeView.xaml` | Placeholder collections to populate |
-| `src/MediFiler3.App/Views/SettingsView.xaml.cs` | Existing carousel preference event |
-| `src/MediFiler3.App/Views/BrowseView.xaml.cs` | Root/folder activation, operations, panel pin and refresh/cancellation boundaries |
-| `src/MediFiler3.App/Views/ViewerHostView.Media.cs` | Current viewer-owned shared audio settings |
-| `src/MediFiler3.Application/Viewing/MediaPlayback.cs` | `MediaAudioSettings` and pre-open application to each player |
-| `src/MediFiler3.Application/Navigation/NavigationSessionState.cs` | In-memory roots/folder/file selection; no persistence yet |
-| `src/MediFiler3.Application/Navigation/NavigationController.cs` | Overscroll, selection and cancellation; history counting must distinguish automatic probes |
-| `src/MediFiler3.Infrastructure/Files/FileSystemThumbnailService.cs` | Existing PNG cache, workers, LRU and file keys |
-| `tests/MediFiler3.Infrastructure.Tests` | Isolated database/filesystem tests and application business logic coverage |
-| `tests/MediFiler3.App.Integration` | Explicit real WPF/WinUI smoke runner; launch/association adapters are stubbed |
+| `src/MediFiler3.App/App.xaml.cs` | DI; database/recovery startup; settings/layout initialization before MainWindow; flush while UI is alive; final host shutdown. |
+| `src/MediFiler3.App/MainWindow.xaml.cs` | Home/Browse/Settings composition, shared root-loading/pickers/drops, toolbar history, backup cleanup confirmation, WindowLayoutController attachment. |
+| `src/MediFiler3.App/Views/BrowseView.xaml.cs` | LoadRootsAsync is the explicit-open counting boundary. RefreshAsync rescans without visits, preserves selection and rejects obsolete restoration. Operation refreshes and StopBackgroundFolderCounts are important watcher lifetime/coordination seams. |
+| `src/MediFiler3.Application/Navigation/` | Session/controller state, active root via node ancestry, file/folder selection boundaries. |
+| `src/MediFiler3.Application/Persistence/` | PersistenceContracts, ApplicationSettingsService, RootFolderHistoryService, WindowLayoutService and pure WindowPlacementPolicy. |
+| `src/MediFiler3.Infrastructure/Persistence/` | SqliteDatabase schema 7, typed state store, root-scoped append-only journal and recovery inspector. |
+| `src/MediFiler3.Infrastructure/Folders/` | Progressive hierarchy/count service and bounded root-availability checks. Retain reparse safeguards and hidden-owned-backup exclusions. |
+| `src/MediFiler3.Infrastructure/Files/FileSystemThumbnailService.cs` | Current WIC/Shell generation, three workers, disk cache, memory LRU and cache-key logic. Uses ThumbnailCacheIndex and the Maintenance partial. |
+| `src/MediFiler3.Infrastructure/Operations/` | FileSystemFileOrganizationService partials, identity-verified compensations, FileSystemOperationBackupStore and shared OperationMaintenanceGate. |
+| `src/MediFiler3.App/Interop/WinUiToolbarIsland.Dialogs.cs` and `WinUiContentDialogHost.cs` | Actual ContentDialog controls, dedicated XamlRoot, native primary/secondary/close buttons and modal WPF ownership. |
+| `src/MediFiler3.App/Interop/WinUiToolbarIsland.Collisions.cs` | Independent async comparison previews/sizes, cancellation and late-update guards. |
+| `src/MediFiler3.App/Services/WindowLayoutController.cs` | Dispatcher capture, closing order, display/work-area/DPI hooks and deferred reconciliation during interactive move/resize. |
+| `src/MediFiler3.App/Interop/WindowsWindowPlacement.cs` | Monitor/DPI enumeration, screen/workspace coordinate conversion and Win32 normal-bound capture/application. |
+| `tests/MediFiler3.Infrastructure.Tests/` | Business/filesystem/SQLite tests; WindowLayoutTests, OperationBackupTests, FileCollisionTests, RootOperationHistoryTests and existing cache/navigation tests. |
+| `tests/MediFiler3.App.Integration/` | Explicit WPF/WinUI runner; RootHistoryChecks, ContentDialogChecks, WindowLayoutChecks, HomeChecks and SettingsAndRefreshChecks. Not run by dotnet test. |
 
-## Verification and carryover
+## Implementation caveats to preserve
 
-```powershell
-dotnet restore MediFiler3.sln
-dotnet test MediFiler3.sln --no-restore --verbosity minimal
-dotnet build MediFiler3.sln --no-restore --verbosity minimal
-git diff --check
-```
+- Root usage is path-keyed; Undo scopes use root filesystem identity. Overlapping roots use node ancestry, not path-prefix matching. Cross-root file moves belong to the source root. NULL-scoped legacy history is retained but excluded from active-root Undo/Redo.
+- Source/destination identity checks happen again after dialog choices. Overwrite preserves data, not a destructive overwrite API. Whole folders are replaced, not merged. During Undo/Redo, numbered Rename moves the blocking existing item so journal paths remain valid; the opposite action restores it.
+- Backups use same-volume dedicated storage: LocalAppData/MediFiler3/UndoBackups or a hidden volume-root user-specific directory. Unwritable/linked storage refuses replacement. Legacy sibling backups remain where recorded and are explicitly clearable, not automatically migrated.
+- Cleanup serializes with all mutations, validates journal ownership/identity/type/path/reparse/recovery state and durably appends HistoryDiscarded to the whole owning root/batch before deletion. A locked delete can retire history while leaving data for a cleanup retry. Never prune backup directories as cache.
+- The thumbnail disk cache is `%LOCALAPPDATA%\MediFiler3\ThumbnailCache`. Keys hash normalized uppercase path, length, LastModifiedUtc ticks and requested dimensions. The memory LRU holds up to 32 MB/512 entries, including missing-thumbnail results. Change hints and F5 force invalidation, including same-length/timestamp edits. Writes use unique temporary PNGs and a final move. Maintenance must coordinate with in-flight reads/writes, not just remove files arbitrarily.
+- Volume/mute are shared independently, applied before opening, and media opens paused. Release native media before mutations/history/reload. New watcher work must preserve that lifecycle and avoid autoplay.
+- Do not revive the rejected folder-tree popup/transparency implementation. WPF overlays are kept reachable via native video clipping; translucency does not composite over video. The Settings slider opaque-background fix remains.
+- ContentDialog uses its own full-sized island, not the toolbar's short root. Await/hide it before destroying the host, preserve Cancel on Escape/host close and cancel preview tasks. System pickers/Open With/Properties stay native; application errors use emergency MessageBox only if WinUI is unavailable.
+- Window bounds are logical dimensions plus monitor-relative offsets; native monitor/workspace rectangles are pixels. Preserve taskbar workspace/screen conversion, last non-minimized state, normal restore bounds for maximized windows and temporary minimum-size relaxation. WPF's ShowActivated=false/maximized restriction is handled by deferred Loaded maximization for background windows.
+- Window capture on Closing must run before App flushes. Settings/layout write tasks cannot wait on a stopped dispatcher. Schema stays 7 for optional version-1 layout metadata; layout restoration never opens old roots or changes startup Home.
 
-Native checks run explicitly:
+## Acceptance and local workflow
 
-```powershell
-dotnet run --project tests/MediFiler3.App.Integration -- "$env:TEMP\MediFiler3Phase3Fixtures"
-```
+Physical checks still needed: new Home layout/focus/drop/pickers; ContentDialog physical keyboard/DPI/long paths; cleanup on other-volume permission failures; monitor hot-plug/rearrangement, mixed DPI and taskbar relocation. Phase 3 manual acceptance must not be reported as acceptance of these later changes.
 
-That fixture directory is local temporary data, not a repository dependency. On another machine follow the [runner README](../tests/MediFiler3.App.Integration/README.md) and supply valid fixtures. The default run generates local image/text/WAV/GIF fixtures but reports missing external-format fixtures as skips. Do not equate a run with skips to complete codec validation. MKV coverage is a WebM/Matroska subset, not arbitrary MKV support.
+Use the commands in PROJECT_STATUS.md and the runner README. Keep a running user app open; use a temporary BaseOutputPath if normal output is locked. Build once before --no-build test/native runs; concurrent builds share obj directories and can fail with file locks. Runner data/fixtures are isolated, but copied media codec coverage is still limited (MKV is the WebM/Matroska subset). Step 4.6 adds source and automated checks; fixture codec limits remain unchanged.
 
-Phase 3's user-accepted interactive checks cover: popup/DPI and physical focus/input, video overlay reachability, audible output/real album artwork, native default-app/Open With interaction and full Browse mutation/undo/redo workflows with active media. The user confirmed these checks pass on 2026-11-10. Tree virtualization and very large GIF CPU/memory costs remain known limitations.
+## Suggested opening prompt
 
-Phase 4 is complete when its persisted values survive restart, Home opens saved folders correctly and retains unavailable entries, settings apply before relevant work starts, reconciliation/cache maintenance remain bounded, and migration/operation-journal/viewer regressions are covered. Record evidence and remaining limits in PROJECT_STATUS rather than replacing them with a blanket completion claim.
+Continue MediFiler3. Read the six project documents and inspect Git status. Steps 4.1-4.6 are implemented with uncommitted watcher/cache changes on top of the existing documentation edits. Review the completed step-4.7 automated restart/integration evidence and the remaining physical checklist in PHASE4_ACCEPTANCE.md. Preserve recorded root-history, collision/backup, ContentDialog, media, window-placement and 4.6 watcher/cache policy behavior.
 
-Latest Home policy supersedes historical checks above: no Ignore and no recent-only removal; Remove entry clears the saved root from all lists. Compact rows use live relative time, with exact time/path on hover. RootFolderStatus no longer has Ignored; IgnoreUnavailableAsync and RemoveFromRecentAsync were removed. Explicit bounded widths keep cards visible beyond the 1600 px content cap. Latest tests: 188 unit/filesystem, 99 native checks, zero skips; clean build.
+Step 4.7 evidence: three fresh-process restart checks are included in the native runner. See [PHASE4_ACCEPTANCE.md](PHASE4_ACCEPTANCE.md) for process boundaries, results, limits and the remaining physical checklist. No production behavior or schema changed during step 4.7.
 
-Current SQLite schema is 5: FileOperations.RootScope (nullable/indexed) partitions Undo/Redo by Windows root-folder identity. Resolve services via ForRootAsync(rootPath); never use global history in UI. NavigationSessionState.ActiveRoot uses node ancestry. File commands use source/active root, folder-menu commands use target-node root, new redo branches stay local, and scoped compensation cannot link another root. Prior unscoped rows are retained for recovery/inspection but not assigned to any active-root stack. Migration from 4 preserves state and journal data with rollback/retry coverage. Current verification: 195 unit/filesystem tests, 101 native checks, zero skips; temporary-output build clean while user app runs.
+## UX refinement follow-up
 
-Collision behavior now uses FileCollision/IFileCollisionResolver and WithCollisionResolver on the root-scoped service. App provides an owned WinUI Rename/Overwrite/Cancel prompt. Explicit replacements preserve hidden app-managed backups in one batch; whole-folder replacement is explained and does not merge. History blockers use linked compensation/event metadata and are restored with the opposite action. New payload fields are additive; schema 6 guards their history semantics against older builds without changing existing records or tables. Do not prune .MediFiler3-Undo-{guid} backups as cache. RecoveryRequired prevents unsafe retries after failed restoration. Current verification: 241 unit/filesystem tests, 116 native checks, zero skips; clean temporary-output build. Physical collision-dialog review is pending.
+The user tentatively accepted Phase 4 while acknowledging that not every physical use case could be tested. Retain the unverified cases as known acceptance limits; do not represent them as passed. This follow-up is explicitly authorized UI refinement, not Phase 5 gallery/reader work.
 
-Backup management follow-up: new replacements use dedicated app-managed same-volume storage; legacy sibling paths remain readable/clearable. Settings Clear overwrite backups explicitly confirms permanent deletion and affected history loss. Schema 7 adds HistoryDiscarded terminal events without dropping records; all owning originals in a group are retired before deletion. Cleanup shares the mutation gate, checks ownership/identity/reparse/recovery state and reports retained items. Never clear the backup directory blindly or prune it as thumbnail cache.
+- Prefer suitable WinUI controls over WPF equivalents while keeping the WPF host. Settings now uses native WinUI buttons, ToggleSwitch, slider, text and ScrollViewer in one XAML Island. Existing cleanup confirmations, ownership and error reporting remain unchanged.
+- Settings > Show carousel persists CarouselEnabled (default true, additive optional ApplicationSettings version-1 JSON; schema stays 7). Disabled means no carousel, peek, bottom reveal strip or carousel thumbnail requests; viewer navigation/previews/fallbacks remain available. The disabled slider retains the previous density. Re-enable rebuilds the current neighborhood.
+- Home removes the redundant subtitle, uses 16 px header top spacing and a 12 px gap before the cards. Header/cards share a centered viewport-bounded width (maximum 1600 px with 32 px side margins), including wide windows. This supersedes the earlier left-aligned Home decision at the user's request.
+- F11 or the rightmost toolbar button toggles borderless fullscreen on the current monitor. Top edge hover reveals the native title bar and toolbar; left edge hover reveals sidebar and folder tree together, with the tree beside the sidebar; bottom hover reveals the carousel when enabled, with no fullscreen peek. Tree pin/reveal behavior remains unchanged. Native focus also supports F11; Escape exits from WPF content. Fullscreen is session-only. WindowLayoutController captures normal geometry before entering and suspends persistence of transient fullscreen bounds; leaving restores/clamps the prior normal/maximized placement, and closing fullscreen retains the prior restart layout. Display/DPI reconciliation refits fullscreen instead of saving it.
+- A fullscreen-only cursor timer handles edge hover over WPF and native HWNDs. Revealed native toolbar/sidebar surfaces are raised above Home/Settings islands; video clipping excludes those overlays without moving/reopening video. Open toolbar popups retain their surface. Folder menus reveal their toolbar anchor before opening. No always-on-top mode is introduced.
+- Carousel refresh no longer copies the full folder per navigation step. NavigationSessionState maintains an equality-compatible file-index map rebuilt only on list changes. Rapid visual updates coalesce at render priority, prioritize the nearest thumbnails, cancel departing-item work and retarget the running scroll animation rather than restarting it. Surviving tile objects remain stable. Disabled/inactive Browse cancels carousel work; returning resumes missing previews. Actual navigation steps and folder-boundary rules remain unchanged.
+- Entering edge tiles fade in over 110 ms; departing tiles use noninteractive fade-out visuals for 110 ms, capped at 24 and released on completion/context reset. Animation honors the Windows client-area animation preference and does not delay collection updates/hit testing.
 
-ContentDialog hosting supersedes the original standalone-control dialogs: WinUiToolbarIsland.Dialogs and WinUiContentDialogHost share actual ContentDialog controls with XamlRoot/ShowAsync(InPlace), borderless WPF ownership and fitted height. Preserve text results, direct numbered Rename, preview lifecycle, disabled unsafe Overwrite and cleanup confirmation. System folder pickers/Open With/Properties remain native; only emergency error reporting can fall back when WinUI is unavailable.
+Verification includes native Settings controls/cleanup, carousel-off persistence through fresh processes, Home centering through 3000 px, 100,000-file navigation indexing, rapid carousel navigation/cancellation, tile identity/fades, F11 from WPF/native islands, native video continuity, edge chrome exclusion and restored/closing-fullscreen layout. Physical edge-hover/DPI/taskbar behavior and animation feel remain review items.
 
-Step 4.5 code map: WindowLayoutService and WindowPlacementPolicy in Application/Persistence; WindowsWindowPlacement in App/Interop; WindowLayoutController in App/Services. App loads layout before MainWindow construction and flushes after Closing captures state. Optional monitor metadata extends version-1 layout JSON without a schema bump. WindowLayoutTests cover geometry, storage and persistence behavior; WindowLayoutChecks covers real HWND normal/maximized/minimized restart and live work-area reconciliation/deferred adjustment. Current verification: 258 unit/filesystem tests, 122 native checks. Physical monitor/DPI/taskbar acceptance remains pending. Fixed panel widths and startup Home behavior are unchanged.
+Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.

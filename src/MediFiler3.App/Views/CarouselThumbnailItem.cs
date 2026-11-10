@@ -29,6 +29,7 @@ public sealed class CarouselThumbnailItem : INotifyPropertyChanged
         }
     }
     public bool IsSpacer => false;
+    public CancellationTokenSource? ThumbnailCancellation { get; set; }
     public Task<BitmapSource?>? ThumbnailTask { get; set; }
     public BitmapSource? UncroppedThumbnail
     {

@@ -21,6 +21,7 @@ namespace MediFiler3.Interop;
 public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 {
     private DesktopWindowXamlSource? _xamlSource;
+    public void RaiseSurface() => NativeSurfaceOrder.Raise(_xamlSource);
     private TextBlock? _folderDetails;
     private TextBlock? _fileMetadata;
     private string _fileMetadataText = string.Empty;
@@ -53,6 +54,19 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private double _zoomLevel = 1d;
     private bool _fileActionsEnabled;
 
+    private AppBarButton? _fullscreenButton;
+    private bool _fullscreen;
+    public event Action? FullscreenRequested;
+    public void SetFullscreen(bool fullscreen)
+    {
+        _fullscreen = fullscreen;
+        if (_fullscreenButton is null) return;
+        _fullscreenButton.Icon = new FontIcon { Glyph = fullscreen ? "\uE73F" : "\uE740", FontSize = 16 };
+        _fullscreenButton.Label = fullscreen ? "Exit fullscreen (F11)" : "Fullscreen (F11)";
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fullscreenButton, _fullscreenButton.Label);
+        ToolTipService.SetToolTip(_fullscreenButton, _fullscreenButton.Label);
+    }
+    public bool HasOpenPopup => _rootElement?.XamlRoot is { } root && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0;
     public event Action? LoadFoldersRequested;
     public event Action? RefreshRequested;
     public void SetRefreshEnabled(bool enabled)
@@ -267,6 +281,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _renameFileButton = null;
         _deleteFileButton = null;
         _rootElement = null;
+        _fullscreenButton = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -313,6 +328,14 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
 
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _fullscreenButton = CreateButton(Symbol.FullScreen, "Fullscreen (F11)",
+            () => Dispatcher.BeginInvoke(new Action(() => FullscreenRequested?.Invoke())));
+        SetFullscreen(_fullscreen);
+        _fullscreenButton.Margin = new Thickness(4, 0, 4, 0);
+        _fullscreenButton.VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center;
+        Grid.SetColumn(_fullscreenButton, 3);
+        layout.Children.Add(_fullscreenButton);
         var left = CreateFolderContext();
         left.HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch;
         Grid.SetColumn(left, 0);

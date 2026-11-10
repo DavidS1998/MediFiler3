@@ -10,6 +10,21 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 {
     private FolderTreeEntry? _activeFolder;
     private FileEntry? _currentFile;
+    private readonly Dictionary<FileEntry, int> _fileIndices = [];
+    private bool _replacingFiles;
+    public NavigationSessionState() => Files.CollectionChanged += (_, _) =>
+    {
+        if (_replacingFiles) return;
+        ReindexFiles();
+        OnPropertyChanged(nameof(CurrentFilePosition));
+    };
+    private void ReindexFiles()
+    {
+        _fileIndices.Clear();
+        for (var i = 0; i < Files.Count; i++) _fileIndices.TryAdd(Files[i], i);
+    }
+    public int IndexOfFile(FileEntry file) => _fileIndices.TryGetValue(file, out var index) ? index : -1;
+    public bool ContainsFile(FileEntry file) => _fileIndices.ContainsKey(file);
 
     public ObservableCollection<FolderTreeEntry> Roots { get; } = [];
     public ObservableCollection<FileEntry> Files { get; } = [];
@@ -44,7 +59,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
         }
     }
 
-    public int CurrentFilePosition => CurrentFile is null ? 0 : Files.IndexOf(CurrentFile) + 1;
+    public int CurrentFilePosition => CurrentFile is null ? 0 : IndexOfFile(CurrentFile) + 1;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -87,11 +102,13 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public void ReplaceFiles(IEnumerable<FileEntry> files)
     {
-        Files.Clear();
-        foreach (var file in files)
+        _replacingFiles = true;
+        try
         {
-            Files.Add(file);
+            Files.Clear();
+            foreach (var file in files) Files.Add(file);
         }
+        finally { _replacingFiles = false; ReindexFiles(); }
 
         OnPropertyChanged(nameof(Files));
         SetCurrentFile(Files.FirstOrDefault());
@@ -100,7 +117,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public void SetCurrentFile(FileEntry? file)
     {
-        if (file is not null && !Files.Contains(file))
+        if (file is not null && !ContainsFile(file))
         {
             return;
         }

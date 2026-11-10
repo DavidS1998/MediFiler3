@@ -124,12 +124,11 @@ public sealed class WinUiHomeIsland : HwndHost
         };
         _root.RowDefinitions.Add(new RowDefinition { Height = Xaml.GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new Xaml.GridLength(1, Xaml.GridUnitType.Star) });
-        var page = _page = new StackPanel { Spacing = 24, Margin = new Xaml.Thickness(32, 24, 32, 32),
-            HorizontalAlignment = Xaml.HorizontalAlignment.Left };
-        var header = _header = new StackPanel { Spacing = 8, Margin = new Xaml.Thickness(32, 32, 32, 0),
-            HorizontalAlignment = Xaml.HorizontalAlignment.Left };
+        var page = _page = new StackPanel { Spacing = 12, Margin = new Xaml.Thickness(32, 12, 32, 24),
+            HorizontalAlignment = Xaml.HorizontalAlignment.Center };
+        var header = _header = new StackPanel { Spacing = 8, Margin = new Xaml.Thickness(32, 16, 32, 0),
+            HorizontalAlignment = Xaml.HorizontalAlignment.Center };
         header.Children.Add(new TextBlock { Text = "Home", FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        header.Children.Add(new TextBlock { Text = "Open a root folder or return to your library.", Foreground = Brush(255, 163, 166, 174) });
         _commands = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         _commands.Children.Add(Command("Add folders", "AddHomeFolders", () => AddFoldersRequested?.Invoke()));
         _commands.Children.Add(Command("Check folders", "RefreshHomeFolders", () => RefreshRequested?.Invoke()));
@@ -219,7 +218,7 @@ public sealed class WinUiHomeIsland : HwndHost
         var star = new ToggleButton { Name = "Star" + section + index, IsChecked = root.Favorite,
             Width = 32, Height = 32, MinWidth = 0, Padding = new Xaml.Thickness(0), VerticalAlignment = Xaml.VerticalAlignment.Top,
             Content = new FontIcon { Glyph = root.Favorite ? "\uE735" : "\uE734", FontSize = 16,
-                Foreground = root.Favorite ? Brush(255, 255, 206, 89) : Brush(255, 231, 232, 234) } };
+                Foreground = root.Favorite ? Brush(255, 255, 255, 255) : Brush(255, 231, 232, 234) } };
         Xaml.Automation.AutomationProperties.SetName(star, $"{(root.Favorite ? "Remove" : "Add")} {name} {(root.Favorite ? "from" : "to")} favorites");
         ToolTipService.SetToolTip(star, root.Favorite ? "Remove from favorites" : "Add to favorites");
         void Toggle(bool favorite)

@@ -322,6 +322,7 @@
                     </ListBox.Resources>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
+                            <EventSetter Event="Loaded" Handler="OnCarouselItemLoaded" />
                             <Setter Property="Height" Value="174" />
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="Cursor" Value="Hand" />
@@ -347,6 +348,7 @@
                         </Style>
                     </ListBox.ItemContainerStyle>
                 </ListBox>
+                <Canvas x:Name="CarouselGhosts" IsHitTestVisible="False" ClipToBounds="True" />
                 <TextBlock x:Name="EmptyFilesNotice" Text="No files in this folder." Foreground="#A3A6AE"
                            HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
             </Grid>

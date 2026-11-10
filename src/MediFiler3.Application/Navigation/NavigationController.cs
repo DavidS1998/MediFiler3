@@ -17,7 +17,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
 
     public void SelectFile(FileEntry file)
     {
-        if (!_navigationState.Files.Contains(file)) return;
+        if (!_navigationState.ContainsFile(file)) return;
         _contextVersion++;
         _navigationState.SetCurrentFile(file);
         ResetBoundaryAttempts();
@@ -40,7 +40,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
 
         var currentIndex = _navigationState.CurrentFile is null
             ? -1
-            : _navigationState.Files.IndexOf(_navigationState.CurrentFile);
+            : _navigationState.IndexOfFile(_navigationState.CurrentFile);
         var nextIndex = currentIndex + direction;
         if (nextIndex >= 0 && nextIndex < _navigationState.Files.Count)
         {

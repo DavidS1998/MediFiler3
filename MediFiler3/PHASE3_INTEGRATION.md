@@ -6,6 +6,12 @@ Status: automated native integration has passed; the user confirmed Phase 3 pass
 
 The manual acceptance below supersedes earlier pending-check notes: popup/high-DPI appearance, focus/input, video overlay reachability, audible output/artwork, native external opening, and Browse mutations/undo/redo with active media are accepted by the user. Codec/fixture coverage limitations remain as documented.
 
+## Latest regression baseline and handover
+
+After step 4.5, the full suites passed **258 unit/filesystem tests and 122 native checks, zero skips**. The final build passed with zero warnings/errors. The subsequent monitor-enumeration fallback was build-checked; its forced failure branch and physical monitor hot-plug remain unverified. No functional tests were rerun for the documentation-only handover.
+
+The runs below are milestone-specific historical evidence, not competing current totals. Phase 3 manual acceptance does not automatically accept later Home/ContentDialog/backup/layout changes. Physical multi-monitor/DPI/taskbar tests and newer UI/other-volume cleanup checks remain pending. PROJECT_STATUS.md and PHASE4_HANDOVER.md contain the current continuation scope and code caveats.
+
 ## Collision regression run
 
 241 unit/filesystem tests and 116 native checks passed, zero failures/skips. FileCollisionTests covers repeated-name choices, preservation/undo/redo for files/folders/create-folder, rollback, type/race guards, history blockers, Shell-restore collisions and tampered backups. RootHistoryChecks exercises Browse dialog dispatch, actual renamed selection, grouped overwrite undo/redo, and the real hidden WinUI collision dialog choices/default results/disabled incompatible Overwrite. Physical keyboard, DPI and long-path appearance remain manual. Build/run used an isolated BaseOutputPath while the user app stayed running.

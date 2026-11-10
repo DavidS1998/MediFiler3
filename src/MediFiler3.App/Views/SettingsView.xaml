@@ -1,24 +1,6 @@
 <UserControl x:Class="MediFiler3.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:interop="clr-namespace:MediFiler3.Interop"
-             Background="#0B0C0E">
-    <Grid Margin="32">
-        <StackPanel MaxWidth="640" HorizontalAlignment="Left">
-            <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" Foreground="#FFFFFF" />
-            <TextBlock Text="Carousel" FontSize="18" FontWeight="SemiBold" Foreground="#E7E8EA" Margin="0,28,0,4" />
-            <TextBlock Text="Nearby thumbnails shown on each side of the current file." Foreground="#A3A6AE" TextWrapping="Wrap" />
-            <DockPanel Margin="0,18,0,0" LastChildFill="True">
-                <TextBlock x:Name="CarouselCountText" DockPanel.Dock="Right" MinWidth="76" TextAlignment="Right"
-                           VerticalAlignment="Center" Foreground="#E7E8EA" />
-                <interop:WinUiCarouselSettingsIsland x:Name="CarouselSliderIsland" Height="48" />
-            </DockPanel>
-            <TextBlock Text="Overwrite backups" FontSize="18" FontWeight="SemiBold" Foreground="#E7E8EA" Margin="0,28,0,4" />
-            <TextBlock Text="Replaced files are kept in app-managed storage for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."
-                       Foreground="#A3A6AE" TextWrapping="Wrap" />
-            <Button x:Name="ClearBackupsButton" Content="Clear overwrite backups" HorizontalAlignment="Left"
-                    Padding="16,8" Margin="0,16,0,0" Click="OnClearBackupsClick" />
-            <TextBlock x:Name="BackupCleanupStatus" Foreground="#A3A6AE" TextWrapping="Wrap" Margin="0,12,0,0" />
-        </StackPanel>
-    </Grid>
+             xmlns:interop="clr-namespace:MediFiler3.Interop" Background="#0B0C0E">
+    <interop:WinUiCarouselSettingsIsland x:Name="CarouselSliderIsland" />
 </UserControl>

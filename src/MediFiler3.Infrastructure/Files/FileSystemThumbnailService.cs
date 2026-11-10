@@ -11,14 +11,14 @@ using MediFiler3.Domain.Files;
 
 namespace MediFiler3.Infrastructure.Files;
 
-public sealed class FileSystemThumbnailService : IThumbnailService
+public sealed partial class FileSystemThumbnailService : IThumbnailService, IThumbnailCacheMaintenance, IDisposable
 {
     private const long MemoryCacheLimit = 32 * 1024 * 1024;
     private const int MemoryEntryLimit = 512;
     private const uint ThumbnailOnly = 0x00000008;
     private static readonly HashSet<string> WicExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"
+        ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"
     };
 
     private readonly SemaphoreSlim _workers = new(3, 3);
@@ -26,57 +26,64 @@ public sealed class FileSystemThumbnailService : IThumbnailService
     private readonly Dictionary<string, LinkedListNode<MemoryEntry>> _memoryEntries = new(StringComparer.Ordinal);
     private readonly LinkedList<MemoryEntry> _memoryLru = [];
     private long _memorySize;
-    private readonly string _diskCachePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediFiler3", "ThumbnailCache");
+    private readonly string _diskCachePath;
 
     public async Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
     {
         width = Math.Max(1, width);
         height = Math.Max(1, height);
-        var cacheKey = CreateCacheKey(file, width, height);
-        if (TryGetMemory(cacheKey, out var memoryHit))
-        {
-            return memoryHit;
-        }
-
-        await _workers.WaitAsync(cancellationToken);
+        var key = CreateCacheKey(file, width, height);
+        long revision;
+        await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (TryGetMemory(cacheKey, out memoryHit))
+            await InitializeIndexAsync(cancellationToken).ConfigureAwait(false);
+            _lastRequest = DateTimeOffset.UtcNow;
+            revision = _revision;
+            if (TryGetMemory(key, out var memoryHit))
             {
+                Touch(key);
                 return memoryHit;
             }
+            if ((!_index.TryGetValue(key, out var indexed) ? !_legacyInvalidated : !indexed.Invalidated) && SafeCacheDirectory() && SafeEntry(key + ".png"))
+            {
+                try
+                {
+                    var bytes = await File.ReadAllBytesAsync(Path.Combine(_diskCachePath, key + ".png"), cancellationToken).ConfigureAwait(false);
+                    if (ValidPng(bytes))
+                    {
+                        Record(key, bytes.LongLength, file.FullPath);
+                        Remember(key, bytes);
+                        return bytes;
+                    }
+                    RemoveOwned(key);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            }
+        }
+        finally { _cacheGate.Release(); }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            var cacheFile = Path.Combine(_diskCachePath, cacheKey + ".png");
+        await _workers.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var bytes = await Task.Run(() => GenerateThumbnail(file, width, height, cancellationToken), cancellationToken).ConfigureAwait(false);
+            await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (File.Exists(cacheFile))
+                cancellationToken.ThrowIfCancellationRequested();
+                // Invalidation/clear wins over a decoder that was already running.
+                if (revision != _revision) return null;
+                Remember(key, bytes);
+                if (bytes is not null && SafeCacheDirectory() && SafeEntry(key + ".png"))
                 {
-                    var cachedBytes = await File.ReadAllBytesAsync(cacheFile, cancellationToken);
-                    Remember(cacheKey, cachedBytes);
-                    return cachedBytes;
+                    if (await TryWriteDiskCacheAsync(Path.Combine(_diskCachePath, key + ".png"), bytes, cancellationToken).ConfigureAwait(false))
+                        Record(key, bytes.LongLength, file.FullPath);
                 }
+                return bytes;
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                // Cache failures fall through to thumbnail generation.
-            }
-
-            var pngBytes = await Task.Run(() => GenerateThumbnail(file, width, height, cancellationToken), cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            Remember(cacheKey, pngBytes);
-            if (pngBytes is not null)
-            {
-                await TryWriteDiskCacheAsync(cacheFile, pngBytes, cancellationToken);
-            }
-
-            return pngBytes;
+            finally { _cacheGate.Release(); }
         }
-        finally
-        {
-            _workers.Release();
-        }
+        finally { _workers.Release(); }
     }
 
     private byte[]? GenerateThumbnail(FileEntry file, int width, int height, CancellationToken cancellationToken)
@@ -183,7 +190,7 @@ public sealed class FileSystemThumbnailService : IThumbnailService
         return output.ToArray();
     }
 
-    private async Task TryWriteDiskCacheAsync(string cacheFile, byte[] bytes, CancellationToken cancellationToken)
+    private async Task<bool> TryWriteDiskCacheAsync(string cacheFile, byte[] bytes, CancellationToken cancellationToken)
     {
         var temporaryFile = cacheFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
@@ -191,10 +198,12 @@ public sealed class FileSystemThumbnailService : IThumbnailService
             Directory.CreateDirectory(_diskCachePath);
             await File.WriteAllBytesAsync(temporaryFile, bytes, cancellationToken);
             File.Move(temporaryFile, cacheFile, overwrite: true);
+            return true;
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             // Disk caching is best-effort; the memory cache still serves the current session.
+            return false;
         }
         finally
         {

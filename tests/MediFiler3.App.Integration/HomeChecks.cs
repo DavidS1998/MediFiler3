@@ -58,6 +58,7 @@ internal static partial class Program
                 var header = (Native.FrameworkElement)rootSurface.Children[0];
                 rootSurface.UpdateLayout();
                 await WaitUntil(() => header.ActualHeight > 0 && card.ActualHeight > 0);
+                Require(!((Native.Controls.StackPanel)header).Children.OfType<Native.Controls.TextBlock>().Any(t => t.Text.StartsWith("Open a root folder")), "Redundant subtitle remains");
                 var headerOrigin = header.TransformToVisual(rootSurface).TransformPoint(new Windows.Foundation.Point());
                 var cardsOrigin = cards.TransformToVisual(rootSurface).TransformPoint(new Windows.Foundation.Point());
                 Require(header.ActualHeight > 0 && headerOrigin.Y >= 0 && cardsOrigin.Y > headerOrigin.Y + header.ActualHeight,
@@ -79,6 +80,9 @@ internal static partial class Program
                 foreach (var width in new[] { 1599d, 1664d, 1800d, 2200d, 3000d, 1100d, 900d, 1280d })
                 {
                     window.Width = width; await Task.Delay(75); rootSurface.UpdateLayout();
+                    var centered = cards.TransformToVisual(rootSurface).TransformPoint(new Windows.Foundation.Point());
+                    Require(Math.Abs(centered.X + cards.ActualWidth / 2 - rootSurface.ActualWidth / 2) <= 12,
+                        $"Cards are not centered at width {width}");
                     foreach (var entry in cards.Children.Cast<Native.FrameworkElement>())
                     {
                         var point = entry.TransformToVisual(rootSurface).TransformPoint(new Windows.Foundation.Point());

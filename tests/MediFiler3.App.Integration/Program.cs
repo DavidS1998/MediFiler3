@@ -25,7 +25,7 @@ internal static partial class Program
     private static readonly FileSystemFileContentService Files = new();
     private static readonly Dictionary<string, FileEntry> Fixtures = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Thumbnails Thumbs = new();
-    private static readonly FileSystemThumbnailService NativeThumbnails = new();
+    private static readonly FileSystemThumbnailService NativeThumbnails = new(cachePath: Path.Combine(Root, "native-cache"));
     private static WinUiToolbarIsland _toolbar = null!;
 
     [STAThread]
@@ -49,10 +49,16 @@ internal static partial class Program
             ShowActivated = false, Content = layout };
         window.Loaded += async (_, _) =>
         {
-            try { await RunAsync(args.FirstOrDefault()); }
+            try
+            {
+                if (args.Length == 3 && args[0] == "--phase4-restart-worker")
+                    await RunPhase4RestartWorkerAsync(args[1], args[2]);
+                else await RunAsync(args.FirstOrDefault());
+            }
             catch (Exception error) { _failed++; Console.WriteLine("FATAL " + error); }
             finally
             {
+                NativeThumbnails.Dispose();
                 _viewer.SetActive(false); _viewer.Clear(); window.Content = null; _toolbar.Dispose(); window.Close();
                 environment.GetMethod("Shutdown")!.Invoke(null, null);
                 Console.WriteLine($"RESULT: {_passed} passed, {_failed} failed, {_skipped} skipped. Fixtures: {Root}");
@@ -78,7 +84,7 @@ internal static partial class Program
                     Fixtures[extension] = Entry(target);
                 }
             }
-        foreach (var extension in new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" })
+        foreach (var extension in new[] { ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" })
         {
             if (!Fixtures.TryGetValue(extension, out var file)) { Skip(extension + " fixture unavailable"); continue; }
             await Check("image " + extension, async () =>
@@ -359,6 +365,9 @@ internal static partial class Program
         });
         await RunGifChecksAsync();
         await RunSettingsAndRefreshChecksAsync();
+        await RunWatcherChecksAsync();
+        await RunUiRefinementChecksAsync();
+        await RunPhase4RestartChecksAsync();
         await RunHomeChecksAsync();
         await RunRootHistoryChecksAsync();
         await RunWindowLayoutChecksAsync();
@@ -370,7 +379,7 @@ internal static partial class Program
     {
         var pixels = Enumerable.Repeat((byte)127, 64 * 32 * 3).ToArray();
         var bitmap = BitmapSource.Create(64, 32, 96, 96, PixelFormats.Rgb24, null, pixels, 64 * 3);
-        foreach (var (extension, encoder) in new (string, BitmapEncoder)[] { (".jpg", new JpegBitmapEncoder()), (".jpeg", new JpegBitmapEncoder()), (".png", new PngBitmapEncoder()), (".bmp", new BmpBitmapEncoder()), (".gif", new GifBitmapEncoder()), (".tif", new TiffBitmapEncoder()), (".tiff", new TiffBitmapEncoder()) })
+        foreach (var (extension, encoder) in new (string, BitmapEncoder)[] { (".jpg", new JpegBitmapEncoder()), (".jpeg", new JpegBitmapEncoder()), (".jfif", new JpegBitmapEncoder()), (".png", new PngBitmapEncoder()), (".bmp", new BmpBitmapEncoder()), (".gif", new GifBitmapEncoder()), (".tif", new TiffBitmapEncoder()), (".tiff", new TiffBitmapEncoder()) })
         {
             var path = Path.Combine(Root, "image" + extension);
             encoder.Frames.Add(BitmapFrame.Create(bitmap));

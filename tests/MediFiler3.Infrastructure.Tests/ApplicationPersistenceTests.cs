@@ -7,6 +7,19 @@ namespace MediFiler3.Infrastructure.Tests;
 
 public sealed class ApplicationPersistenceTests
 {
+    [Fact]
+    public async Task CarouselVisibilityPersistsAndOldSettingsDefaultToVisible()
+    {
+        using var temp = new TemporaryDatabase();
+        var store = new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
+        var settings = new ApplicationSettings(CarouselEnabled: false);
+        await store.SaveAsync(settings);
+        var reopened = new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
+        Assert.False((await ((IApplicationSettingsStore)reopened).LoadAsync()).CarouselEnabled);
+        await ExecuteAsync(temp.DatabasePath, "UPDATE ApplicationSettings SET PayloadJson = '{\"Muted\":false,\"Volume\":0.5,\"CarouselIconCount\":11,\"FolderTreePinned\":false}'");
+        Assert.True((await ((IApplicationSettingsStore)reopened).LoadAsync()).CarouselEnabled);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

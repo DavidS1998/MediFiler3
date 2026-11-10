@@ -43,8 +43,6 @@ public partial class BrowseView : UserControl
     private CarouselSpacerItem? _carouselLeadingSpacer;
     private CarouselSpacerItem? _carouselTrailingSpacer;
     private readonly DispatcherTimer _carouselScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
-    private DateTime _carouselScrollStartedAt;
-    private double _carouselScrollStartOffset;
     private double _carouselScrollTargetOffset;
     private double _carouselOffsetBeforeRefresh;
     private ScrollViewer? _carouselScrollViewer;
@@ -109,8 +107,9 @@ public partial class BrowseView : UserControl
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
-        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null)
+        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null, IFolderChangeMonitor? changeMonitor = null)
     {
+        _changeMonitor = changeMonitor;
         _rootHistory = rootHistory;
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
@@ -143,6 +142,8 @@ public partial class BrowseView : UserControl
 
     public async Task LoadRootsAsync(IEnumerable<string> paths)
     {
+        StopWatching();
+        using var reconciliationDeferral = DeferReconciliation();
         _navigationController.CancelPendingNavigation();
         CancelFolderCounts();
         _loadCancellation?.Cancel();
@@ -165,6 +166,7 @@ public partial class BrowseView : UserControl
             var result = await _folderTreeService.LoadRootsAsync(requestedRoots, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             _navigationState.ReplaceRoots(result.Roots);
+            StartWatching();
             _ = PopulateHierarchyAsync(result.Roots, cancellationToken);
 
             if (result.Errors.Count > 0)
@@ -218,6 +220,7 @@ public partial class BrowseView : UserControl
 
     private async Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null, int preferredFileIndex = 0)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         if (ReferenceEquals(_navigationState.ActiveFolder, folder))
         {
             return;
@@ -304,6 +307,7 @@ public partial class BrowseView : UserControl
 
     public async Task ExecuteFolderMenuActionAsync(FolderTreeEntry folder, string action)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         try
         {
             switch (action)
@@ -334,6 +338,7 @@ public partial class BrowseView : UserControl
 
     private async Task CreateSubfolderAsync(FolderTreeEntry parent)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.GetRootForFolder(parent);
         var name = await RequireDialogService().PromptTextAsync(
             "New folder", $"Create a folder inside {parent.Name}.", "New folder", "Create");
@@ -349,6 +354,7 @@ public partial class BrowseView : UserControl
 
     private async Task RenameFolderAsync(FolderTreeEntry folder)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.GetRootForFolder(folder);
         var name = await RequireDialogService().PromptTextAsync(
             "Rename folder", "Enter the folder's new name.", folder.Name, "Rename");
@@ -366,6 +372,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveFolderAsync(FolderTreeEntry folder)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.GetRootForFolder(folder);
         var initialPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path)) ?? folder.Path;
         var picker = new Microsoft.Win32.OpenFolderDialog
@@ -389,6 +396,7 @@ public partial class BrowseView : UserControl
 
     private async Task DeleteFolderAsync(FolderTreeEntry folder)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.GetRootForFolder(folder);
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
@@ -436,6 +444,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
@@ -471,6 +480,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
@@ -506,6 +516,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
@@ -538,6 +549,7 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         if (_historyBusy) return;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
@@ -596,6 +608,7 @@ public partial class BrowseView : UserControl
         string? deletedPath = null,
         string? preferredFolderPath = null)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         try
         {
@@ -631,10 +644,13 @@ public partial class BrowseView : UserControl
         await RefreshFolderTreeAsync(preferredFolderPath, oldPath, newPath, deletedPath);
     }
 
-    public Task RefreshAsync()
+    public async Task RefreshAsync()
     {
-        if (_navigationState.Roots.Count == 0) return Task.CompletedTask;
-        return RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path,
+        using var reconciliationDeferral = DeferReconciliation();
+        if (_thumbnailService is IThumbnailCacheMaintenance cache && _navigationState.ActiveFolder is { } active)
+            await cache.InvalidateAsync(active.Path, true);
+        if (_navigationState.Roots.Count == 0) return;
+        await RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path,
             preferredFilePath: _navigationState.CurrentFile?.FullPath,
             preferredFileIndex: Math.Max(0, _navigationState.CurrentFilePosition - 1));
     }
@@ -649,6 +665,7 @@ public partial class BrowseView : UserControl
         bool mapPreferredFolderWithMappings = true,
         int preferredFileIndex = 0)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         _navigationController.CancelPendingNavigation();
         _fileLoadCancellation?.Cancel();
         CancelFolderCounts();
@@ -674,6 +691,7 @@ public partial class BrowseView : UserControl
             if (loaded.Errors.Count > 0)
                 ShowOperationNotice($"Some folders could not be loaded: {string.Join("; ", loaded.Errors.Take(3))}");
             _navigationState.ReplaceRoots(loaded.Roots, preserveActiveContext: true);
+            StartWatching();
             var preferred = preferredFolderPath;
             if (oldPath is not null && newPath is not null)
                 preferred = MapDescendantPath(preferred, oldPath, newPath);
@@ -737,6 +755,7 @@ public partial class BrowseView : UserControl
     private async Task PopulateHierarchyAsync(IReadOnlyList<FolderTreeEntry> roots, CancellationToken cancellationToken,
         string? preferredFolderPath = null, string? preferredFilePath = null, int preferredFileIndex = 0)
     {
+        using var reconciliationDeferral = DeferReconciliation();
         var errors = new List<string>();
         try
         {
@@ -843,8 +862,13 @@ public partial class BrowseView : UserControl
 
     public void StopBackgroundFolderCounts()
     {
+        StopWatching();
         _historyCancellation?.Cancel();
         _viewerActive = false;
+        _carouselRefreshVersion++;
+        _carouselLoadCancellation?.Cancel();
+        CancelCarouselItemLoads();
+        _carouselScrollTimer.Stop();
         CompositionTarget.Rendering -= OnVideoSurfaceRendering;
         _navigationController.CancelPendingNavigation();
         _loadCancellation?.Cancel();
@@ -915,7 +939,7 @@ public partial class BrowseView : UserControl
         var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         var normalizedPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
         return PathsEqual(normalizedPath, normalizedRoot) ||
-               normalizedPath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+               normalizedPath.StartsWith(Path.EndsInDirectorySeparator(normalizedRoot) ? normalizedRoot : normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool PathsEqual(string left, string right) =>
@@ -1035,8 +1059,8 @@ public partial class BrowseView : UserControl
     private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var point = e.GetPosition(BrowseSurface);
-        var showFolder = _folderOverlayPinned || point.X <= 32 ||
-                         (_folderOverlayVisible && point.X <= FolderOverlay.Width);
+        var showFolder = _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel &&
+                         (point.X <= 32 || (_folderOverlayVisible && point.X <= FolderOverlay.Width));
         var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
                            (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
         SetFolderOverlayVisible(showFolder);
@@ -1069,13 +1093,14 @@ public partial class BrowseView : UserControl
         var width = BrowseSurface.ActualWidth;
         var height = BrowseSurface.ActualHeight;
         if (width <= 0 || height <= 0) return;
-        var folderWidth = Math.Clamp(FolderOverlay.ActualWidth + FolderOverlayTransform.X, 0, width);
+        var folderWidth = Math.Clamp(FolderOverlay.ActualWidth + FolderOverlayTransform.X + FolderOverlay.Margin.Left, 0, width);
         var carouselHeight = Math.Clamp(CarouselOverlay.ActualHeight - CarouselOverlayTransform.Y, 0, height);
         var exclusions = new List<Rect>
         {
-            new(0, 0, Math.Max(26, folderWidth), height),
-            new(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight))
+            new(0, 0, Math.Max(26, folderWidth), height)
         };
+        if (_carouselEnabled) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
+        foreach (var shellExclusion in _shellVideoExclusions) exclusions.Add(shellExclusion);
         if (OperationNotice.Visibility == Visibility.Visible)
             exclusions.Add(OperationNotice.TransformToAncestor(BrowseSurface).TransformBounds(new Rect(OperationNotice.RenderSize)));
         ViewerHost.SetVideoExclusions(exclusions);
@@ -1089,7 +1114,7 @@ public partial class BrowseView : UserControl
 
     private void SetFolderOverlayVisible(bool isVisible)
     {
-        isVisible |= _folderOverlayPinned;
+        isVisible |= _folderOverlayPinned || _fullscreenFolderReveal;
         if (_folderOverlayVisible == isVisible)
         {
             return;
@@ -1107,6 +1132,7 @@ public partial class BrowseView : UserControl
 
     private void SetCarouselOverlayVisible(bool isVisible)
     {
+        isVisible &= _carouselEnabled;
         if (_carouselOverlayVisible == isVisible)
         {
             return;
@@ -1118,19 +1144,20 @@ public partial class BrowseView : UserControl
         CarouselList.IsHitTestVisible = false;
         var animation = new DoubleAnimation
         {
-            To = isVisible ? 0 : CarouselOverlay.Height * 0.875,
+            To = isVisible ? 0 : CarouselOverlay.Height * (_fullscreenCarousel ? 1 : 0.875),
             Duration = TimeSpan.FromMilliseconds(180),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         };
         CarouselOverlay.BeginAnimation(OpacityProperty, new DoubleAnimation
         {
-            To = isVisible ? 1 : 0.65,
+            To = isVisible ? 1 : (_fullscreenCarousel ? 0 : 0.65),
             Duration = TimeSpan.FromMilliseconds(180),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
         });
         animation.Completed += (_, _) =>
         {
-            if (_carouselOverlayVisible == isVisible)
+            isVisible &= _carouselEnabled;
+        if (_carouselOverlayVisible == isVisible)
             {
                 _carouselPanelAnimating = false;
                 CarouselOverlay.IsHitTestVisible = isVisible;
@@ -1163,12 +1190,13 @@ public partial class BrowseView : UserControl
             .FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
         ViewerHost.ResetZoomState();
         ResetBoundaryAttempts();
-        _ = RefreshCarouselAsync();
+        QueueCarouselRefresh();
         _ = LoadCurrentImageAsync(clearCurrentImage: true, immediatePreview: item?.UncroppedThumbnail);
     }
 
     private async Task RefreshCarouselAsync()
     {
+        if (!_carouselEnabled || !_viewerActive) return;
         var refreshVersion = ++_carouselRefreshVersion;
         if (_carouselLoadCancellation is null || _carouselLoadCancellation.IsCancellationRequested)
         {
@@ -1177,13 +1205,19 @@ public partial class BrowseView : UserControl
         }
 
         var cancellationToken = _carouselLoadCancellation.Token;
-        _carouselOffsetBeforeRefresh = FindVisualChild<ScrollViewer>(CarouselList)?.HorizontalOffset ?? 0;
+        _carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList);
+        _carouselOffsetBeforeRefresh = _carouselScrollViewer?.HorizontalOffset ?? 0;
 
-        var files = _navigationState.Files.ToArray();
+        var files = _navigationState.Files;
         var currentFile = _navigationState.CurrentFile;
-        var currentIndex = currentFile is null ? -1 : _navigationState.Files.IndexOf(currentFile);
+        var currentIndex = _navigationState.CurrentFilePosition - 1;
         if (currentIndex < 0)
         {
+            CancelCarouselItemLoads();
+            CarouselItems.Clear();
+            CarouselGhosts.Children.Clear();
+            _carouselScrollTimer.Stop();
+            _hasCenteredCarouselItem = false;
             _carouselLeadingSpacer = null;
             _carouselTrailingSpacer = null;
             return;
@@ -1203,10 +1237,10 @@ public partial class BrowseView : UserControl
 
         const int thumbnailSize = 150;
         var start = Math.Max(0, currentIndex - _carouselNeighborsOnEachSide);
-        var end = Math.Min(files.Length - 1, currentIndex + _carouselNeighborsOnEachSide);
+        var end = Math.Min(files.Count - 1, currentIndex + _carouselNeighborsOnEachSide);
         _carouselStartIndex = start;
         _carouselEndIndex = end;
-        _carouselFileCount = files.Length;
+        _carouselFileCount = files.Count;
         _carouselCurrentIndex = currentIndex;
         var visibleItems = new List<CarouselThumbnailItem>(end - start + 1);
         var existingItems = new Dictionary<FileEntry, CarouselThumbnailItem>(ReferenceEqualityComparer.Instance);
@@ -1224,6 +1258,9 @@ public partial class BrowseView : UserControl
         {
             if (CarouselItems[index] is CarouselThumbnailItem item && !desiredFiles.Contains(item.File))
             {
+                FadeOutCarouselItem(item);
+                item.ThumbnailCancellation?.Cancel();
+                item.ThumbnailCancellation?.Dispose();
                 CarouselItems.RemoveAt(index);
             }
         }
@@ -1243,8 +1280,7 @@ public partial class BrowseView : UserControl
             }
             else if (currentItemIndex != destinationIndex)
             {
-                CarouselItems.RemoveAt(currentItemIndex);
-                CarouselItems.Insert(destinationIndex, item);
+                CarouselItems.Move(currentItemIndex, destinationIndex);
             }
 
             visibleItems.Add(item);
@@ -1273,7 +1309,7 @@ public partial class BrowseView : UserControl
                 return;
             }
 
-            _carouselScrollViewer = FindVisualChild<ScrollViewer>(CarouselList);
+            _carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList);
             if (_carouselScrollViewer is not null)
             {
                 _carouselScrollViewer.ScrollToHorizontalOffset(
@@ -1288,9 +1324,14 @@ public partial class BrowseView : UserControl
             return;
         }
 
-        var loads = visibleItems
+        var loads = visibleItems.OrderBy(item => Math.Abs(_navigationState.IndexOfFile(item.File) - currentIndex))
             .Where(item => item.Thumbnail is null && (item.ThumbnailTask is null || item.ThumbnailTask.IsCompleted))
-            .Select(item => item.ThumbnailTask = LoadCarouselThumbnailAsync(item, thumbnailSize, cancellationToken));
+            .Select(item =>
+            {
+                item.ThumbnailCancellation?.Dispose();
+                item.ThumbnailCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                return item.ThumbnailTask = LoadCarouselThumbnailAsync(item, thumbnailSize, item.ThumbnailCancellation.Token);
+            });
 
         await Task.WhenAll(loads);
     }
@@ -1330,11 +1371,8 @@ public partial class BrowseView : UserControl
             return;
         }
 
-        _carouselScrollTimer.Stop();
-        _carouselScrollStartOffset = scrollViewer.HorizontalOffset;
         _carouselScrollTargetOffset = targetOffset;
-        _carouselScrollStartedAt = DateTime.UtcNow;
-        _carouselScrollTimer.Start();
+        if (!_carouselScrollTimer.IsEnabled) _carouselScrollTimer.Start();
     }
 
     private void OnCarouselScrollTimerTick(object? sender, EventArgs e)
@@ -1345,15 +1383,14 @@ public partial class BrowseView : UserControl
             return;
         }
 
-        var progress = Math.Clamp((DateTime.UtcNow - _carouselScrollStartedAt).TotalMilliseconds / 180d, 0d, 1d);
-        var easedProgress = 1d - Math.Pow(1d - progress, 3d);
-        var offset = _carouselScrollStartOffset + (_carouselScrollTargetOffset - _carouselScrollStartOffset) * easedProgress;
-        _carouselScrollViewer.ScrollToHorizontalOffset(offset);
-        if (progress >= 1d)
+        // Retarget the running animation instead of restarting an ease-out on every notch.
+        var remaining = _carouselScrollTargetOffset - _carouselScrollViewer.HorizontalOffset;
+        if (Math.Abs(remaining) < 1)
         {
-            _carouselScrollTimer.Stop();
             _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollTargetOffset);
+            _carouselScrollTimer.Stop();
         }
+        else _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollViewer.HorizontalOffset + remaining * 0.45);
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -1417,7 +1454,21 @@ public partial class BrowseView : UserControl
     private bool _viewerActive = true;
     private bool _historyBusy;
     private CancellationTokenSource? _historyCancellation;
-    public void SetViewerActive(bool active) { _viewerActive = active; if (!active) _historyCancellation?.Cancel(); ViewerHost.SetActive(active); }
+    public void SetViewerActive(bool active)
+    {
+        var changed = active != _viewerActive;
+        _viewerActive = active;
+        if (!active)
+        {
+            _historyCancellation?.Cancel(); StopWatching();
+            _carouselRefreshVersion++;
+            _carouselLoadCancellation?.Cancel();
+            CancelCarouselItemLoads();
+            _carouselScrollTimer.Stop();
+        }
+        ViewerHost.SetActive(active);
+        if (active && changed) { StartWatching(); _ = RefreshCarouselAsync(); }
+    }
 
     private async Task<IFileOrganizationService> GetRootOperationsAsync(FolderTreeEntry? root,
         bool requireActive = false, CancellationToken token = default)
@@ -1447,6 +1498,8 @@ public partial class BrowseView : UserControl
         _carouselLoadCancellation?.Cancel();
         _carouselLoadCancellation?.Dispose();
         _carouselLoadCancellation = null;
+        CarouselGhosts.Children.Clear();
+        CancelCarouselItemLoads();
         CarouselItems.Clear();
         _carouselLeadingSpacer = null;
         _carouselTrailingSpacer = null;

@@ -9,7 +9,7 @@ namespace MediFiler3.Services;
 public sealed class ImageViewerHandler(WicImageDecoder decoder) : IFileViewerHandler<ViewerPresentation>
 {
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" };
+        { ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" };
     public bool CanHandle(FileEntry file) => Extensions.Contains(file.Extension);
     public ViewerCapabilities Capabilities => ViewerCapabilities.Zoom | ViewerCapabilities.Pan;
     public async Task<ViewerContent<ViewerPresentation>> LoadAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)

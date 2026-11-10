@@ -15,6 +15,7 @@ namespace MediFiler3.Interop;
 public sealed class WinUiNavigationIsland : HwndHost
 {
     private DesktopWindowXamlSource? _xamlSource;
+    public void RaiseSurface() => NativeSurfaceOrder.Raise(_xamlSource);
     private NavigationView? _navigationView;
 
     public event Action<string>? DestinationSelected;
