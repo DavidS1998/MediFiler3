@@ -23,6 +23,8 @@ namespace MediFiler3.Views;
 
 public partial class BrowseView : UserControl
 {
+    private readonly RootFolderHistoryService? _rootHistory;
+    public event Action<Exception>? RootHistoryPersistenceFailed;
     private readonly IFolderTreeService _folderTreeService;
     private readonly IFileListingService _fileListingService;
     private readonly NavigationSessionState _navigationState;
@@ -64,6 +66,14 @@ public partial class BrowseView : UserControl
     public Task OpenExternallyAsync(ExternalFileAction action) => ViewerHost.OpenExternallyAsync(action);
     public MediaPlaybackState PlaybackState => ViewerHost.PlaybackState;
     public event Action? PlaybackStateChanged;
+    public event Action<double, bool>? AudioSettingsChanged;
+    public event Action<bool>? FolderPinChanged;
+    public event Action? RefreshRequested;
+    public void SetFolderPinned(bool pinned)
+    {
+        FolderPinButton.IsChecked = pinned;
+        ApplyFolderPin();
+    }
     public void TogglePlayback() => ViewerHost.TogglePlayback();
     public void StopPlayback() => ViewerHost.StopPlayback();
     public void SeekPlayback(double seconds) => ViewerHost.SeekPlayback(seconds);
@@ -99,8 +109,9 @@ public partial class BrowseView : UserControl
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
-        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications)
+        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null)
     {
+        _rootHistory = rootHistory;
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
         _navigationState = navigationState;
@@ -110,6 +121,9 @@ public partial class BrowseView : UserControl
         _thumbnailService = thumbnailService;
         _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
+        if (audioSettings is not null) ViewerHost.InitializeAudioSettings(audioSettings);
+        ViewerHost.AudioSettingsChanged += (volume, muted) => AudioSettingsChanged?.Invoke(volume, muted);
+        ViewerHost.RefreshRequested += () => RefreshRequested?.Invoke();
         ViewerHost.Initialize(imageDecoder, thumbnailService, textContentService, externalFileService, defaultApplications);
         ViewerHost.NavigationRequested += NavigateByOneFile;
         CompositionTarget.Rendering += OnVideoSurfaceRendering;
@@ -171,6 +185,21 @@ public partial class BrowseView : UserControl
             {
                 ViewerHost.ShowImageMessage("No accessible folders were loaded.", string.Empty);
             }
+            if (_rootHistory is not null && result.Roots.Count > 0)
+            {
+                try
+                {
+                    // Roots have been published successfully. Count every distinct root once,
+                    // regardless of which UI entry point initiated loading. Refresh never calls this.
+                    await _rootHistory.RecordOpenedRootsAsync(result.Roots.Select(root => root.Path));
+                }
+                catch (Exception exception)
+                {
+                    RootHistoryPersistenceFailed?.Invoke(exception);
+                    if (!cancellationToken.IsCancellationRequested)
+                        ShowOperationNotice("Folders loaded, but their visit history could not be saved.");
+                }
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -187,7 +216,7 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null)
+    private async Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null, int preferredFileIndex = 0)
     {
         if (ReferenceEquals(_navigationState.ActiveFolder, folder))
         {
@@ -217,6 +246,8 @@ public partial class BrowseView : UserControl
             {
                 var preferredFile = result.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
                 if (preferredFile is not null) _navigationState.SetCurrentFile(preferredFile);
+                else if (result.Files.Count > 0)
+                    _navigationState.SetCurrentFile(result.Files[Math.Clamp(preferredFileIndex, 0, result.Files.Count - 1)]);
             }
             EmptyFilesNotice.Visibility = result.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _ = RefreshCarouselAsync();
@@ -571,6 +602,14 @@ public partial class BrowseView : UserControl
         await RefreshFolderTreeAsync(preferredFolderPath, oldPath, newPath, deletedPath);
     }
 
+    public Task RefreshAsync()
+    {
+        if (_navigationState.Roots.Count == 0) return Task.CompletedTask;
+        return RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path,
+            preferredFilePath: _navigationState.CurrentFile?.FullPath,
+            preferredFileIndex: Math.Max(0, _navigationState.CurrentFilePosition - 1));
+    }
+
     private async Task RefreshFolderTreeAsync(
         string? preferredFolderPath,
         string? oldPath = null,
@@ -578,9 +617,11 @@ public partial class BrowseView : UserControl
         string? deletedPath = null,
         IReadOnlyList<(string OldPath, string NewPath)>? pathMappings = null,
         string? preferredFilePath = null,
-        bool mapPreferredFolderWithMappings = true)
+        bool mapPreferredFolderWithMappings = true,
+        int preferredFileIndex = 0)
     {
         _navigationController.CancelPendingNavigation();
+        _fileLoadCancellation?.Cancel();
         CancelFolderCounts();
         _loadCancellation?.Cancel();
         _loadCancellation?.Dispose();
@@ -596,13 +637,14 @@ public partial class BrowseView : UserControl
                         path = MapDescendantPath(path, mapping.OldPath, mapping.NewPath) ?? path;
                 return path;
             })
-            .Where(Directory.Exists)
             .ToArray();
         try
         {
             var loaded = await _folderTreeService.LoadRootsAsync(roots, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            _navigationState.ReplaceRoots(loaded.Roots);
+            if (loaded.Errors.Count > 0)
+                ShowOperationNotice($"Some folders could not be loaded: {string.Join("; ", loaded.Errors.Take(3))}");
+            _navigationState.ReplaceRoots(loaded.Roots, preserveActiveContext: true);
             var preferred = preferredFolderPath;
             if (oldPath is not null && newPath is not null)
                 preferred = MapDescendantPath(preferred, oldPath, newPath);
@@ -612,15 +654,20 @@ public partial class BrowseView : UserControl
             if (deletedPath is not null && IsPathWithin(preferred, deletedPath))
                 preferred = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(deletedPath));
 
-            _ = PopulateHierarchyAsync(loaded.Roots, cancellationToken, preferred, preferredFilePath);
+            _ = PopulateHierarchyAsync(loaded.Roots, cancellationToken, preferred, preferredFilePath, preferredFileIndex);
 
-            var active = FindFolder(loaded.Roots, preferred) ?? loaded.Roots.FirstOrDefault();
+            var active = FindFolder(loaded.Roots, preferred);
+            // Keep a nested folder active while its replacement node is discovered.
+            // This avoids jumping to a root's first file during a refresh.
+            if (active is null && preferred is not null && _navigationState.ActiveFolder is not null) return;
+            active ??= loaded.Roots.FirstOrDefault();
             if (active is not null)
             {
-                await ActivateFolderAsync(active, preferredFilePath);
+                await ActivateFolderAsync(active, preferredFilePath, preferredFileIndex);
             }
             else
             {
+                _navigationState.SetActiveFolder(null);
                 ClearActivePresentation("No accessible folders are loaded.", string.Empty);
             }
         }
@@ -659,14 +706,15 @@ public partial class BrowseView : UserControl
     }
 
     private async Task PopulateHierarchyAsync(IReadOnlyList<FolderTreeEntry> roots, CancellationToken cancellationToken,
-        string? preferredFolderPath = null, string? preferredFilePath = null)
+        string? preferredFolderPath = null, string? preferredFilePath = null, int preferredFileIndex = 0)
     {
         var errors = new List<string>();
         try
         {
+            var initialFolder = _navigationState.ActiveFolder;
+            var initialFile = _navigationState.CurrentFile;
             // Publish roots and allow a render before requesting descendants.
             await Dispatcher.Yield(DispatcherPriority.Background);
-            var initialFolder = _navigationState.ActiveFolder;
             await foreach (var result in _folderTreeService.LoadHierarchyAsync(roots, cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -680,18 +728,30 @@ public partial class BrowseView : UserControl
                 if (result.Errors.Count == 0) result.Parent.CompleteChildrenLoad();
                 errors.AddRange(result.Errors.Take(Math.Max(0, 3 - errors.Count)));
                 if (preferredFolderPath is not null &&
-                    (_navigationState.ActiveFolder is null || ReferenceEquals(_navigationState.ActiveFolder, initialFolder)))
+                    (_navigationState.ActiveFolder is null || (ReferenceEquals(_navigationState.ActiveFolder, initialFolder) &&
+                     ReferenceEquals(_navigationState.CurrentFile, initialFile))))
                 {
                     var preferred = FindFolder(roots, preferredFolderPath);
                     if (preferred is not null)
                     {
-                        await ActivateFolderAsync(preferred, preferredFilePath);
+                        await ActivateFolderAsync(preferred, preferredFilePath, preferredFileIndex);
                         preferredFolderPath = null;
                     }
                 }
                 await Dispatcher.Yield(DispatcherPriority.Background);
             }
             cancellationToken.ThrowIfCancellationRequested();
+            if (preferredFolderPath is not null && ReferenceEquals(_navigationState.ActiveFolder, initialFolder) &&
+                ReferenceEquals(_navigationState.CurrentFile, initialFile))
+            {
+                var fallback = roots.FirstOrDefault();
+                if (fallback is not null) await ActivateFolderAsync(fallback);
+                else
+                {
+                    _navigationState.SetActiveFolder(null);
+                    ClearActivePresentation("No accessible folders are loaded.", string.Empty);
+                }
+            }
             if (errors.Count > 0)
                 ShowOperationNotice($"Some folders could not be loaded: {string.Join("; ", errors)}");
             StartFolderCounts();
@@ -958,9 +1018,12 @@ public partial class BrowseView : UserControl
         SetCarouselOverlayVisible(false);
     }
 
-    private void OnFolderPinButtonClick(object sender, RoutedEventArgs e)
+    private void OnFolderPinButtonClick(object sender, RoutedEventArgs e) => ApplyFolderPin();
+
+    private void ApplyFolderPin()
     {
         _folderOverlayPinned = FolderPinButton.IsChecked == true;
+        FolderPinChanged?.Invoke(_folderOverlayPinned);
         FolderPinGlyph.Text = _folderOverlayPinned ? "\uE77A" : "\uE718";
         FolderPinButton.ToolTip = _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open";
         FolderPinButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty,

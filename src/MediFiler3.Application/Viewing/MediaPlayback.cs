@@ -31,6 +31,12 @@ public sealed record MediaPlaybackState(bool Ready, bool Playing, TimeSpan Posit
 
 public sealed class MediaAudioSettings
 {
+    public MediaAudioSettings(double volume = 0.5, bool muted = false)
+    {
+        if (!double.IsFinite(volume) || volume is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(volume));
+        Volume = volume;
+        Muted = muted;
+    }
     public double Volume { get; internal set; } = 0.5;
     public bool Muted { get; internal set; }
 }

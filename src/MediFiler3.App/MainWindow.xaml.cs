@@ -15,6 +15,7 @@ using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Operations;
 using MediFiler3.Services;
 using MediFiler3.Application.Viewing;
+using MediFiler3.Application.Persistence;
 
 namespace MediFiler3;
 
@@ -42,7 +43,7 @@ public partial class MainWindow : Window
         typeof(MainWindow),
         new FrameworkPropertyMetadata(true, OnSidebarLayoutPropertyChanged));
 
-    private readonly HomeView _homeView = new();
+    private readonly HomeView _homeView;
     private readonly BrowseView _browseView;
     private readonly SettingsView _settingsView;
     private readonly ILogger<MainWindow> _logger;
@@ -71,22 +72,44 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability)
     {
+        _homeView = new HomeView(rootHistory, rootAvailability);
+        _homeView.AddFoldersRequested += OnLoadFoldersRequested;
+        _homeView.FoldersDropped += async paths => await LoadFolderPathsAsync(paths);
+        _homeView.OpenRootRequested = path => LoadFolderPathsAsync([path]);
+        _homeView.LocateFolderRequested = oldPath =>
+        {
+            var picker = new OpenFolderDialog { Title = "Locate saved root folder", Multiselect = false };
+            return Task.FromResult(picker.ShowDialog(this) == true ? picker.FolderName : null);
+        };
         _logger = logger;
         _navigationState = navigationState;
         _operationJournal = operationJournal;
         _fileOrganizationService = fileOrganizationService;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
-            thumbnailService, fileOrganizationService, textContentService, externalFileService, defaultApplications);
-        Closed += (_, _) => _browseView.StopBackgroundFolderCounts();
+            thumbnailService, fileOrganizationService, textContentService, externalFileService, defaultApplications,
+            new MediaAudioSettings(settings.Current.Volume, settings.Current.Muted), rootHistory);
+        _browseView.RootHistoryPersistenceFailed += exception => _logger.LogWarning(exception, "Could not save root-folder history.");
+        _browseView.SetCarouselNeighborCount((settings.Current.CarouselIconCount - 1) / 2);
+        _browseView.SetFolderPinned(settings.Current.FolderTreePinned);
+        _browseView.AudioSettingsChanged += (volume, muted) => settings.Update(s => s with { Volume = volume, Muted = muted });
+        _browseView.FolderPinChanged += pinned => settings.Update(s => s with { FolderTreePinned = pinned });
+        Closed += (_, _) => { _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
-        _settingsView.CarouselNeighborCountChanged += _browseView.SetCarouselNeighborCount;
+        _settingsView.CarouselNeighborCountChanged += count =>
+        {
+            _browseView.SetCarouselNeighborCount(count);
+            settings.Update(s => s with { CarouselIconCount = count * 2 + 1 });
+        };
         InitializeComponent();
         _browseView.DialogService = ToolbarIsland;
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
+        NavigationIsland.RefreshRequested += async () => await RefreshBrowseAsync();
         ToolbarIsland.LoadFoldersRequested += OnLoadFoldersRequested;
+        ToolbarIsland.RefreshRequested += async () => await RefreshBrowseAsync();
+        _browseView.RefreshRequested += async () => await RefreshBrowseAsync();
         _browseView.FolderMenuRequested += (folder, location) =>
             ToolbarIsland.ShowFolderMenu(location, folder.Name,
                 action => _browseView.ExecuteFolderMenuActionAsync(folder, action));
@@ -254,11 +277,25 @@ public partial class MainWindow : Window
             MediFiler3.Domain.Operations.FileOperationKind.CreateFolder or
             MediFiler3.Domain.Operations.FileOperationKind.SendToRecycleBin;
 
-    private void UpdateFileActionAvailability() =>
+    private void UpdateFileActionAvailability()
+    {
         ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && _navigationState.CurrentFile is not null);
+        ToolbarIsland.SetRefreshEnabled(PageContent.Content == _browseView && _navigationState.Roots.Count > 0);
+    }
+
+    private async Task RefreshBrowseAsync()
+    {
+        if (PageContent.Content == _browseView) await _browseView.RefreshAsync();
+    }
 
     private async void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (PageContent.Content == _browseView && e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            e.Handled = true;
+            await RefreshBrowseAsync();
+            return;
+        }
         if (PageContent.Content != _browseView || Keyboard.FocusedElement is TextBox or MenuItem)
             return;
 

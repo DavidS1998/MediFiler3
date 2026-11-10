@@ -48,7 +48,7 @@ public sealed class WinUiMediaIsland(MediaPlayer player) : HwndHost
         root.AddHandler(Xaml.UIElement.KeyDownEvent, new Xaml.Input.KeyEventHandler((_, args) =>
         {
             var key = (int)args.Key;
-            if (key is not (13 or 32 or 37 or 38 or 39 or 40)) return;
+            if (key is not (13 or 32 or 37 or 38 or 39 or 40 or 116)) return;
             var control = IsDown(Windows.System.VirtualKey.Control);
             var shift = IsDown(Windows.System.VirtualKey.Shift);
             args.Handled = true;

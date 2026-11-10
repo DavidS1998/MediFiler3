@@ -63,7 +63,7 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
 
         var content = new Grid
         {
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(0, 0, 0, 0))
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 11, 12, 14))
         };
         content.Children.Add(_slider);
         _xamlSource.Content = content;

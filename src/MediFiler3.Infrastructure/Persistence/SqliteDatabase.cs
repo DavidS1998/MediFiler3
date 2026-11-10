@@ -10,7 +10,7 @@ namespace MediFiler3.Infrastructure.Persistence;
 /// </summary>
 public sealed class SqliteDatabase : IHostedService
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private bool _initialized;
@@ -88,62 +88,11 @@ public sealed class SqliteDatabase : IHostedService
                     $"Database schema version {version} is newer than supported version {CurrentSchemaVersion}.");
             }
 
-            if (version == 0)
+            if (version < CurrentSchemaVersion)
             {
-                await using var transaction = await connection.BeginTransactionAsync(cancellationToken)
+                await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken)
                     .ConfigureAwait(false);
-                await CreateJournalSchemaAsync(connection, (SqliteTransaction)transaction, cancellationToken)
-                    .ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else if (version == 1)
-            {
-                await using var transaction = await connection.BeginTransactionAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                await using var migrate = connection.CreateCommand();
-                migrate.Transaction = (SqliteTransaction)transaction;
-                migrate.CommandText = """
-                    ALTER TABLE FileOperations RENAME TO FileOperationsV1;
-                    """;
-                await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                await CreateJournalSchemaAsync(connection, (SqliteTransaction)transaction, cancellationToken)
-                    .ConfigureAwait(false);
-                await using var copyLegacy = connection.CreateCommand();
-                copyLegacy.Transaction = (SqliteTransaction)transaction;
-                copyLegacy.CommandText = """
-                    INSERT INTO FileOperations (Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc,
-                                                PayloadVersion, PayloadJson)
-                    SELECT Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc, 0, PayloadJson
-                    FROM FileOperationsV1;
-
-                    INSERT INTO FileOperationEvents (OperationId, Kind, OccurredUtc, DetailsJson)
-                    SELECT Id, 'Prepared', CreatedUtc, NULL FROM FileOperationsV1;
-
-                    INSERT INTO FileOperationEvents (OperationId, Kind, OccurredUtc, DetailsJson)
-                    SELECT Id,
-                           Status,
-                           COALESCE(FinishedUtc, CreatedUtc),
-                           CASE WHEN Error IS NULL THEN NULL ELSE json_object('Message', Error) END
-                    FROM FileOperationsV1
-                    WHERE Status IN ('Completed', 'Failed');
-                    PRAGMA user_version = 3;
-                    """;
-                await copyLegacy.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else if (version == 2)
-            {
-                await using var transaction = await connection.BeginTransactionAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                await using var migrate = connection.CreateCommand();
-                migrate.Transaction = (SqliteTransaction)transaction;
-                migrate.CommandText = """
-                    ALTER TABLE FileOperations ADD COLUMN CompensatesOperationId TEXT NULL;
-                    CREATE INDEX IF NOT EXISTS IX_FileOperations_CompensatesOperationId
-                        ON FileOperations (CompensatesOperationId);
-                    PRAGMA user_version = 3;
-                    """;
-                await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                await MigrateAsync(connection, transaction, version, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -153,6 +102,81 @@ public sealed class SqliteDatabase : IHostedService
         {
             _initializationLock.Release();
         }
+    }
+
+    private static async Task MigrateAsync(SqliteConnection connection, SqliteTransaction transaction,
+        int version, CancellationToken cancellationToken)
+    {
+        if (version == 0)
+        {
+            await CreateJournalSchemaAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else if (version == 1)
+        {
+            await using var migrate = connection.CreateCommand();
+            migrate.Transaction = transaction;
+            migrate.CommandText = """
+                ALTER TABLE FileOperations RENAME TO FileOperationsV1;
+                """;
+            await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await CreateJournalSchemaAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false);
+            await using var copyLegacy = connection.CreateCommand();
+            copyLegacy.Transaction = transaction;
+            copyLegacy.CommandText = """
+                INSERT INTO FileOperations (Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc,
+                                            PayloadVersion, PayloadJson)
+                SELECT Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc, 0, PayloadJson
+                FROM FileOperationsV1;
+
+                INSERT INTO FileOperationEvents (OperationId, Kind, OccurredUtc, DetailsJson)
+                SELECT Id, 'Prepared', CreatedUtc, NULL FROM FileOperationsV1;
+
+                INSERT INTO FileOperationEvents (OperationId, Kind, OccurredUtc, DetailsJson)
+                SELECT Id,
+                       Status,
+                       COALESCE(FinishedUtc, CreatedUtc),
+                       CASE WHEN Error IS NULL THEN NULL ELSE json_object('Message', Error) END
+                FROM FileOperationsV1
+                WHERE Status IN ('Completed', 'Failed');
+                """;
+            await copyLegacy.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (version == 2)
+        {
+            await using var migrate = connection.CreateCommand();
+            migrate.Transaction = transaction;
+            migrate.CommandText = """
+                ALTER TABLE FileOperations ADD COLUMN CompensatesOperationId TEXT NULL;
+                CREATE INDEX IF NOT EXISTS IX_FileOperations_CompensatesOperationId
+                    ON FileOperations (CompensatesOperationId);
+                """;
+            await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var state = connection.CreateCommand();
+        state.Transaction = transaction;
+        state.CommandText = """
+            CREATE TABLE ApplicationSettings (
+                Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
+                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                PayloadJson TEXT NOT NULL);
+            CREATE TABLE WindowLayout (
+                Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
+                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                PayloadJson TEXT NOT NULL);
+            CREATE TABLE RootFolderHistory (
+                Id TEXT NOT NULL PRIMARY KEY,
+                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                PayloadJson TEXT NOT NULL);
+            CREATE TABLE ThumbnailCacheIndex (
+                Id TEXT NOT NULL PRIMARY KEY,
+                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                PayloadJson TEXT NOT NULL);
+            PRAGMA user_version = 4;
+            """;
+        await state.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task CreateJournalSchemaAsync(
@@ -187,7 +211,6 @@ public sealed class SqliteDatabase : IHostedService
                         ON FileOperationEvents (OperationId, Sequence);
                     CREATE INDEX IF NOT EXISTS IX_FileOperations_CompensatesOperationId
                         ON FileOperations (CompensatesOperationId);
-                    PRAGMA user_version = 3;
                     """;
         await createTable.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

@@ -4,6 +4,18 @@ namespace MediFiler3.Infrastructure.Tests;
 
 public sealed class MediaPlaybackTests
 {
+    [Fact]
+    public async Task RestoredAudioValuesAreAppliedBeforeBackendOpening()
+    {
+        var backend = new Session();
+        using var controller = new MediaPlaybackController(backend, new MediaAudioSettings(0.73, true));
+        Assert.Equal(0.73, backend.Volume);
+        Assert.True(backend.IsMuted);
+        await controller.OpenAsync("file", CancellationToken.None);
+        Assert.Equal(0.73, backend.VolumeAtOpen);
+        Assert.True(backend.MutedAtOpen);
+        Assert.Equal(0, backend.PlayCalls);
+    }
     [Theory]
     [InlineData(".mp4", false)] [InlineData(".M4V", false)] [InlineData(".wmv", false)]
     [InlineData(".webm", false)] [InlineData(".MKV", false)] [InlineData(".opus", true)]
@@ -187,7 +199,14 @@ public sealed class MediaPlaybackTests
         public int PlayCalls { get; private set; }
         public int PauseCalls { get; private set; }
         public int Disposals { get; private set; }
-        public Task OpenAsync(string path, CancellationToken token) => Open;
+        public double VolumeAtOpen { get; private set; }
+        public bool MutedAtOpen { get; private set; }
+        public Task OpenAsync(string path, CancellationToken token)
+        {
+            VolumeAtOpen = Volume;
+            MutedAtOpen = IsMuted;
+            return Open;
+        }
         public void Play() => PlayCalls++;
         public void Pause() => PauseCalls++;
         public void Seek(TimeSpan position) => Position = position;

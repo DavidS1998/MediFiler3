@@ -16,3 +16,11 @@ Checks exercise real image decoding and PNG thumbnails, metadata and surfaces, t
 Twelve additional generated animated-GIF checks verify frame delays, transparency/offsets, previous/background disposal, finite/infinite looping, one-cycle duration including zero/missing-delay defaults, logical-canvas dimensions, zoom/fit/resize continuity, file release during playback, tab reload, rapid-selection cleanup, and malformed-GIF fallback. Single-frame GIFs retain the frozen static-image path; animation intentionally uses a mutable canvas.
 
 The runner does not establish subjective appearance, physical mouse/keyboard focus transfer, multiple-monitor DPI behavior, audible output, actual Windows Open With/default-application launching, or every codec/container combination. See [the Phase 3 report](../../MediFiler3/PHASE3_INTEGRATION.md) for the current evidence and remaining manual checks.
+
+SettingsAndRefreshChecks.cs additionally verifies restored Browse settings and paused first media, refresh selection after external insertion/removal, nested context and missing-folder/root fallback. These checks use isolated runner-owned files.
+
+The root-history native check uses the real SQLite service at Browse root publication and verifies aliases, repeat loads, failed roots and exclusion of refresh/subfolder navigation from visit counting.
+
+HomeChecks.cs exercises service-backed native Home cards via automation peers (stars, opening, missing-root choices and recent-only removal), responsive/empty/reopen cases and stale availability. It saves home-cards.png via native RenderTargetBitmap for visual inspection. Real folder picker and physical drag/drop remain manual checks.
+
+Home refinements: current checks use Locate/Remove only and unified all-list removal, verify tooltip-only paths/exact timestamps, and grow/shrink through 3000 px to check card containment. Earlier Ignore/recent-only behavior has been removed.

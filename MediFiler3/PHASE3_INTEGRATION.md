@@ -2,7 +2,29 @@
 
 Date: 2026-11-10. Platform: this Windows 11 x64 development machine, existing WPF host and Windows App SDK 2.6.4 XAML Islands.
 
-Status: automated native integration has passed; interactive acceptance remains open. The initial integration pass reproduced no production-code defects. The subsequent animated GIF implementation adds automatic playback with twelve additional native regression checks, including one-cycle duration metadata.
+Status: automated native integration has passed; the user confirmed Phase 3 passes manual interactive review on 2026-11-10. The initial integration pass reproduced no production-code defects. The subsequent animated GIF implementation adds automatic playback with twelve additional native regression checks, including one-cycle duration metadata.
+
+The manual acceptance below supersedes earlier pending-check notes: popup/high-DPI appearance, focus/input, video overlay reachability, audible output/artwork, native external opening, and Browse mutations/undo/redo with active media are accepted by the user. Codec/fixture coverage limitations remain as documented.
+
+## Home refinement regression run
+
+188 unit/filesystem tests and 99 native checks passed, zero failures/skips. Added formatter boundaries/timezone cases, native card containment during grow/shrink up to 3000 px, tooltip-only paths/exact dates, Locate/Remove-only actions and unified all-list removal. Native compact Home capture inspected. Earlier Ignore/recent-only checks below are historical and were replaced. Physical resize/DPI review remains open.
+
+## Phase 4.4 Home regression run
+
+167 unit/filesystem tests and 99 native checks passed, zero failures/skips. HomeChecks.cs exercises real native cards and automation peers for star/unstar/open/Ignore/Locate/Remove, cancellation/conflict preservation, recent-only removal, responsive spacing, empty Add folders, reattachment/reopen and slow/stale availability. Native RenderTargetBitmap capture home-cards.png is saved with isolated runner fixtures and was inspected for layout/contrast. Physical new Home keyboard/focus/DPI/picker/drop and visual review remain open. Existing codec fixture limits still apply.
+
+## Phase 4.3 regression run
+
+167 unit/filesystem tests and 89 native checks passed, zero failures/skips. Native root-history coverage verifies normalized duplicate roots count once per explicit load, reopened roots update shared usage, failed loads are not recorded, and refresh/subfolder selection never create visits or child history. Home controls remain 4.4.
+
+## Rendering regression run
+
+88 native checks passed with zero failures/skips after retaining the opaque matching Settings slider background and reverting the experimental folder-tree popup at the user's request. Original WPF tree/video clipping behavior is restored; the popup-specific test was removed.
+
+## Phase 4.2 regression run
+
+157 unit/filesystem tests and 87 native checks passed with zero failures/skips. Added SettingsAndRefreshChecks.cs covers first-media restored volume/mute with paused opening, carousel/pin restoration, refresh after external insertion/removal, nested file retention and missing-folder/root fallback. Existing native fixture/codec limits still apply. New physical F5/button interaction and cross-process UI restart appearance have not been manually reviewed.
 
 ## Verification
 
@@ -45,11 +67,11 @@ Supplied media was copied into temporary runner-owned directories before mutatio
 - Resizing retained the native media session; text insets remained symmetric and clear of the folder-panel allowance.
 - Media suspension released files for rename and reopened paused with shared mute intact. Tab deactivation allowed exclusive file reopening and returned paused.
 - Clearing selection removed metadata, contextual controls and external-opening availability.
-- Unsupported viewer right-click forwarded ChooseApplication with the captured file path, with/without a thumbnail; image/text/media right-click remained functional and empty/inactive viewers did not launch. The launch service was a recording stub; the real native chooser still needs interactive review.
+- Unsupported viewer right-click forwarded ChooseApplication with the captured file path, with/without a thumbnail; image/text/media right-click remained functional and empty/inactive viewers did not launch. The launch service was a recording stub; the user subsequently accepted the real native chooser during manual review.
 
-The existing unit/filesystem suite additionally covers navigation boundaries, coordinator lifetime/cancellation, malformed text and Unicode window boundaries, shared audio settings, operation conflict/journal/undo/redo behavior, and external-opening/association contracts. The native runner's rename checks exercise the viewer suspension seam; full Browse dialogs, folder operations, and journal undo/redo still need interactive testing together with an active player.
+The existing unit/filesystem suite additionally covers navigation boundaries, coordinator lifetime/cancellation, malformed text and Unicode window boundaries, shared audio settings, operation conflict/journal/undo/redo behavior, and external-opening/association contracts. The native runner's rename checks exercise the viewer suspension seam; the user subsequently accepted full Browse dialogs, folder operations and journal undo/redo with active media during manual review.
 
-## Remaining interactive acceptance
+## Interactive acceptance (accepted by the user on 2026-11-10)
 
 1. Review popup scale, clipping and positioning, seekbar sizing, metadata/path alignment and text readability at ordinary and high DPI, including movement between monitors.
 2. Use physical mouse/keyboard input to verify WPF/WinUI focus transfer, Tab, Space, arrows, F4, wheel, right-click mute/playback, jumps, seek dragging and text selection/copying.
@@ -58,4 +80,6 @@ The existing unit/filesystem suite additionally covers navigation boundaries, co
 5. Exercise Windows default-app launching and Open With selection/cancellation from integrated and fallback content; confirm association refresh and focus return.
 6. Exercise Browse rename/move/Recycle Bin, folder operations, conflicts/cancellation and undo/redo while video/audio is selected or playing. Confirm release, paused reload and selection refresh.
 
-Phase 3 remains in validation until these interactive checks are accepted. Cross-session mute/settings persistence remains Phase 4.
+The user confirms these interactive checks pass. Phase 3 is complete. Cross-session volume/mute/settings persistence remains Phase 4.
+
+The [Phase 4 handover](PHASE4_HANDOVER.md) records step 4.1 completion and the remaining persistence work. Native fixture/codec limits above remain unchanged by user interactive acceptance.

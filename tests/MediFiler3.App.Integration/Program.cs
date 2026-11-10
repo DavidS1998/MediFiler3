@@ -358,6 +358,8 @@ internal static partial class Program
             _viewer.SetActive(true);
         });
         await RunGifChecksAsync();
+        await RunSettingsAndRefreshChecksAsync();
+        await RunHomeChecksAsync();
     }
 
     private static readonly string[] TextExtensions = [".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".config", ".cs", ".xaml", ".html", ".htm", ".css", ".js", ".ts", ".sql", ".ps1", ".sh", ".srt", ".nfo", ".toml", "README", "LICENSE"];

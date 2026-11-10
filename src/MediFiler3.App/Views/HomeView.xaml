@@ -1,49 +1,7 @@
 <UserControl x:Class="MediFiler3.Views.HomeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="Transparent">
-    <UserControl.Resources>
-        <Style x:Key="SectionCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="#111317" />
-            <Setter Property="BorderBrush" Value="#292B31" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
-            <Setter Property="Padding" Value="20" />
-        </Style>
-    </UserControl.Resources>
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="1200" HorizontalAlignment="Stretch">
-            <TextBlock Text="Home" FontSize="32" FontWeight="Bold" Foreground="#FFFFFF" />
-            <TextBlock Text="Select a folder to begin." FontSize="15" Foreground="#A3A6AE" Margin="0,8,0,30" />
-
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Border Grid.Column="0" Style="{StaticResource SectionCardStyle}" MinHeight="210">
-                    <StackPanel>
-                        <TextBlock Text="Recently opened" FontSize="17" FontWeight="SemiBold" Foreground="#FFFFFF" />
-                        <TextBlock Text="Your recent folders will appear here." TextWrapping="Wrap" FontSize="13" Foreground="#A3A6AE" Margin="0,18,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="2" Style="{StaticResource SectionCardStyle}" MinHeight="210">
-                    <StackPanel>
-                        <TextBlock Text="Frequently opened" FontSize="17" FontWeight="SemiBold" Foreground="#FFFFFF" />
-                        <TextBlock Text="Folders you open often will appear here." TextWrapping="Wrap" FontSize="13" Foreground="#A3A6AE" Margin="0,18,0,0" />
-                    </StackPanel>
-                </Border>
-                <Border Grid.Column="4" Style="{StaticResource SectionCardStyle}" MinHeight="210">
-                    <StackPanel>
-                        <TextBlock Text="Favorites" FontSize="17" FontWeight="SemiBold" Foreground="#FFFFFF" />
-                        <TextBlock Text="Your favorite folders will appear here." TextWrapping="Wrap" FontSize="13" Foreground="#A3A6AE" Margin="0,18,0,0" />
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </StackPanel>
-    </ScrollViewer>
+             xmlns:interop="clr-namespace:MediFiler3.Interop"
+             Background="#0B0C0E">
+    <interop:WinUiHomeIsland x:Name="HomeIsland" />
 </UserControl>

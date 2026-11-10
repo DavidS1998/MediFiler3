@@ -47,22 +47,26 @@ Display the folders most recently opened by the user, ordered chronologically, n
 
 ### Frequently opened
 
-Display folders ranked by how frequently the user opens them.
+Display root folders ranked by how many times the user explicitly opens that specific root. Do not persist visit/history information for its subfolders; subfolder navigation and overscroll do not count as root opens.
 
-The frequency counter should persist between application sessions.
+The frequency counter and last-visited timestamp persist between sessions. Every successful explicit root load updates them, whether initiated by drag-and-drop, Add Folders or Home. Equivalent normalized absolute Windows paths share one record; duplicate aliases within one load count once. Refresh, subfolder navigation, overscroll and availability probing do not count.
 
 ### Favorites
 
 Display folders explicitly marked as favorites by the user.
 
-Users should be able to add and remove favorites directly from the folder tree or folder context menu.
+Favorites apply only to saved root folders and are added/removed from Home, not the folder tree or its menus. A star next to an entry in Recents or Frequently opened toggles the shared favorite state. Favorites are ordered alphabetically by folder name (path breaks ties). The same root shows the same filled/unfilled star in all two or three Home sections where it appears.
+
+### Home layout
+
+Use a native WinUI card layout within the WPF host: Recent, Frequent and Favorites sections, standard Windows spacing (16 px card insets, 12 px content spacing, 8 px action spacing) and responsive columns. Show compact root names and visit counts with relative last-visited times. Full paths and exact local timestamps belong in hover text. Relative times use seconds, minutes, hours, days, 30-day months and 365-day years, with singular/plural forms and live updates while Home is open. Retain clear empty states and Add folders. Large saved lists may use explicit Show more controls without removing persisted history.
 
 ### Home screen behavior
 
 - Clicking a folder opens it in the main application interface.
 - Each entry should display its folder name and optionally its full path.
-- Missing or inaccessible folders should be identified rather than silently removed.
-- Users should be able to remove entries from recent history.
+- Missing, renamed, or inaccessible roots remain listed. Let the user locate the folder manually or remove its saved entry from all lists. Do not automatically infer a replacement path.
+- A single Remove entry action removes a saved root from Recents, Frequent and Favorites; it never deletes the source folder.
 - Favorites should persist between sessions.
 - The home screen should provide an option to load a new folder or collection.
 
@@ -146,7 +150,7 @@ Zooming should support viewing the original image resolution without unnecessari
 
 The backend is WinUI MediaPlayerElement with Windows.Media.Playback.MediaPlayer, hosted in a XAML Island within the WPF application. It uses installed Windows media components without a bundled codec runtime. Routed video targets are MP4/M4V, WMV, WebM and MKV; audio targets are MP3, WAV, WMA, M4A/AAC, ADTS AAC and Opus. Extensions route to handlers; codec/container combinations may depend on Windows media extensions. Unsupported variants show an error and retain external-opening actions. FLAC and other extensions remain deferred.
 
-Media opens paused, with Space/right-click or a WinUI toolbar control toggling playback. The right toolbar provides play/pause, stop, back/forward 5-second jumps, a seekbar that stretches to the available toolbar width, current/total playback time, and a compact horizontal volume popup with a clickable speaker/mute icon on the left, a 0-100 slider, and a numeric level on the right. Keep the popup consistent with the compact toolbar: 32-pixel controls, a 16-pixel speaker glyph, 12-point level text, and 8-pixel presenter padding. Jump buttons use Segoe Fluent Rewind (U+EB9E) and FastForward (U+EB9D). Right-clicking the volume button toggles mute without opening the popup. Mute and volume are shared by all media in the current session; muting preserves the selected volume. When settings persistence is implemented, restore/save mute state across application sessions. Playback speed controls are removed. Duration metadata is bracketed, such as `[02:05]` or `[1:02:05]`. Close media before file/folder mutations, undo/redo, navigation, leaving Browse, and shutdown; reload paused when returning or when a cancelled/failed operation leaves the same file selected. Media opening has a cancellable 30-second timeout and clear external fallback on failure. Native video must preserve access to WPF folder/carousel overlays and their reveal edges.
+Media opens paused, with Space/right-click or a WinUI toolbar control toggling playback. The right toolbar provides play/pause, stop, back/forward 5-second jumps, a seekbar that stretches to the available toolbar width, current/total playback time, and a compact horizontal volume popup with a clickable speaker/mute icon on the left, a 0-100 slider, and a numeric level on the right. Keep the popup consistent with the compact toolbar: 32-pixel controls, a 16-pixel speaker glyph, 12-point level text, and 8-pixel presenter padding. Jump buttons use Segoe Fluent Rewind (U+EB9E) and FastForward (U+EB9D). Right-clicking the volume button toggles mute without opening the popup. Mute and volume are shared by all media in the current session; muting preserves the selected volume. When settings persistence is implemented, restore/save volume and mute state across application sessions, retaining the selected volume while muted. Playback speed controls are removed. Duration metadata is bracketed, such as `[02:05]` or `[1:02:05]`. Close media before file/folder mutations, undo/redo, navigation, leaving Browse, and shutdown; reload paused when returning or when a cancelled/failed operation leaves the same file selected. Media opening has a cancellable 30-second timeout and clear external fallback on failure. Native video must preserve access to WPF folder/carousel overlays and their reveal edges.
 
 When displaying a video:
 
@@ -260,7 +264,7 @@ Left-clicking a folder should load that folder's contents into the main viewer.
 
 Folder rows should provide a full-width click and hover/selection area so the tree remains easy to use when the folder name is short. Reserve about 48 pixels at the bottom of the tree viewport so its last entries can scroll clear of the floating carousel without sacrificing excessive tree height.
 
-Each folder row should include a menu button aligned to its right edge. Activating this button opens that folder's WinUI context menu for folder-management actions. Rename file/folder, new-folder naming, and non-empty folder deletion confirmation use standalone WinUI dialogs without a nested `ContentDialog`. Move-folder destination selection uses the basic native folder picker, initially showing the source folder's parent. Keep the row's left-click behavior for folder navigation and its right-click behavior for moving the currently displayed file to that destination folder; the menu button provides a distinct target for folder interactions so those gestures do not conflict. The folder panel has a top-right Pin/Unpin button using the matching Windows UI icons; pinning prevents automatic hiding and reverses the selected button colors while keeping the icons unchanged. Keep the pin state for the current session and persist it with the future settings store.
+Each folder row should include a menu button aligned to its right edge. Activating this button opens that folder's WinUI context menu for folder-management actions. Rename file/folder, new-folder naming, and non-empty folder deletion confirmation use standalone WinUI dialogs without a nested `ContentDialog`. Move-folder destination selection uses the basic native folder picker, initially showing the source folder's parent. Keep the row's left-click behavior for folder navigation and its right-click behavior for moving the currently displayed file to that destination folder; the menu button provides a distinct target for folder interactions so those gestures do not conflict. The folder panel has a top-right Pin/Unpin button using the matching Windows UI icons; pinning prevents automatic hiding and reverses the selected button colors while keeping the icons unchanged. Persist the pin state between sessions.
 
 The currently selected folder should be visually highlighted.
 
@@ -307,7 +311,7 @@ The folder tree should support standard folder operations:
 - Rename a folder.
 - Move a folder to another location.
 - Delete a folder by moving it to the Windows Recycle Bin.
-- Add or remove favorites.
+- Root favorites are managed from Home only; folder-tree menus do not expose favorite actions.
 - Refresh a folder.
 - Open a folder in Windows Explorer.
 - Copy a folder path.
@@ -447,7 +451,7 @@ The user should be able to:
 - Resize the main viewer.
 - Show or hide the carousel.
 - Adjust carousel size and number of thumbnails.
-- Use a discrete WinUI slider with visible value ticks to set the total carousel icon count, including the current file, to an odd value from 1 to 25. Default to 11 icons (five neighbors per side); each slider step changes the total by two. Apply the setting immediately; settings persistence is handled by the later persistence phase.
+- Use a discrete WinUI slider with visible value ticks to set the total carousel icon count, including the current file, to an odd value from 1 to 25. Default to 11 icons (five neighbors per side); each slider step changes the total by two. Apply the setting immediately; persist the value between sessions.
 - Change thumbnail sizes in gallery mode.
 - Change image scaling behavior.
 - Configure keyboard shortcuts.
@@ -475,7 +479,7 @@ The toolbar should be organized into logical groups.
 - Copy file.
 - Move file.
 - Delete file (move to Windows Recycle Bin).
-- Refresh current folder.
+- Refresh loaded context (F5): provide a center-toolbar button that checks external filesystem changes, retains the current folder/file path where possible, and selects the nearest valid prior position if the file disappeared.
 
 ### Navigation
 - Previous file.
@@ -586,7 +590,7 @@ Search results should allow opening files in the main viewer and performing file
 
 ## 8.2 Metadata
 
-The agreed initial metadata scope is file size for all files, image resolution for images, video resolution expressed as pixel height (for example `[1080p]`), and duration for video and audio. Additional metadata below remains future scope.
+The implemented metadata scope is file size for all files, original image/GIF canvas resolution, video resolution expressed as pixel height (for example `[1080p]`), duration for video/audio and one animated GIF cycle, and text word counts with partial-window scope where needed. Additional metadata below remains future scope.
 
 Display these values in the left toolbar alongside folder context, using the top line exclusively for metadata and the bottom line for the full folder path. Keep the path muted gray except for its final/current folder name, which is white. Show file size immediately, add original pixel dimensions after image loading, and show duration once a media handler provides it. Clear previous-file metadata immediately on selection changes. Keep known image dimensions stable during same-file zoom/resize reloads; hide file metadata outside Browse. Use KB/MB/GB labels with the existing 1024-based scaling, exactly one fractional digit, and a period by default. Format image metadata as `1.1 MB - [128×128]` and video metadata as `1.1 MB - [1080p] - [00:14]`. Omit unknown video height; audio shows duration without resolution. A future settings option may select the decimal separator.
 
@@ -689,7 +693,7 @@ Persist the following between sessions:
 - Recently opened folders.
 - Frequently opened folders and their usage counts.
 - Favorite folders.
-- Application settings.
+- Application settings, including cross-session media volume and mute, carousel density and folder pin.
 - Window and panel layout.
 - Thumbnail cache information.
 - Optional saved collections.
@@ -755,7 +759,6 @@ Do not attempt to implement all features simultaneously.
 - Move folders to Recycle Bin.
 - Handle file operation errors.
 - Implement basic undo support.
-- Add favorites.
 
 **Goal:** Make file organization possible without leaving the viewer.
 
@@ -774,11 +777,13 @@ Do not attempt to implement all features simultaneously.
 
 - Recently opened folders.
 - Frequently opened folders.
-- Favorites overview.
+- Root favorites overview and synchronized star toggles in Home lists, grouped with persistence in Phase 4.
 - Persist settings and navigation preferences.
 - Thumbnail caching.
 
 **Goal:** Make the application convenient for repeated daily use.
+
+Phase 4 steps 4.1 through 4.3 are implemented: typed storage, schema-4 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; layout persistence is next (4.5). Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
 
 ## Phase 5 – Alternative viewing modes
 

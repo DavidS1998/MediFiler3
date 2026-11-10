@@ -63,7 +63,7 @@ public sealed class SqliteFileOperationJournalTests
         await using var verify = await temp.Database.OpenConnectionAsync();
         await using var versionCommand = verify.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
-        Assert.Equal(3L, (long)(await versionCommand.ExecuteScalarAsync())!);
+        Assert.Equal(4L, (long)(await versionCommand.ExecuteScalarAsync())!);
     }
 
     [Fact]

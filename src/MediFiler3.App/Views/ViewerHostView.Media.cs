@@ -11,10 +11,13 @@ public partial class ViewerHostView
 {
     private MediaPresentation? _media;
     private CancellationTokenSource? _mediaLoad;
-    private readonly MediaAudioSettings _mediaAudio = new();
+    private MediaAudioSettings _mediaAudio = new();
     private IThumbnailService? _viewerThumbnails;
     public MediaPlaybackState PlaybackState => _media?.Controller.State ?? MediaPlaybackState.Empty with { Volume = _mediaAudio.Volume, Muted = _mediaAudio.Muted };
     public event Action? PlaybackStateChanged;
+    public event Action<double, bool>? AudioSettingsChanged;
+    public event Action? RefreshRequested;
+    public void InitializeAudioSettings(MediaAudioSettings settings) => _mediaAudio = settings;
 
     private async Task OpenMediaAsync(FileEntry file, MediaPresentation media, BitmapSource? preview, long request)
     {
@@ -93,6 +96,7 @@ public partial class ViewerHostView
         if (key == 13 && control)
             _ = OpenExternallyAsync(shift ? MediFiler3.Application.Files.ExternalFileAction.ChooseApplication
                 : MediFiler3.Application.Files.ExternalFileAction.DefaultApplication);
+        else if (key == 116 && !control && !shift) RefreshRequested?.Invoke();
         else if (key == 32 && !control && !shift) TogglePlayback();
         else if (!control && !shift && key is 37 or 38 or 39 or 40) NavigationRequested?.Invoke(key is 37 or 38 ? -1 : 1);
     }
@@ -132,8 +136,16 @@ public partial class ViewerHostView
     public void TogglePlayback() => RunPlayback(controller => controller.Toggle());
     public void StopPlayback() => RunPlayback(controller => controller.Stop());
     public void SeekPlayback(double seconds) => RunPlayback(controller => controller.Seek(seconds));
-    public void SetPlaybackVolume(double volume) => RunPlayback(controller => controller.SetVolume(volume));
-    public void TogglePlaybackMute() => RunPlayback(controller => controller.ToggleMute());
+    public void SetPlaybackVolume(double volume)
+    {
+        RunPlayback(controller => controller.SetVolume(volume));
+        AudioSettingsChanged?.Invoke(_mediaAudio.Volume, _mediaAudio.Muted);
+    }
+    public void TogglePlaybackMute()
+    {
+        RunPlayback(controller => controller.ToggleMute());
+        AudioSettingsChanged?.Invoke(_mediaAudio.Volume, _mediaAudio.Muted);
+    }
     public void JumpPlayback(double seconds) => RunPlayback(controller => controller.Jump(seconds));
     private void RunPlayback(Action<MediaPlaybackController> action)
     {

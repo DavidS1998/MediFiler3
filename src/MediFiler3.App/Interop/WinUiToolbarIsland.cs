@@ -38,6 +38,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private bool _imageControlsVisible;
     private bool _imageControlsEnabled;
     private Grid? _rootElement;
+    private AppBarButton? _refreshButton;
+    private bool _refreshEnabled;
     private AppBarButton? _renameFileButton;
     private AppBarButton? _deleteFileButton;
     private AppBarButton? _undoButton;
@@ -48,6 +50,12 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private bool _fileActionsEnabled;
 
     public event Action? LoadFoldersRequested;
+    public event Action? RefreshRequested;
+    public void SetRefreshEnabled(bool enabled)
+    {
+        _refreshEnabled = enabled;
+        if (_refreshButton is not null) _refreshButton.IsEnabled = enabled;
+    }
     public event Action? ResetZoomRequested;
     public event Action? ZoomInRequested;
     public event Action? ZoomOutRequested;
@@ -385,6 +393,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _textToolbar = null;
         _mediaToolbar = null;
         _externalToolbar = null;
+        _refreshButton = null;
         _renameFileButton = null;
         _deleteFileButton = null;
         _rootElement = null;
@@ -422,6 +431,13 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         var background = Brush(0, 0, 0);
         var layout = new Grid { Background = background, RequestedTheme = ElementTheme.Dark };
         _rootElement = layout;
+        layout.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent,
+            new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
+            {
+                if (args.Key != Windows.System.VirtualKey.F5 || !_refreshEnabled) return;
+                args.Handled = true;
+                Dispatcher.BeginInvoke(new Action(() => RefreshRequested?.Invoke()));
+            }), true);
         for (var index = 0; index < 3; index++)
         {
             layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -440,6 +456,10 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _renameFileButton.IsEnabled = _fileActionsEnabled;
         _deleteFileButton.IsEnabled = _fileActionsEnabled;
         middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));
+        _refreshButton = CreateButton(Symbol.Refresh, "Refresh folders (F5)",
+            () => Dispatcher.BeginInvoke(new Action(() => RefreshRequested?.Invoke())));
+        _refreshButton.IsEnabled = _refreshEnabled;
+        middle.PrimaryCommands.Add(_refreshButton);
         middle.PrimaryCommands.Add(new AppBarSeparator());
         middle.PrimaryCommands.Add(_renameFileButton);
         middle.PrimaryCommands.Add(_deleteFileButton);

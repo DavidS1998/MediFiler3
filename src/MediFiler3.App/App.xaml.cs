@@ -5,10 +5,12 @@ using MediFiler3.Interop;
 using MediFiler3.Infrastructure.Folders;
 using MediFiler3.Infrastructure.Files;
 using MediFiler3.Application.Files;
+using MediFiler3.Application.Folders;
 using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Operations;
 using MediFiler3.Services;
 using MediFiler3.Infrastructure.Persistence;
+using MediFiler3.Application.Persistence;
 using MediFiler3.Infrastructure.Operations;
 using System.Windows;
 
@@ -29,6 +31,14 @@ public partial class App : System.Windows.Application
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton<SqliteDatabase>();
+                    services.AddSingleton<SqliteApplicationStateStore>();
+                    services.AddSingleton<ApplicationSettingsService>();
+                    services.AddSingleton<IRootFolderAvailabilityService, FileSystemRootFolderAvailabilityService>();
+                    services.AddSingleton<RootFolderHistoryService>();
+                    services.AddSingleton<IApplicationSettingsStore>(p => p.GetRequiredService<SqliteApplicationStateStore>());
+                    services.AddSingleton<IWindowLayoutStore>(p => p.GetRequiredService<SqliteApplicationStateStore>());
+                    services.AddSingleton<IRootFolderHistoryStore>(p => p.GetRequiredService<SqliteApplicationStateStore>());
+                    services.AddSingleton<IThumbnailCacheIndexStore>(p => p.GetRequiredService<SqliteApplicationStateStore>());
                     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SqliteDatabase>());
                     services.AddSingleton<IFileOperationJournal, SqliteFileOperationJournal>();
                     services.AddSingleton<IRecycleBinRestoreService, WindowsRecycleBinRestoreService>();
@@ -53,6 +63,10 @@ public partial class App : System.Windows.Application
                 .Build();
 
             _host.Start();
+            var settings = _host.Services.GetRequiredService<ApplicationSettingsService>();
+            settings.PersistenceFailed += exception => _host.Services.GetRequiredService<ILogger<App>>()
+                .LogWarning(exception, "Could not load/save settings; defaults or current session values remain available.");
+            Task.Run(() => settings.InitializeAsync()).GetAwaiter().GetResult();
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             MainWindow = mainWindow;
             mainWindow.Show();
@@ -73,6 +87,14 @@ public partial class App : System.Windows.Application
     {
         if (_host is not null)
         {
+            try { _host.Services.GetRequiredService<ApplicationSettingsService>().FlushAsync().GetAwaiter().GetResult(); }
+            catch (Exception exception)
+            {
+                _host.Services.GetRequiredService<ILogger<App>>().LogError(exception, "Could not save settings at shutdown.");
+                MessageBox.Show("Settings could not be saved. Your latest preferences may not survive restart.",
+                    "MediFiler3 settings", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            _host.Services.GetRequiredService<RootFolderHistoryService>().FlushAsync().GetAwaiter().GetResult();
             _host.StopAsync().GetAwaiter().GetResult();
             _host.Dispose();
         }

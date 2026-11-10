@@ -35,7 +35,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void ReplaceRoots(IEnumerable<FolderTreeEntry> roots)
+    public void ReplaceRoots(IEnumerable<FolderTreeEntry> roots, bool preserveActiveContext = false)
     {
         Roots.Clear();
         foreach (var root in roots)
@@ -43,8 +43,11 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
             Roots.Add(root);
         }
 
-        ActiveFolder = null;
-        ReplaceFiles([]);
+        if (!preserveActiveContext)
+        {
+            ActiveFolder = null;
+            ReplaceFiles([]);
+        }
     }
 
     public void SetActiveFolder(FolderTreeEntry? folder)

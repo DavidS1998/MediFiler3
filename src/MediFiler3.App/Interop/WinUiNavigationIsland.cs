@@ -18,6 +18,7 @@ public sealed class WinUiNavigationIsland : HwndHost
     private NavigationView? _navigationView;
 
     public event Action<string>? DestinationSelected;
+    public event Action? RefreshRequested;
 
     public void SelectDestination(string destination)
     {
@@ -39,6 +40,12 @@ public sealed class WinUiNavigationIsland : HwndHost
         _xamlSource.ShouldConstrainPopupsToWorkArea = true;
 
         _navigationView = CreateNavigationView();
+        _navigationView.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
+        {
+            if (args.Key != Windows.System.VirtualKey.F5) return;
+            args.Handled = true;
+            Dispatcher.BeginInvoke(new Action(() => RefreshRequested?.Invoke()));
+        }), true);
         _xamlSource.Content = _navigationView;
 
         var islandHandle = Win32Interop.GetWindowFromWindowId(_xamlSource.SiteBridge.WindowId);
