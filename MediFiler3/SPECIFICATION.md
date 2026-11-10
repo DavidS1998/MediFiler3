@@ -138,7 +138,7 @@ When displaying an image:
 - Holding the left mouse button should allow panning the image.
 - Provide a way to reset the zoom and return to the default fit-to-view state.
 - Preserve the zoom level and pan position when appropriate, but reset them when moving to another image.
-- Initially support common WIC formats including JPEG, PNG, BMP, GIF, and TIFF. WebP also routes through the image viewer and thumbnail decoder using the installed Windows WIC codec. Missing codec/decoding errors retain external-opening actions. The initial GIF and WebP viewers display the first frame; animated playback remains future scope.
+- Initially support common WIC formats including JPEG, PNG, BMP, GIF, and TIFF. WebP also routes through the image viewer and thumbnail decoder using the installed Windows WIC codec. Missing codec/decoding errors retain external-opening actions. Animated GIFs play automatically using embedded frame delays and loop counts, including transparency, offset frames and disposal methods. Show animated GIF duration for one cycle (sum of effective frame delays), without multiplying by finite/infinite loop counts, after its dimensions: `1.1 MB - [128×128] - [00:14]`. Zero or absent delays use the player's 100 ms fallback; static GIFs omit duration. Keep the image zoom/pan controls and original logical-canvas resolution metadata; zoom/resize must not restart playback. Stop and release animation when changing files, leaving Browse or shutting down, and close the source file after loading so operations can proceed. Single-frame GIFs and WebP use static image decoding; animated WebP remains future scope.
 
 Zooming should support viewing the original image resolution without unnecessarily upscaling small images.
 

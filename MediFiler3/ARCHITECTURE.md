@@ -33,7 +33,7 @@ The application layer describes operations such as loading a folder, moving file
 
 The browsing session state owns loaded roots, the active folder, its sorted file list, and the current file and one-based position. Selecting a folder loads only its direct files asynchronously, excludes Windows Hidden and System attributes, and uses Windows logical filename ordering. The native WPF title displays `(position/total) filename` while a file is active.
 
-The initial image viewer uses WPF/WIC for JPEG, PNG, BMP, GIF, and TIFF. Decode to the viewport's pixel bounds while setting only one decode dimension to preserve aspect ratio; cap decoding at source resolution, freeze the resulting bitmap, and release it when the active file changes. WebP routes through the same image handler and WIC thumbnail path, relying on the installed Windows WebP WIC codec. GIF and WebP display the first frame; animated playback remains future scope. Decode failure retains external-opening actions.
+The initial image viewer uses WPF/WIC for JPEG, PNG, BMP, GIF, and TIFF. Decode to the viewport's pixel bounds while setting only one decode dimension to preserve aspect ratio; cap decoding at source resolution, freeze the resulting bitmap, and release it when the active file changes. WebP routes through the same image handler and WIC thumbnail path, relying on the installed Windows WebP WIC codec. Animated GIFs use the App-owned GifPresentation adapter described below; single-frame GIFs and WebP remain static. Animated WebP remains future scope. Decode failure retains external-opening actions.
 
 The thumbnail service returns encoded PNG data so WPF image objects remain outside application contracts. It uses bounded workers, WIC for supported images, and `IShellItemImageFactory` with `SIIGBF_THUMBNAILONLY` for other file types; unavailable thumbnails use UI placeholders. Cache by normalized path, file size, last-write time, and requested dimensions, with a bounded LRU memory cache and a local application data disk cache. The carousel defaults to five neighbors per side, adjustable with a discrete, tick-marked WinUI Slider hosted in the WPF Settings view. The slider represents an odd total icon count from 1 to 25 (default 11), changing by two per step, including the current file. It uses 150 × 150 square tiles, filled by uniformly scaling and center-cropping. The neighbor count is currently session-only; persist it with the later settings store. Keep carousel item instances stable during adjacent file navigation so thumbnail work and hit testing do not flicker. When changing files, show an available carousel thumbnail while the full viewer image loads.
 
@@ -70,6 +70,10 @@ Views translate mouse and keyboard input into navigation commands. In Browse, le
 Use Windows Explorer-style filename sorting, including natural numeric ordering (for example, `05`, `57`, `100`). Centralize the comparer so the folder list, carousel, gallery, and continuous reader use the same ordering. Sorting should follow Windows behavior for case and numeric substrings rather than using a plain ordinal string comparison.
 
 ## Handlers and thumbnails
+
+Animated GIF playback uses XamlAnimatedGif 2.3.2 (App-only dependency) behind GifPresentation. WicImageDecoder asynchronously copies compressed GIF bytes through IFileContentService, closes the file, and checks frame count and per-frame WIC delay metadata on a worker. One-cycle duration sums 10 ms GIF delay units, substituting 100 ms for zero/absent delays to match the animation backend; loop counts do not multiply metadata duration. GifPresentation carries the duration into the existing ViewerMetadata/formatter, alongside logical-canvas dimensions, without additional file reads. Multiple frames produce a disposable presentation with logical-screen dimensions; single-frame GIFs retain the static WIC path. Each presentation owns a unique WPF Image and memory stream; the library composes frames as needed with full-frame caching disabled and honors embedded delays, loop counts, transparency and disposal. A writable logical-canvas buffer is necessary for composition; unlike static images, animated canvases are not downsampled to the viewport, and very large GIFs may use more CPU/memory.
+
+ViewerHostView.Gif hosts that surface in AnimatedImageHost with the existing zoom/pan transforms. DisplayedImageSource lets gestures use either the static bitmap or animated canvas. Zoom, fit and resize retain the active GIF rather than reloading/restarting it. Navigation, deactivation and Clear detach handlers, dispose the animator/stream and remove the surface; presentation disposal is idempotent and coordinator cancellation releases late results. Separate image surfaces isolate asynchronous library callbacks across files. Decoder/playback errors retain external-opening fallback. Carousel thumbnails remain static PNGs. Native integration fixtures verify timing, finite/infinite loops, transparency, offsets, background/previous disposal, logical dimensions, resource release, zoom/resize continuity and corrupt-data recovery.
 
 Audio presentation collapses its fixed-size artwork slot unless an actual bitmap is present. If folder activation supplies no immediate carousel preview, the viewer requests artwork from the shared cancellable thumbnail service; decoded frozen bitmaps are applied only to the matching active file/media session. Artwork errors never interrupt playback. MainWindow PageContent explicitly stretches horizontally and vertically so page sizing is independent of the first content type. This removes the blank 220-pixel slot on audio-first folder loads without creating a native video island for audio.
 
@@ -117,12 +121,16 @@ Recycle Bin restoration is best-effort. Keep operation history even when automat
 
 Cross-volume moves may be copy-then-delete and need verified copy state to recover partial failures. Batch moves share one logical journal group while retaining per-file results. Refresh affected folders and navigation state after successful operations.
 
+## Validation
+
+The explicit `tests/MediFiler3.App.Integration` executable references App and initializes the real WPF dispatcher/WinUI environment in a transparent, non-taskbar window. It is built with the solution and run separately from `dotnet test`; supplied fixtures are copied into isolated temporary directories, playback is muted, and native external launches are stubbed. It checks real handlers, thumbnails, navigation, toolbar groups, metadata, cancellation and native player lifetime without adding production testing APIs. Missing native fixtures are reported as skips rather than counted as supported formats. Interactive acceptance and fixture limits are tracked in [PHASE3_INTEGRATION.md](PHASE3_INTEGRATION.md).
+
 ## Dependencies
 
 - `CommunityToolkit.Mvvm` for observable view models and commands.
 - `Microsoft.Extensions.Hosting` / dependency injection / logging where useful for composition and lifetimes.
 - `Microsoft.Data.Sqlite` for the local journal and settings.
-- WPF imaging/WIC initially for images.
+- WPF imaging/WIC for static images, plus XamlAnimatedGif 2.3.2 for animated GIF composition/timing behind the App adapter.
 - A basic Windows-compatible media backend selected during the media phase.
 - Windows Shell APIs isolated behind an adapter for Recycle Bin and shell integration.
 - Windows App SDK XAML hosting; add a WinUI class library only if custom hosted WinUI XAML is introduced.

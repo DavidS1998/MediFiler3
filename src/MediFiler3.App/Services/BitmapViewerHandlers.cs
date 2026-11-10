@@ -14,6 +14,9 @@ public sealed class ImageViewerHandler(WicImageDecoder decoder) : IFileViewerHan
     public ViewerCapabilities Capabilities => ViewerCapabilities.Zoom | ViewerCapabilities.Pan;
     public async Task<ViewerContent<ViewerPresentation>> LoadAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
     {
+        if (file.Extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) &&
+            await decoder.LoadAnimationAsync(file.FullPath, cancellationToken) is { } animation)
+            return new(animation, new ViewerMetadata(file.Size, animation.Width, animation.Height, Duration: animation.Duration));
         var image = await decoder.LoadWithDimensionsAsync(file.FullPath, width, height, cancellationToken);
         return new(new BitmapPresentation(image.Source), new ViewerMetadata(file.Size, image.Width, image.Height));
     }

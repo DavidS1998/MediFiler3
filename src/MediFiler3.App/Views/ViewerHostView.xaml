@@ -12,6 +12,8 @@
             </Grid.RowDefinitions>
             <Image x:Name="ImageViewer" Stretch="Uniform" Visibility="Collapsed" HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch" RenderTransformOrigin="0.5,0.5" />
+            <ContentControl x:Name="AnimatedImageHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" IsHitTestVisible="False" />
             <ContentControl x:Name="MediaHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch"
                             VerticalContentAlignment="Stretch" />
             <StackPanel x:Name="AudioPanel" Visibility="Collapsed" HorizontalAlignment="Center"

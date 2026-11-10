@@ -34,7 +34,7 @@ public partial class ViewerHostView : UserControl
     private const double ZoomStepFactor = 1.25d;
     private bool IsSupportedCurrentImage => Capabilities.HasFlag(ViewerCapabilities.Zoom);
     public double CurrentZoomLevel => _zoomLevel;
-    public bool CanZoom => Capabilities.HasFlag(ViewerCapabilities.Zoom) && ImageViewer.Source is not null;
+    public bool CanZoom => Capabilities.HasFlag(ViewerCapabilities.Zoom) && DisplayedImageSource is not null;
     public ViewerCapabilities Capabilities => _active ? _coordinator?.GetCapabilities(_currentFile) ?? ViewerCapabilities.None
         : ViewerCapabilities.None;
     public ViewerInteraction Interaction => (_zoomInteractionEnabled || _textInteraction) ? ViewerInteraction.Content : ViewerInteraction.Navigation;
@@ -98,6 +98,7 @@ public partial class ViewerHostView : UserControl
         _active = active;
         if (!active)
         {
+            ReleaseGif();
             ReleaseMedia();
             HideExternalFallback();
             _textScrollOffset = TextViewer.VerticalOffset;
@@ -116,6 +117,7 @@ public partial class ViewerHostView : UserControl
 
     public void Clear()
     {
+        ReleaseGif();
         ReleaseMedia();
         HideExternalFallback();
         _metadata = null;
@@ -135,6 +137,7 @@ public partial class ViewerHostView : UserControl
     {
         if (!ReferenceEquals(file, _currentFile))
         {
+            ReleaseGif();
             _resizeTimer.Stop();
             ReleaseMedia();
             HideExternalFallback();
@@ -152,6 +155,7 @@ public partial class ViewerHostView : UserControl
         EnsureDefaultApplication();
         if (clearCurrentImage)
         {
+            ReleaseGif();
             _coordinator?.Cancel();
             ImageViewer.Source = null;
         }
@@ -164,6 +168,8 @@ public partial class ViewerHostView : UserControl
         var request = ++_requestVersion;
         var file = _currentFile;
         if (!_active) return;
+        if (_gif is not null && !clearCurrentImage) return; // Zoom/resize changes transforms without restarting playback.
+        ReleaseGif();
         EnsureDefaultApplication();
         if (_media is not null) ReleaseMedia();
         _coordinator?.Cancel();
@@ -188,6 +194,7 @@ public partial class ViewerHostView : UserControl
             var result = await _coordinator!.LoadAsync(file, width, height, _textOffset);
             if (result is null || request != _requestVersion || !_active || !ReferenceEquals(file, _currentFile)) return;
             _metadata = result.Metadata;
+            if (result.Presentation is GifPresentation gif) { ShowGif(gif); return; }
             if (result.Presentation is null)
             {
                 ShowImageMessage("No integrated viewer or thumbnail is available.", file.Name);
@@ -289,7 +296,7 @@ public partial class ViewerHostView : UserControl
             e.Handled = true;
             return;
         }
-        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        if (!IsSupportedCurrentImage || DisplayedImageSource is null)
         {
             return;
         }
@@ -319,7 +326,7 @@ public partial class ViewerHostView : UserControl
             return;
         }
 
-        if (ViewerInputPolicy.Wheel(Capabilities, Interaction) == ViewerInputAction.Zoom && ImageViewer.Source is not null)
+        if (ViewerInputPolicy.Wheel(Capabilities, Interaction) == ViewerInputAction.Zoom && DisplayedImageSource is not null)
         {
             _zoomWheelDeltaRemainder += e.Delta;
             var zoomNotches = _zoomWheelDeltaRemainder / 120;
@@ -379,7 +386,7 @@ public partial class ViewerHostView : UserControl
 
         ClampPan();
         ZoomLevelChanged?.Invoke(_zoomLevel);
-        if (IsSupportedCurrentImage && ImageViewer.Source is not null)
+        if (IsSupportedCurrentImage && DisplayedImageSource is not null)
         {
             _ = LoadCurrentImageAsync(clearCurrentImage: false);
         }
@@ -387,7 +394,7 @@ public partial class ViewerHostView : UserControl
 
     private void ClampPan()
     {
-        if (ImageViewer.Source is not BitmapSource source || source.PixelWidth <= 0 || source.PixelHeight <= 0)
+        if (DisplayedImageSource is not BitmapSource source || source.PixelWidth <= 0 || source.PixelHeight <= 0)
         {
             _panTransform.X = 0;
             _panTransform.Y = 0;
@@ -417,7 +424,7 @@ public partial class ViewerHostView : UserControl
 
     public void ResetZoomToFit()
     {
-        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        if (!IsSupportedCurrentImage || DisplayedImageSource is null)
         {
             return;
         }
@@ -434,7 +441,7 @@ public partial class ViewerHostView : UserControl
 
     private void AdjustZoomFromToolbar(double factor)
     {
-        if (!IsSupportedCurrentImage || ImageViewer.Source is null)
+        if (!IsSupportedCurrentImage || DisplayedImageSource is null)
         {
             return;
         }
@@ -454,6 +461,7 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportSizeChanged(object sender, SizeChangedEventArgs e)
     {
+        if (_gif is not null) { ClampPan(); return; }
         if (_currentFile is not null && ImageViewer.Source is not null && !Capabilities.HasFlag(ViewerCapabilities.Playback))
         {
             _resizeTimer.Stop();
