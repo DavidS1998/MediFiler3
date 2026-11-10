@@ -71,14 +71,14 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications)
     {
         _logger = logger;
         _navigationState = navigationState;
         _operationJournal = operationJournal;
         _fileOrganizationService = fileOrganizationService;
         _browseView = new BrowseView(folderTreeService, fileListingService, navigationState, imageDecoder,
-            thumbnailService, fileOrganizationService);
+            thumbnailService, fileOrganizationService, textContentService, externalFileService, defaultApplications);
         Closed += (_, _) => _browseView.StopBackgroundFolderCounts();
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
         _settingsView.CarouselNeighborCountChanged += _browseView.SetCarouselNeighborCount;
@@ -93,6 +93,11 @@ public partial class MainWindow : Window
         ToolbarIsland.ResetZoomRequested += _browseView.ResetZoomToFit;
         ToolbarIsland.ZoomInRequested += _browseView.ZoomInFromToolbar;
         ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
+        ToolbarIsland.OpenDefaultRequested += async () => await _browseView.OpenExternallyAsync(ExternalFileAction.DefaultApplication);
+        ToolbarIsland.OpenWithRequested += async () => await _browseView.OpenExternallyAsync(ExternalFileAction.ChooseApplication);
+        ToolbarIsland.ToggleTextInteractionRequested += _browseView.ToggleTextInteraction;
+        ToolbarIsland.PreviousTextWindowRequested += async () => await _browseView.ReadTextWindowAsync(false);
+        ToolbarIsland.NextTextWindowRequested += async () => await _browseView.ReadTextWindowAsync(true);
         ToolbarIsland.RenameFileRequested += OnRenameFileRequested;
         ToolbarIsland.DeleteFileRequested += OnDeleteFileRequested;
         ToolbarIsland.UndoRequested += OnUndoRequested;
@@ -286,9 +291,16 @@ public partial class MainWindow : Window
         ToolbarIsland.SetFileMetadata(ViewerMetadataFormatter.Format(metadata));
     }
 
-    private void UpdateViewerControls() => ToolbarIsland.SetViewerCapabilities(
+    private void UpdateViewerControls()
+    {
+        ToolbarIsland.SetViewerCapabilities(
         PageContent.Content == _browseView && _navigationState.CurrentFile is not null
             ? _browseView.ViewerCapabilities : MediFiler3.Application.Viewing.ViewerCapabilities.None, _browseView.CanZoom);
+        var external = _browseView.ExternalOpenState;
+        ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView ? external : external with { Visible = false });
+        ToolbarIsland.SetTextViewerState(_browseView.IsTextInteraction,
+            _browseView.CanReadPreviousTextWindow, _browseView.CanReadNextTextWindow);
+    }
 
     private async void OnLoadFoldersRequested()
     {

@@ -4,12 +4,29 @@
         <Grid x:Name="ImageViewport" Background="#000000" Focusable="True"
               SizeChanged="OnImageViewportSizeChanged" MouseDown="OnImageViewportMouseDown"
               MouseUp="OnImageViewportMouseUp" MouseMove="OnImageViewportMouseMove"
-              MouseRightButtonDown="OnImageViewportRightButtonDown" MouseWheel="OnImageViewportMouseWheel">
+              PreviewMouseRightButtonDown="OnImageViewportRightButtonDown" MouseWheel="OnImageViewportMouseWheel"
+              PreviewMouseWheel="OnTextPreviewMouseWheel">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Image x:Name="ImageViewer" Stretch="Uniform" Visibility="Collapsed" HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch" RenderTransformOrigin="0.5,0.5" />
+            <Grid x:Name="TextPanel" Visibility="Collapsed" Margin="324,12,324,24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="TextModeNotice" Foreground="#A3A6AE" Margin="0,0,0,8" TextWrapping="Wrap" />
+                <TextBox x:Name="TextViewer" Grid.Row="1" IsReadOnly="True" AcceptsReturn="True" AcceptsTab="True"
+                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                         FontFamily="Consolas" FontSize="16" Foreground="#E7E8EA" Background="#000000"
+                         BorderThickness="0" Padding="8" ContextMenu="{x:Null}"
+                         AutomationProperties.Name="Text document" />
+            </Grid>
             <Border x:Name="ThumbnailFallbackBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12"
                     Padding="8,5" Background="#D916191E" CornerRadius="5" Visibility="Collapsed" IsHitTestVisible="False">
-                <TextBlock Text="Thumbnail preview â€¢ no integrated viewer" Foreground="#E7E8EA" FontSize="11" />
+                <TextBlock Text="Thumbnail preview - no integrated viewer" Foreground="#E7E8EA" FontSize="11" />
             </Border>
             <StackPanel x:Name="ImageMessagePanel" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="480" Margin="24">
                 <TextBlock x:Name="ImageMessage" Text="Select an image from the file list." FontSize="18" FontWeight="SemiBold"
@@ -17,6 +34,23 @@
                 <TextBlock x:Name="ImageMessageDetail" Margin="0,8,0,0" Foreground="#A3A6AE"
                            TextAlignment="Center" TextWrapping="Wrap" />
             </StackPanel>
+            <Border x:Name="ExternalActionNotice" Visibility="Collapsed" HorizontalAlignment="Center"
+                    VerticalAlignment="Top" Margin="24,12" Padding="12,8" MaxWidth="560"
+                    Background="#E6191E26" CornerRadius="6" IsHitTestVisible="False">
+                <TextBlock x:Name="ExternalActionNoticeText" Foreground="#E7E8EA" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" />
+            </Border>
+            <Border x:Name="ExternalFallbackPanel" Grid.Row="1" Visibility="Collapsed" MaxWidth="560"
+                    Margin="24,12,24,40" Padding="12" Background="#D916191E" CornerRadius="6">
+                <StackPanel>
+                    <TextBlock x:Name="ExternalFallbackTitle" Text="No integrated viewer" Foreground="White"
+                               FontSize="16" FontWeight="SemiBold" TextAlignment="Center" />
+                    <TextBlock x:Name="ExternalFileDetails" Foreground="#A3A6AE" TextWrapping="Wrap"
+                               TextAlignment="Center" Margin="0,6,0,8" />
+                    <TextBlock x:Name="ExternalLaunchStatus" Foreground="#E7E8EA" TextWrapping="Wrap"
+                               TextAlignment="Center" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+            </Border>
         </Grid>
 
 </UserControl>

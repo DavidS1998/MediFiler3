@@ -15,7 +15,7 @@ namespace MediFiler3.Views;
 
 public partial class ViewerHostView : UserControl
 {
-    private ViewerCoordinator<BitmapSource>? _coordinator;
+    private ViewerCoordinator<ViewerPresentation>? _coordinator;
     private FileEntry? _currentFile;
     private ViewerMetadata? _metadata;
     private long _requestVersion;
@@ -37,7 +37,7 @@ public partial class ViewerHostView : UserControl
     public bool CanZoom => Capabilities.HasFlag(ViewerCapabilities.Zoom) && ImageViewer.Source is not null;
     public ViewerCapabilities Capabilities => _active ? _coordinator?.GetCapabilities(_currentFile) ?? ViewerCapabilities.None
         : ViewerCapabilities.None;
-    public ViewerInteraction Interaction => _zoomInteractionEnabled ? ViewerInteraction.Content : ViewerInteraction.Navigation;
+    public ViewerInteraction Interaction => (_zoomInteractionEnabled || _textInteraction) ? ViewerInteraction.Content : ViewerInteraction.Navigation;
     public ViewerMetadata? Metadata => _metadata ?? (_currentFile is { } file ? new(file.Size) : null);
     public ViewerMetadata GetMetadataFor(FileEntry file) => ReferenceEquals(file, _currentFile)
         ? Metadata ?? new(file.Size) : new(file.Size);
@@ -52,13 +52,36 @@ public partial class ViewerHostView : UserControl
         _resizeTimer.Tick += OnImageResizeTimerTick;
     }
 
-    public void Initialize(WicImageDecoder decoder, IThumbnailService thumbnails)
+    public void Initialize(WicImageDecoder decoder, IThumbnailService thumbnails, ITextContentService text, IExternalFileService externalFiles, IDefaultApplicationService defaultApplications)
     {
-        _coordinator = new ViewerCoordinator<BitmapSource>([new ImageViewerHandler(decoder), new ThumbnailViewerHandler(thumbnails)]);
+        _externalFiles = externalFiles;
+        _defaultApplication = new DefaultApplicationResolver(defaultApplications);
+        _defaultApplication.Changed += () => PresentationChanged?.Invoke();
+        _coordinator = new ViewerCoordinator<ViewerPresentation>([new ImageViewerHandler(decoder), new TextViewerHandler(text), new ThumbnailViewerHandler(thumbnails)]);
     }
 
     public bool HandleKey(KeyEventArgs e)
     {
+        if (_active && _currentFile is not null && e.Key == Key.Enter &&
+            Keyboard.Modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
+        {
+            _ = OpenExternallyAsync(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
+                ? ExternalFileAction.ChooseApplication : ExternalFileAction.DefaultApplication);
+            e.Handled = true;
+            return true;
+        }
+        if (IsButtonInput(e.OriginalSource)) return false;
+        if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll))
+        {
+            if (e.Key == Key.F4) { ToggleTextInteraction(); e.Handled = true; return true; }
+            if (!_textInteraction && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+            {
+                NavigationRequested?.Invoke(e.Key is Key.Left or Key.Up ? -1 : 1);
+                e.Handled = true;
+                return true;
+            }
+            return false;
+        }
         if (!IsSupportedCurrentImage || e.Key is not (Key.Add or Key.Subtract)) return false;
         _zoomInteractionEnabled = true;
         ChangeZoom(e.Key == Key.Add ? ZoomStepFactor : 1d / ZoomStepFactor);
@@ -72,6 +95,11 @@ public partial class ViewerHostView : UserControl
         _active = active;
         if (!active)
         {
+            HideExternalFallback();
+            _textScrollOffset = TextViewer.VerticalOffset;
+            TextViewer.Text = string.Empty;
+            _textWindow = null;
+            TextPanel.Visibility = Visibility.Collapsed;
             _requestVersion++;
             _coordinator?.Cancel();
             _resizeTimer.Stop();
@@ -84,7 +112,11 @@ public partial class ViewerHostView : UserControl
 
     public void Clear()
     {
+        HideExternalFallback();
         _metadata = null;
+        TextViewer.Text = string.Empty;
+        TextPanel.Visibility = Visibility.Collapsed;
+        _textWindow = null;
         _requestVersion++;
         _coordinator?.Cancel();
         _resizeTimer.Stop();
@@ -98,10 +130,19 @@ public partial class ViewerHostView : UserControl
     {
         if (!ReferenceEquals(file, _currentFile))
         {
+            HideExternalFallback();
             _metadata = null;
+            _textOffset = 0;
+            _textWindow = null;
+            _previousTextOffsets.Clear();
+            _textScrollOffset = 0;
+            _textInteraction = false;
+            TextViewer.Text = string.Empty;
+            TextPanel.Visibility = Visibility.Collapsed;
             ResetZoomState();
         }
         _currentFile = file;
+        EnsureDefaultApplication();
         if (clearCurrentImage)
         {
             _coordinator?.Cancel();
@@ -116,6 +157,7 @@ public partial class ViewerHostView : UserControl
         var request = ++_requestVersion;
         var file = _currentFile;
         if (!_active) return;
+        EnsureDefaultApplication();
         _coordinator?.Cancel();
         if (clearCurrentImage)
         {
@@ -125,6 +167,7 @@ public partial class ViewerHostView : UserControl
         }
         if (file is null) { ShowImageMessage("No file selected.", ""); return; }
         if (ImageViewer.Source is null) ShowImageMessage("Loading file...", file.Name);
+        if (Capabilities == ViewerCapabilities.None) ShowExternalFallback(file);
         try
         {
             // Wait for the host's layout so the first decode uses the actual viewport bounds.
@@ -134,22 +177,46 @@ public partial class ViewerHostView : UserControl
             var scale = Math.Max(1d, _zoomLevel);
             var width = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualWidth * dpi.DpiScaleX * scale));
             var height = Math.Max(1, (int)Math.Ceiling(ImageViewport.ActualHeight * dpi.DpiScaleY * scale));
-            var result = await _coordinator!.LoadAsync(file, width, height);
+            var result = await _coordinator!.LoadAsync(file, width, height, _textOffset);
             if (result is null || request != _requestVersion || !_active || !ReferenceEquals(file, _currentFile)) return;
             _metadata = result.Metadata;
-            if (result.Presentation is null) { ShowImageMessage("No integrated viewer or thumbnail is available.", file.Name); return; }
-            ImageViewer.Source = result.Presentation;
+            if (result.Presentation is null)
+            {
+                ShowImageMessage("No integrated viewer or thumbnail is available.", file.Name);
+                ShowExternalFallback(file);
+                return;
+            }
+            if (result.Presentation is TextPresentation textPresentation)
+            {
+                _textWindow = textPresentation.Window;
+                TextViewer.Text = _textWindow.Text;
+                TextPanel.Visibility = Visibility.Visible;
+                ImageViewer.Visibility = Visibility.Collapsed;
+                ImageMessagePanel.Visibility = Visibility.Collapsed;
+                ThumbnailFallbackBadge.Visibility = Visibility.Collapsed;
+                UpdateTextMode();
+                PresentationChanged?.Invoke();
+                await Dispatcher.Yield(DispatcherPriority.Loaded);
+                if (request == _requestVersion && _active) TextViewer.ScrollToVerticalOffset(_textScrollOffset);
+                return;
+            }
+            TextPanel.Visibility = Visibility.Collapsed;
+            ImageViewer.Source = ((BitmapPresentation)result.Presentation).Source;
             ClampPan();
             ImageViewer.Visibility = Visibility.Visible;
             ImageMessagePanel.Visibility = Visibility.Collapsed;
             ThumbnailFallbackBadge.Visibility = result.IsThumbnailFallback ? Visibility.Visible : Visibility.Collapsed;
+            if (result.IsThumbnailFallback) ShowExternalFallback(file);
             PresentationChanged?.Invoke();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
             System.Security.SecurityException or InvalidDataException or FormatException or NotSupportedException or COMException)
         {
             if (ReferenceEquals(file, _currentFile) && _active)
+            {
                 ShowImageMessage("This file could not be displayed.", exception.Message);
+                ShowExternalFallback(file, previewFailed: true);
+            }
         }
     }
 
@@ -158,6 +225,8 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (IsButtonInput(e.OriginalSource)) return;
+        if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll)) return;
         ImageViewport.Focus();
         System.Windows.Input.Keyboard.Focus(ImageViewport);
 
@@ -199,6 +268,12 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll))
+        {
+            ToggleTextInteraction();
+            e.Handled = true;
+            return;
+        }
         if (!IsSupportedCurrentImage || ImageViewer.Source is null)
         {
             return;
@@ -216,8 +291,16 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
     {
+        if (IsButtonInput(e.OriginalSource)) { e.Handled = true; return; }
         if (e.Delta == 0)
         {
+            return;
+        }
+
+        if (ViewerInputPolicy.Wheel(Capabilities, Interaction) == ViewerInputAction.ScrollDocument)
+        {
+            // A document reaching its scroll boundary must never bubble into file navigation.
+            e.Handled = true;
             return;
         }
 
@@ -373,6 +456,7 @@ public partial class ViewerHostView : UserControl
     {
         ImageViewer.Source = null;
         ImageViewer.Visibility = Visibility.Collapsed;
+        TextPanel.Visibility = Visibility.Collapsed;
         ThumbnailFallbackBadge.Visibility = Visibility.Collapsed;
         ImageMessage.Text = message;
         ImageMessageDetail.Text = detail;

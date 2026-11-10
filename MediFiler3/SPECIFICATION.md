@@ -176,6 +176,12 @@ When displaying a text file:
 
 Text rendering should be extensible to support additional document formats in the future.
 
+Keep the text viewport centered with equal left/right insets matching the folder-tree panel width plus normal padding, so revealing or pinning the tree does not cover the text or shift the reading column. Adjustable text page/window sizes and further reader features are deferred.
+
+The initial text viewer supports strict UTF-8 (with or without BOM), and BOM-marked UTF-16/UTF-32 in either byte order. Read at most 1 MiB per window, preserving Unicode code points across window boundaries; provide previous/next-window controls instead of loading entire large files. Malformed encodings, binary-looking content, and read failures show clear errors. Text extensions include ordinary documents, logs, configuration, and common source files; render them as plain text without executing content.
+
+Right-click, F4, and a contextual toolbar button toggle navigation and document scrolling. Carousel file navigation remains available in either mode. Provide a selectable read-only text view for copying, retain the current window/scroll position when leaving and returning to Browse, and reset text state when selecting another file. Word count counts whitespace-delimited runs. For a whole-file window show the total; otherwise label the displayed window's count with `(window)` rather than implying a whole-file total. Include file size as for other file types.
+
 ### Unsupported file types
 
 For file types without an integrated viewer:
@@ -184,6 +190,10 @@ For file types without an integrated viewer:
 - Display basic file information and an indication that no integrated viewer is available.
 - Allow the user to open the file using its associated default Windows application.
 - Handle missing file associations and launch failures gracefully.
+
+Provide distinct Open in default application and Open with actions, including when no thumbnail exists or an integrated preview fails. Show the filename and full path alongside the fallback; retain file size in the toolbar. Ctrl+Enter opens the current file in its default application; Ctrl+Shift+Enter shows the native Windows application chooser. Capture the selected file when invoked, prevent duplicate in-flight requests, and show completion/errors only for the matching active file. Treat chooser cancellation as a normal outcome. Missing associations should explain that Open with can select an application, without automatically launching a second action.
+
+Use compact WinUI AppBarButtons in the center toolbar for these actions, matching the existing 32-pixel primary-command styling. Both actions apply to all selected file types, including images and text, and remain visible but disabled when no file is selected. Image/text controls remain in the right toolbar independently. Resolve the effective default application asynchronously, displaying its application icon on the button and `Open in ApplicationName` in the tooltip/accessibility label where available. Keep a generic open label/icon if lookup fails; when Windows reports no association, show `No default application`, disable that action, and retain Open with. Refresh on file changes and after returning from external-opening actions, reject obsolete results, and keep lookup work bounded. The fallback's information/status panel remains WPF.
 
 ## 3.3 File navigation and interaction states
 

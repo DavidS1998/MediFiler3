@@ -100,6 +100,33 @@ public sealed class ViewerCoordinatorTests
     }
 
     [Fact]
+    public async Task WindowedHandlerReceivesRequestedOffsetAndUsesSharedMetadataLifetime()
+    {
+        var handler = new WindowedHandler();
+        using var coordinator = new ViewerCoordinator<string>([handler]);
+        var result = await coordinator.LoadAsync(File("document.txt"), 10, 10, 12345);
+        Assert.Equal(12345, handler.Offset);
+        Assert.Equal(2, result!.Metadata.WordCount);
+        Assert.True(result.Metadata.IsPartialWordCount);
+        coordinator.Cancel();
+        Assert.Null(coordinator.Content);
+    }
+
+    private sealed class WindowedHandler : IWindowedViewerHandler<string>
+    {
+        public long Offset { get; private set; }
+        public bool CanHandle(FileEntry file) => true;
+        public ViewerCapabilities Capabilities => ViewerCapabilities.DocumentScroll;
+        public Task<ViewerContent<string>> LoadAsync(FileEntry file, int width, int height, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Windowed loading should be used.");
+        public Task<ViewerContent<string>> LoadWindowAsync(FileEntry file, long offset, CancellationToken cancellationToken)
+        {
+            Offset = offset;
+            return Task.FromResult(new ViewerContent<string>("two words", new(123, WordCount: 2, IsPartialWordCount: offset > 0)));
+        }
+    }
+
+    [Fact]
     public async Task CurrentFailureIsReportedRatherThanTreatedAsCancellation()
     {
         using var coordinator = new ViewerCoordinator<string>([

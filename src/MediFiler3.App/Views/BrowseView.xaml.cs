@@ -60,7 +60,14 @@ public partial class BrowseView : UserControl
     public event Action? OperationHistoryChanged;
     public ObservableCollection<object> CarouselItems { get; } = [];
     public double CurrentZoomLevel => ViewerHost.CurrentZoomLevel;
+    public ExternalOpenState ExternalOpenState => ViewerHost.ExternalOpenState;
+    public Task OpenExternallyAsync(ExternalFileAction action) => ViewerHost.OpenExternallyAsync(action);
     public bool CanZoom => ViewerHost.CanZoom;
+    public bool IsTextInteraction => ViewerHost.IsTextInteraction;
+    public bool CanReadPreviousTextWindow => ViewerHost.CanReadPreviousTextWindow;
+    public bool CanReadNextTextWindow => ViewerHost.CanReadNextTextWindow;
+    public void ToggleTextInteraction() => ViewerHost.ToggleTextInteraction();
+    public Task ReadTextWindowAsync(bool next) => ViewerHost.ReadTextWindowAsync(next);
     public ViewerCapabilities ViewerCapabilities => ViewerHost.Capabilities;
     public ViewerMetadata? ViewerMetadata => ViewerHost.Metadata;
     public ViewerMetadata GetViewerMetadata(FileEntry file) => ViewerHost.GetMetadataFor(file);
@@ -84,7 +91,7 @@ public partial class BrowseView : UserControl
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
-        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService)
+        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications)
     {
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
@@ -95,7 +102,7 @@ public partial class BrowseView : UserControl
         _thumbnailService = thumbnailService;
         _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
-        ViewerHost.Initialize(imageDecoder, thumbnailService);
+        ViewerHost.Initialize(imageDecoder, thumbnailService, textContentService, externalFileService, defaultApplications);
         ViewerHost.NavigationRequested += NavigateByOneFile;
         ViewerHost.ZoomLevelChanged += value => ZoomLevelChanged?.Invoke(value);
         ViewerHost.PresentationChanged += () => PresentationChanged?.Invoke();
@@ -897,8 +904,9 @@ public partial class BrowseView : UserControl
         var ownsInput = FindAncestor<System.Windows.Controls.Primitives.TextBoxBase>(source) is not null ||
             FindAncestor<System.Windows.Controls.Primitives.RangeBase>(source) is not null ||
             FindAncestor<ButtonBase>(source) is not null;
-        if (!ownsInput && ViewerHost.HandleKey(e)) return;
-        if (!ViewerInputPolicy.CanNavigateWithArrow(ownsInput, ViewerHost.Capabilities, ViewerHost.Interaction)) return;
+        if (ViewerHost.HandleKey(e)) return;
+        if (!ViewerInputPolicy.CanNavigateWithArrow(ownsInput, ViewerHost.Capabilities,
+                CarouselList.IsKeyboardFocusWithin ? ViewerInteraction.Navigation : ViewerHost.Interaction)) return;
 
         var direction = e.Key switch
         {

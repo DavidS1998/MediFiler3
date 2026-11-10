@@ -41,6 +41,11 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();
                     services.AddSingleton<IThumbnailService, FileSystemThumbnailService>();
+                    services.AddSingleton<ITextContentService, FileSystemTextContentService>();
+                    services.AddSingleton<IWindowsFileLaunchAdapter, WindowsFileLaunchAdapter>();
+                    services.AddSingleton<IExternalFileService, WindowsExternalFileService>();
+                    services.AddSingleton<IDefaultApplicationLookup, WindowsDefaultApplicationLookup>();
+                    services.AddSingleton<IDefaultApplicationService, WindowsDefaultApplicationService>();
                     services.AddSingleton<WicImageDecoder>();
                     services.AddSingleton<NavigationSessionState>();
                     services.AddSingleton<MainWindow>();

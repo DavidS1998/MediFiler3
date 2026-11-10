@@ -9,6 +9,8 @@ public static class ViewerMetadataFormatter
         if (metadata is null) return string.Empty;
         culture ??= CultureInfo.InvariantCulture;
         var parts = new List<string> { FormatSize(metadata.FileSize, culture) };
+        if (metadata.WordCount is { } words)
+            parts.Add($"{words.ToString("N0", culture)} {(words == 1 ? "word" : "words")}{(metadata.IsPartialWordCount ? " (window)" : "")}");
         if (metadata.PixelWidth is > 0 && metadata.PixelHeight is > 0)
             parts.Add($"[{metadata.PixelWidth.Value.ToString(culture)}×{metadata.PixelHeight.Value.ToString(culture)}]");
         if (metadata.Duration is { } duration && duration >= TimeSpan.Zero)

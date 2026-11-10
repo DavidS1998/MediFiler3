@@ -24,7 +24,8 @@ public static class ViewerInputPolicy
         !(interaction == ViewerInteraction.Content && capabilities.HasFlag(ViewerCapabilities.DocumentScroll));
 }
 
-public sealed record ViewerMetadata(long FileSize, int? PixelWidth = null, int? PixelHeight = null, TimeSpan? Duration = null);
+public sealed record ViewerMetadata(long FileSize, int? PixelWidth = null, int? PixelHeight = null, TimeSpan? Duration = null,
+    long? WordCount = null, bool IsPartialWordCount = false);
 public sealed record ViewerContent<T>(T? Presentation, ViewerMetadata Metadata, bool IsThumbnailFallback = false) : IDisposable where T : class
 {
     private int _disposed;
@@ -41,6 +42,11 @@ public interface IFileViewerHandler<T> where T : class
     Task<ViewerContent<T>> LoadAsync(FileEntry file, int width, int height, CancellationToken cancellationToken);
 }
 
+public interface IWindowedViewerHandler<T> : IFileViewerHandler<T> where T : class
+{
+    Task<ViewerContent<T>> LoadWindowAsync(FileEntry file, long offset, CancellationToken cancellationToken);
+}
+
 /// <summary>Owns one active load; callers use it on their presentation synchronization context.</summary>
 public sealed class ViewerCoordinator<T>(IEnumerable<IFileViewerHandler<T>> handlers) : IDisposable where T : class
 {
@@ -54,7 +60,7 @@ public sealed class ViewerCoordinator<T>(IEnumerable<IFileViewerHandler<T>> hand
     public ViewerCapabilities GetCapabilities(FileEntry? file) => file is null ? ViewerCapabilities.None
         : _handlers.First(handler => handler.CanHandle(file)).Capabilities;
 
-    public async Task<ViewerContent<T>?> LoadAsync(FileEntry file, int width, int height)
+    public async Task<ViewerContent<T>?> LoadAsync(FileEntry file, int width, int height, long offset = 0)
     {
         Cancel();
         var version = _version;
@@ -67,7 +73,9 @@ public sealed class ViewerCoordinator<T>(IEnumerable<IFileViewerHandler<T>> hand
         Changed?.Invoke();
         try
         {
-            var content = await handler.LoadAsync(file, width, height, token);
+            var content = handler is IWindowedViewerHandler<T> windowed
+                ? await windowed.LoadWindowAsync(file, offset, token)
+                : await handler.LoadAsync(file, width, height, token);
             if (token.IsCancellationRequested || version != _version) { content.Dispose(); return null; }
             Content = content;
             Changed?.Invoke();

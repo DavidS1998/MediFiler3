@@ -51,12 +51,14 @@ Agreed implementation order (metadata moved ahead of text/media):
 
 1. **Complete:** viewer/navigation extraction, handler capability and metadata/resource contracts, input policy, and modular image-only toolbar controls.
 2. **Complete:** metadata presentation in the toolbar's left section: file size for all current files and original image resolution after decoding. Use a metadata-only top line and a full-path bottom line with the current folder name in white, clear stale metadata on selection changes, and preserve known resolution during same-file zoom/resize reloads. Duration formatting is ready for later media handlers.
-3. **Next:** agree on text encodings and read-window limits, then implement bounded text viewing, scrolling, and navigation/content interaction switching.
-4. Complete unsupported-file fallback with default-application and Open With actions, retaining thumbnail previews and clear errors.
-5. Choose the audio/video backend and initial format targets, then add playback, seeking, volume, speed where supported, duration metadata, and contextual controls. Prefer a small Windows-compatible solution without a broad codec runtime unless justified.
+3. **Complete:** bounded text viewing with strict UTF-8 and BOM-marked UTF-16/UTF-32, 1 MiB windows, previous/next-window controls, navigation/scrolling toggle (right-click, F4, toolbar), and whole-file or clearly scoped window word counts.
+4. **Complete:** unsupported-file fallback retains thumbnail previews and adds filename/path details, separate default-application and native Open With actions, keyboard shortcuts, and clear missing-file/association/access/cancellation results. Failed integrated previews also offer external opening. Native launch/chooser behavior still needs interactive verification.
+
+   Follow-up complete: external-open actions are now compact WinUI AppBarButtons in the center toolbar, available for every selected file type while image/text controls remain on the right. Async default-application lookup supplies the application name/icon, handles packaged AppsFolder identities, distinguishes absent associations from lookup failures, refreshes after chooser completion, and rejects stale results. Real read-only probes verified Notepad/Brave names/icons; interactive WinUI appearance and launching remain to be checked.
+5. **Next:** choose the audio/video backend and initial format targets, then add playback, seeking, volume, speed where supported, duration metadata, and contextual controls. Prefer a small Windows-compatible solution without a broad codec runtime unless justified.
 6. Run Phase 3 integration checks across content types: navigation, input routing, cancellation, resource release, metadata updates, and file operations.
 
-Open decisions: video/audio backend and supported formats; text encodings and size/read-window limits. Metadata placement is settled in the left toolbar top line; the full path remains below with its current folder name white. Metadata scope remains file size, image resolution, and audio/video duration. Text/media handlers and external-opening fallback have not been implemented.
+Open decisions: video/audio backend and supported formats. Text starts with strict UTF-8 and BOM-marked UTF-16/UTF-32, with 1 MiB windows. Metadata placement is settled in the left toolbar top line; the full path remains below with its current folder name white. Metadata scope includes file size, image resolution, text word count, and audio/video duration. Text viewing is implemented; external-opening fallback is implemented; media handlers remain pending.
 
 ## Phase 4 — Home and persistence
 

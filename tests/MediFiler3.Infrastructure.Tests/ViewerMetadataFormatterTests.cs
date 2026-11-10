@@ -49,6 +49,15 @@ public sealed class ViewerMetadataFormatterTests
     }
 
     [Fact]
+    public void TextWordCountDistinguishesWholeFileFromWindow()
+    {
+        Assert.Equal("1.0 KB - 1 word", ViewerMetadataFormatter.Format(new(1024, WordCount: 1)));
+        Assert.Equal("1.0 KB - 1,240 words (window)",
+            ViewerMetadataFormatter.Format(new(1024, WordCount: 1240, IsPartialWordCount: true)));
+        Assert.Equal("0.0 B - 0 words", ViewerMetadataFormatter.Format(new(0, WordCount: 0)));
+    }
+
+    [Fact]
     public void RespectsDecimalCulture() => Assert.Equal("1,5 KB",
         ViewerMetadataFormatter.Format(new(1536), CultureInfo.GetCultureInfo("sv-SE")));
 }

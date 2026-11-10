@@ -113,7 +113,8 @@
     </UserControl.Resources>
 
     <Grid x:Name="BrowseSurface" Background="#000000" SizeChanged="OnBrowseSurfaceSizeChanged">
-        <views:ViewerHostView x:Name="ViewerHost" />
+        <views:ViewerHostView x:Name="ViewerHost"
+                              TextSideClearance="{Binding ActualWidth, ElementName=FolderOverlay}" />
 
         <Border x:Name="LeftRevealTarget" Width="26" HorizontalAlignment="Left" Background="Transparent" IsHitTestVisible="True" />
         <Border x:Name="BottomRevealTarget" Height="26" VerticalAlignment="Bottom" Background="Transparent" IsHitTestVisible="True" />

@@ -25,6 +25,13 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private TextBlock? _fileMetadata;
     private string _fileMetadataText = string.Empty;
     private ImageToolbarGroup? _imageToolbar;
+    private TextToolbarGroup? _textToolbar;
+    private ExternalOpenToolbarGroup? _externalToolbar;
+    private MediFiler3.Application.Files.ExternalOpenState _externalState = new(false, false, null);
+    private bool _textControlsVisible;
+    private bool _textScrolling;
+    private bool _canPreviousText;
+    private bool _canNextText;
     private bool _imageControlsVisible;
     private bool _imageControlsEnabled;
     private Grid? _rootElement;
@@ -45,6 +52,11 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public event Action? DeleteFileRequested;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
+    public event Action? ToggleTextInteractionRequested;
+    public event Action? PreviousTextWindowRequested;
+    public event Action? NextTextWindowRequested;
+    public event Action? OpenDefaultRequested;
+    public event Action? OpenWithRequested;
 
     public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
     {
@@ -304,11 +316,29 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     {
         _imageControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.Zoom);
         _imageControlsEnabled = _imageControlsVisible && canInteract;
+        _textControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.DocumentScroll);
+        if (_textToolbar is not null)
+            _textToolbar.Control.Visibility = _textControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
         if (_imageToolbar is not null)
         {
             _imageToolbar.Control.Visibility = _imageControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
             _imageToolbar.Control.IsEnabled = _imageControlsEnabled;
         }
+    }
+
+    public void SetTextViewerState(bool scrolling, bool canPrevious, bool canNext)
+    {
+        _textScrolling = scrolling;
+        _canPreviousText = canPrevious;
+        _canNextText = canNext;
+        _textToolbar?.SetState(scrolling, canPrevious, canNext);
+    }
+
+    public void SetExternalOpenState(MediFiler3.Application.Files.ExternalOpenState state)
+    {
+        _externalState = state;
+        _externalToolbar?.SetState(state);
+
     }
 
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
@@ -334,6 +364,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _folderDetails = null;
         _fileMetadata = null;
         _imageToolbar = null;
+        _textToolbar = null;
+        _externalToolbar = null;
         _renameFileButton = null;
         _deleteFileButton = null;
         _rootElement = null;
@@ -395,6 +427,10 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         middle.PrimaryCommands.Add(new AppBarSeparator());
         middle.PrimaryCommands.Add(_undoButton);
         middle.PrimaryCommands.Add(_redoButton);
+        middle.PrimaryCommands.Add(new AppBarSeparator());
+        _externalToolbar = new ExternalOpenToolbarGroup(() => OpenDefaultRequested?.Invoke(), () => OpenWithRequested?.Invoke());
+        middle.PrimaryCommands.Add(_externalToolbar.OpenButton);
+        middle.PrimaryCommands.Add(_externalToolbar.ChooseButton);
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 
@@ -406,6 +442,14 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _imageToolbar.Control.IsEnabled = _imageControlsEnabled;
         Grid.SetColumn(_imageToolbar.Control, 2);
         layout.Children.Add(_imageToolbar.Control);
+        _textToolbar = new TextToolbarGroup(() => ToggleTextInteractionRequested?.Invoke(),
+            () => PreviousTextWindowRequested?.Invoke(), () => NextTextWindowRequested?.Invoke());
+        _textToolbar.Control.Margin = new Thickness(8, 0, 8, 0);
+        _textToolbar.Control.Visibility = _textControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        _textToolbar.SetState(_textScrolling, _canPreviousText, _canNextText);
+        Grid.SetColumn(_textToolbar.Control, 2);
+        layout.Children.Add(_textToolbar.Control);
+        SetExternalOpenState(_externalState);
 
         return layout;
     }
