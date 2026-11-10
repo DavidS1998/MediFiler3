@@ -22,6 +22,7 @@ public sealed class WinUiMediaPlaybackSession : IMediaPlaybackSession
     public event Action<string>? Failed;
     public TimeSpan? Duration => _player.PlaybackSession.NaturalDuration > TimeSpan.Zero ? _player.PlaybackSession.NaturalDuration : null;
     public TimeSpan Position => _player.PlaybackSession.Position;
+    public int? VideoHeight => _player.PlaybackSession.NaturalVideoHeight is > 0 and var height ? checked((int)height) : null;
     public double Volume { get => _player.Volume; set => _player.Volume = value; }
     public bool IsMuted { get => _player.IsMuted; set => _player.IsMuted = value; }
 

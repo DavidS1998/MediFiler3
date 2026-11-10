@@ -37,6 +37,18 @@ public sealed class ViewerMetadataFormatterTests
             new(1, Duration: TimeSpan.FromSeconds(seconds)), CultureInfo.InvariantCulture));
 
     [Fact]
+    public void VideoHeightPrecedesDurationWithoutChangingAudioMetadata()
+    {
+        Assert.Equal("1.0 MB - [1080p] - [00:14]", ViewerMetadataFormatter.Format(
+            new(1048576, Duration: TimeSpan.FromSeconds(14), VideoHeight: 1080)));
+        Assert.Equal("1.0 B - [2160p]", ViewerMetadataFormatter.Format(new(1, VideoHeight: 2160)));
+        Assert.Equal("1.0 B - [00:14]", ViewerMetadataFormatter.Format(
+            new(1, Duration: TimeSpan.FromSeconds(14))));
+        Assert.Equal("1.0 B", ViewerMetadataFormatter.Format(new(1, VideoHeight: 0)));
+        Assert.Equal("1.0 B", ViewerMetadataFormatter.Format(new(1, VideoHeight: -1)));
+    }
+
+    [Fact]
     public void DefaultDecimalSeparatorIsAPeriodRegardlessOfSystemCulture()
     {
         var original = CultureInfo.CurrentCulture;

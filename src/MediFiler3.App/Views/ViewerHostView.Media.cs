@@ -42,7 +42,8 @@ public partial class ViewerHostView
         {
             await media.Controller.OpenAsync(file.FullPath, token);
             if (request != _requestVersion || !ReferenceEquals(_media, media) || !_active) return;
-            _metadata = new(file.Size, Duration: media.Controller.State.Duration);
+            _metadata = new(file.Size, Duration: media.Controller.State.Duration,
+                VideoHeight: media.AudioOnly ? null : media.Backend.VideoHeight);
             PresentationChanged?.Invoke();
             OnPlaybackChanged();
         }

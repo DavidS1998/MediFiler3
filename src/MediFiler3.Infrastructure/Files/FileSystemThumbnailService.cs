@@ -18,7 +18,7 @@ public sealed class FileSystemThumbnailService : IThumbnailService
     private const uint ThumbnailOnly = 0x00000008;
     private static readonly HashSet<string> WicExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"
+        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"
     };
 
     private readonly SemaphoreSlim _workers = new(3, 3);

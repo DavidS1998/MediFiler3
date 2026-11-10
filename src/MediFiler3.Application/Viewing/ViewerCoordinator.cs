@@ -25,7 +25,7 @@ public static class ViewerInputPolicy
 }
 
 public sealed record ViewerMetadata(long FileSize, int? PixelWidth = null, int? PixelHeight = null, TimeSpan? Duration = null,
-    long? WordCount = null, bool IsPartialWordCount = false);
+    long? WordCount = null, bool IsPartialWordCount = false, int? VideoHeight = null);
 public sealed record ViewerContent<T>(T? Presentation, ViewerMetadata Metadata, bool IsThumbnailFallback = false) : IDisposable where T : class
 {
     private int _disposed;

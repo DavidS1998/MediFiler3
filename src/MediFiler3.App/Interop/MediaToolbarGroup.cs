@@ -17,11 +17,12 @@ internal sealed class MediaToolbarGroup
         HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 6, 0) };
     private readonly TextBlock _time = new() { Width = 72, FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center };
-    private readonly Slider _volume = new() { Width = 180, Minimum = 0, Maximum = 100, StepFrequency = 1, Value = 50,
+    private readonly Slider _volume = new() { Width = 160, Height = 32, MinHeight = 0,
+        Minimum = 0, Maximum = 100, StepFrequency = 1, Value = 50,
         VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _mute = new() { Width = 36, Height = 36, Padding = new Thickness(6),
+    private readonly Button _mute = new() { Width = 32, Height = 32, MinWidth = 0, MinHeight = 0, Padding = new Thickness(6),
         VerticalAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _volumePercent = new() { Width = 28, VerticalAlignment = VerticalAlignment.Center,
+    private readonly TextBlock _volumePercent = new() { Width = 24, FontSize = 12, VerticalAlignment = VerticalAlignment.Center,
         TextAlignment = TextAlignment.Right };
     private bool _updating;
     private bool _dragging;
@@ -46,9 +47,14 @@ internal sealed class MediaToolbarGroup
             Grid.SetColumn(controls[index], index);
             Control.Children.Add(controls[index]);
         }
-        var settings = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var settings = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         settings.Children.Add(_mute); settings.Children.Add(_volume); settings.Children.Add(_volumePercent);
-        _options.Flyout = new Flyout { Content = settings, ShouldConstrainToRootBounds = false };
+        var presenterStyle = new Style { TargetType = typeof(FlyoutPresenter) };
+        presenterStyle.Setters.Add(new Setter(FlyoutPresenter.PaddingProperty, new Thickness(8)));
+        presenterStyle.Setters.Add(new Setter(FlyoutPresenter.MinWidthProperty, 0d));
+        presenterStyle.Setters.Add(new Setter(FlyoutPresenter.MinHeightProperty, 0d));
+        _options.Flyout = new Flyout { Content = settings, ShouldConstrainToRootBounds = false,
+            FlyoutPresenterStyle = presenterStyle };
         _options.AddHandler(UIElement.RightTappedEvent, new Microsoft.UI.Xaml.Input.RightTappedEventHandler((_, args) =>
         { args.Handled = true; mute(); }), true);
         _mute.Click += (_, _) => mute();
@@ -81,7 +87,8 @@ internal sealed class MediaToolbarGroup
             {
                 _muted = state.Muted;
                 _options.Icon = new SymbolIcon(state.Muted ? Symbol.Mute : Symbol.Volume);
-                _mute.Content = new SymbolIcon(state.Muted ? Symbol.Mute : Symbol.Volume);
+                _mute.Content = new FontIcon { Glyph = state.Muted ? "\uE74F" : "\uE767", FontSize = 16,
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") };
                 ToolTipService.SetToolTip(_mute, state.Muted ? "Unmute" : "Mute");
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_mute, state.Muted ? "Unmute audio" : "Mute audio");
                 var label = state.Muted ? "Volume (right-click to unmute)" : "Volume (right-click to mute)";

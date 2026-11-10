@@ -13,6 +13,8 @@ public static class ViewerMetadataFormatter
             parts.Add($"{words.ToString("N0", culture)} {(words == 1 ? "word" : "words")}{(metadata.IsPartialWordCount ? " (window)" : "")}");
         if (metadata.PixelWidth is > 0 && metadata.PixelHeight is > 0)
             parts.Add($"[{metadata.PixelWidth.Value.ToString(culture)}×{metadata.PixelHeight.Value.ToString(culture)}]");
+        if (metadata.VideoHeight is > 0)
+            parts.Add($"[{metadata.VideoHeight.Value.ToString(culture)}p]");
         if (metadata.Duration is { } duration && duration >= TimeSpan.Zero)
             parts.Add(duration.TotalHours >= 1
                 ? $"[{((long)duration.TotalHours).ToString(culture)}:{duration.Minutes:00}:{duration.Seconds:00}]"
