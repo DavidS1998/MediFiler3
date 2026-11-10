@@ -146,13 +146,13 @@ Zooming should support viewing the original image resolution without unnecessari
 
 The backend is WinUI MediaPlayerElement with Windows.Media.Playback.MediaPlayer, hosted in a XAML Island within the WPF application. It uses installed Windows media components without a bundled codec runtime. Routed video targets are MP4/M4V, WMV, WebM and MKV; audio targets are MP3, WAV, WMA, M4A/AAC, ADTS AAC and Opus. Extensions route to handlers; codec/container combinations may depend on Windows media extensions. Unsupported variants show an error and retain external-opening actions. FLAC and other extensions remain deferred.
 
-Media opens paused, with Space/right-click or a WinUI toolbar control toggling playback. The right toolbar provides play/pause, stop, seeking/progress, and separate volume and playback-speed buttons. Each opens a compact popup free of the toolbar root's height constraint; volume must not require scrolling past speed controls. Playback speed ranges from 0.5×–2× where supported. Duration appears with file-size metadata after opening. Close media before file/folder mutations, undo/redo, navigation, leaving Browse, and shutdown; reload paused when returning or when a cancelled/failed operation leaves the same file selected. Preserve volume/rate for the current session; persistence is future work. Media opening has a cancellable 30-second timeout and clear external fallback on failure. Native video must preserve access to WPF folder/carousel overlays and their reveal edges.
+Media opens paused, with Space/right-click or a WinUI toolbar control toggling playback. The right toolbar provides play/pause, stop, back/forward 5-second jumps, a seekbar that stretches to the available toolbar width, current/total playback time, and a compact horizontal volume popup with a clickable speaker/mute icon on the left, a 0-100 slider, and a numeric level on the right. Jump buttons use Segoe Fluent Rewind (U+EB9E) and FastForward (U+EB9D). Right-clicking the volume button toggles mute without opening the popup. Mute and volume are shared by all media in the current session; muting preserves the selected volume. When settings persistence is implemented, restore/save mute state across application sessions. Playback speed controls are removed. Duration metadata is bracketed, such as `[02:05]` or `[1:02:05]`. Close media before file/folder mutations, undo/redo, navigation, leaving Browse, and shutdown; reload paused when returning or when a cancelled/failed operation leaves the same file selected. Media opening has a cancellable 30-second timeout and clear external fallback on failure. Native video must preserve access to WPF folder/carousel overlays and their reveal edges.
 
 When displaying a video:
 
 - Display an embedded video player.
 - Right-click to play or pause playback.
-- Provide playback controls, including seeking, volume, and playback speed where supported.
+- Provide playback controls, including seeking, volume, mute, and short backward/forward jumps.
 - Support audio output.
 - Preserve the ability to navigate to the next or previous file.
 - Avoid accidental file navigation while interacting with playback controls.
@@ -163,7 +163,7 @@ When displaying an audio file:
 
 - Right-click to start or pause playback.
 - Provide basic playback controls.
-- Display relevant metadata where available, such as title, artist, duration, and album artwork.
+- Display relevant metadata where available, such as title, artist, duration, and album artwork. Collapse the artwork slot when no image is available, including when the folder opens directly on an audio file; load artwork asynchronously without shifting text around an empty reserved slot.
 - Indicate playback progress.
 - Allow the user to navigate to another file without closing the viewer.
 

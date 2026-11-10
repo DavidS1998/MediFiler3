@@ -99,7 +99,8 @@ public partial class MainWindow : Window
         ToolbarIsland.StopPlaybackRequested += _browseView.StopPlayback;
         ToolbarIsland.SeekPlaybackRequested += _browseView.SeekPlayback;
         ToolbarIsland.PlaybackVolumeRequested += _browseView.SetPlaybackVolume;
-        ToolbarIsland.PlaybackSpeedRequested += _browseView.SetPlaybackSpeed;
+        ToolbarIsland.TogglePlaybackMuteRequested += _browseView.TogglePlaybackMute;
+        ToolbarIsland.JumpPlaybackRequested += _browseView.JumpPlayback;
         _browseView.PlaybackStateChanged += () => ToolbarIsland.SetMediaPlaybackState(_browseView.PlaybackState);
         ToolbarIsland.ToggleTextInteractionRequested += _browseView.ToggleTextInteraction;
         ToolbarIsland.PreviousTextWindowRequested += async () => await _browseView.ReadTextWindowAsync(false);

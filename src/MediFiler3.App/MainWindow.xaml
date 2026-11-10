@@ -43,6 +43,7 @@
             <interop:WinUiNavigationIsland x:Name="NavigationIsland" Focusable="True" />
         </Border>
 
-        <ContentControl x:Name="PageContent" Grid.Row="1" Grid.Column="1" />
+        <ContentControl x:Name="PageContent" Grid.Row="1" Grid.Column="1"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
     </Grid>
 </Window>

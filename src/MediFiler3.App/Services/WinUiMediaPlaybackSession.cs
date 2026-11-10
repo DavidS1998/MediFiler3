@@ -23,7 +23,7 @@ public sealed class WinUiMediaPlaybackSession : IMediaPlaybackSession
     public TimeSpan? Duration => _player.PlaybackSession.NaturalDuration > TimeSpan.Zero ? _player.PlaybackSession.NaturalDuration : null;
     public TimeSpan Position => _player.PlaybackSession.Position;
     public double Volume { get => _player.Volume; set => _player.Volume = value; }
-    public double Speed { get => _player.PlaybackSession.PlaybackRate; set => _player.PlaybackSession.PlaybackRate = value; }
+    public bool IsMuted { get => _player.IsMuted; set => _player.IsMuted = value; }
 
     public WinUiMediaPlaybackSession()
     {

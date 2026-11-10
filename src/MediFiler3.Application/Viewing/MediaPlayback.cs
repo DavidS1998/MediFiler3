@@ -16,33 +16,43 @@ public interface IMediaPlaybackSession : IDisposable
     TimeSpan? Duration { get; }
     TimeSpan Position { get; }
     double Volume { get; set; }
-    double Speed { get; set; }
+    bool IsMuted { get; set; }
     Task OpenAsync(string path, CancellationToken cancellationToken);
     void Play();
     void Pause();
     void Seek(TimeSpan position);
 }
 
-public sealed record MediaPlaybackState(bool Ready, bool Playing, TimeSpan Position, TimeSpan? Duration, double Volume, double Speed)
+public sealed record MediaPlaybackState(bool Ready, bool Playing, TimeSpan Position, TimeSpan? Duration, double Volume, bool Muted)
 {
     public bool CanSeek => Ready && Duration is { } duration && duration > TimeSpan.Zero;
-    public static MediaPlaybackState Empty { get; } = new(false, false, TimeSpan.Zero, null, 0.5, 1);
+    public static MediaPlaybackState Empty { get; } = new(false, false, TimeSpan.Zero, null, 0.5, false);
+}
+
+public sealed class MediaAudioSettings
+{
+    public double Volume { get; internal set; } = 0.5;
+    public bool Muted { get; internal set; }
 }
 
 public sealed class MediaPlaybackController : IDisposable
 {
     private readonly IMediaPlaybackSession _session;
+    private readonly MediaAudioSettings _audio;
     private bool _disposed;
     private bool _ready;
     private bool _playing;
     public event Action? Changed;
     public event Action<string>? Failed;
     public MediaPlaybackState State => _disposed ? MediaPlaybackState.Empty
-        : new(_ready, _playing, _session.Position, _session.Duration, _session.Volume, _session.Speed);
+        : new(_ready, _playing, _session.Position, _session.Duration, _session.Volume, _session.IsMuted);
 
-    public MediaPlaybackController(IMediaPlaybackSession session)
+    public MediaPlaybackController(IMediaPlaybackSession session, MediaAudioSettings? audio = null)
     {
         _session = session;
+        _audio = audio ?? new MediaAudioSettings();
+        _session.Volume = _audio.Volume;
+        _session.IsMuted = _audio.Muted;
         session.Changed += OnChanged;
         session.Ended += OnEnded;
         session.Failed += OnFailed;
@@ -86,12 +96,19 @@ public sealed class MediaPlaybackController : IDisposable
     public void SetVolume(double volume)
     {
         if (_disposed || !double.IsFinite(volume)) return;
-        _session.Volume = Math.Clamp(volume, 0, 1); Changed?.Invoke();
+        _audio.Volume = Math.Clamp(volume, 0, 1);
+        _session.Volume = _audio.Volume; Changed?.Invoke();
     }
-    public void SetSpeed(double speed)
+    public void ToggleMute()
     {
-        if (_disposed || !double.IsFinite(speed)) return;
-        _session.Speed = Math.Clamp(speed, 0.5, 2); Changed?.Invoke();
+        if (_disposed) return;
+        _audio.Muted = !_audio.Muted;
+        _session.IsMuted = _audio.Muted;
+        Changed?.Invoke();
+    }
+    public void Jump(double seconds)
+    {
+        if (double.IsFinite(seconds) && State.CanSeek) Seek(_session.Position.TotalSeconds + seconds);
     }
     private void OnChanged() { if (!_disposed) Changed?.Invoke(); }
     private void OnEnded() { _playing = false; OnChanged(); }

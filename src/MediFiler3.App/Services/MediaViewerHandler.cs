@@ -9,7 +9,7 @@ public sealed record MediaPresentation(WinUiMediaPlaybackSession Backend, MediaP
     public void Dispose() => Controller.Dispose();
 }
 
-public sealed class MediaViewerHandler : IFileViewerHandler<ViewerPresentation>
+public sealed class MediaViewerHandler(MediaAudioSettings audio) : IFileViewerHandler<ViewerPresentation>
 {
     public bool CanHandle(FileEntry file) => MediaFileTypes.Supports(file.Extension);
     public ViewerCapabilities Capabilities => ViewerCapabilities.Playback;
@@ -18,6 +18,6 @@ public sealed class MediaViewerHandler : IFileViewerHandler<ViewerPresentation>
         token.ThrowIfCancellationRequested();
         var backend = new WinUiMediaPlaybackSession();
         return Task.FromResult(new ViewerContent<ViewerPresentation>(
-            new MediaPresentation(backend, new(backend), MediaFileTypes.IsAudio(file.Extension)), new(file.Size)));
+            new MediaPresentation(backend, new(backend, audio), MediaFileTypes.IsAudio(file.Extension)), new(file.Size)));
     }
 }

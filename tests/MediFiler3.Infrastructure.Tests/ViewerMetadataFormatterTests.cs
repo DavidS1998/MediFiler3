@@ -33,7 +33,7 @@ public sealed class ViewerMetadataFormatterTests
     [InlineData(3725, "1:02:05")]
     [InlineData(90000, "25:00:00")]
     public void DurationUsesTotalHoursWhenProvidedByAHandler(int seconds, string expected) =>
-        Assert.Equal($"1.0 B - {expected}", ViewerMetadataFormatter.Format(
+        Assert.Equal($"1.0 B - [{expected}]", ViewerMetadataFormatter.Format(
             new(1, Duration: TimeSpan.FromSeconds(seconds)), CultureInfo.InvariantCulture));
 
     [Fact]

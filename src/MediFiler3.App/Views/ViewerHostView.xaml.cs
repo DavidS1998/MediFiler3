@@ -55,9 +55,10 @@ public partial class ViewerHostView : UserControl
     public void Initialize(WicImageDecoder decoder, IThumbnailService thumbnails, ITextContentService text, IExternalFileService externalFiles, IDefaultApplicationService defaultApplications)
     {
         _externalFiles = externalFiles;
+        _viewerThumbnails = thumbnails;
         _defaultApplication = new DefaultApplicationResolver(defaultApplications);
         _defaultApplication.Changed += () => PresentationChanged?.Invoke();
-        _coordinator = new ViewerCoordinator<ViewerPresentation>([new ImageViewerHandler(decoder), new TextViewerHandler(text), new MediaViewerHandler(), new ThumbnailViewerHandler(thumbnails)]);
+        _coordinator = new ViewerCoordinator<ViewerPresentation>([new ImageViewerHandler(decoder), new TextViewerHandler(text), new MediaViewerHandler(_mediaAudio), new ThumbnailViewerHandler(thumbnails)]);
     }
 
     public bool HandleKey(KeyEventArgs e)

@@ -15,8 +15,8 @@ public static class ViewerMetadataFormatter
             parts.Add($"[{metadata.PixelWidth.Value.ToString(culture)}×{metadata.PixelHeight.Value.ToString(culture)}]");
         if (metadata.Duration is { } duration && duration >= TimeSpan.Zero)
             parts.Add(duration.TotalHours >= 1
-                ? $"{((long)duration.TotalHours).ToString(culture)}:{duration.Minutes:00}:{duration.Seconds:00}"
-                : $"{duration.Minutes:00}:{duration.Seconds:00}");
+                ? $"[{((long)duration.TotalHours).ToString(culture)}:{duration.Minutes:00}:{duration.Seconds:00}]"
+                : $"[{duration.Minutes:00}:{duration.Seconds:00}]");
         return string.Join(" - ", parts);
     }
 

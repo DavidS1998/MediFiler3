@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
+using MediFiler3.Application.Files;
 using MediFiler3.Application.Viewing;
 using MediFiler3.Domain.Files;
 using MediFiler3.Services;
@@ -10,9 +11,9 @@ public partial class ViewerHostView
 {
     private MediaPresentation? _media;
     private CancellationTokenSource? _mediaLoad;
-    private double _mediaVolume = 0.5;
-    private double _mediaSpeed = 1;
-    public MediaPlaybackState PlaybackState => _media?.Controller.State ?? MediaPlaybackState.Empty;
+    private readonly MediaAudioSettings _mediaAudio = new();
+    private IThumbnailService? _viewerThumbnails;
+    public MediaPlaybackState PlaybackState => _media?.Controller.State ?? MediaPlaybackState.Empty with { Volume = _mediaAudio.Volume, Muted = _mediaAudio.Muted };
     public event Action? PlaybackStateChanged;
 
     private async Task OpenMediaAsync(FileEntry file, MediaPresentation media, BitmapSource? preview, long request)
@@ -22,8 +23,6 @@ public partial class ViewerHostView
         var token = _mediaLoad.Token;
         media.Controller.Changed += OnPlaybackChanged;
         media.Controller.Failed += OnPlaybackFailed;
-        media.Backend.Volume = _mediaVolume;
-        media.Backend.Speed = _mediaSpeed;
         media.Backend.Element.WheelRequested += OnNativeMediaWheel;
         media.Backend.Element.ToggleRequested += TogglePlayback;
         media.Backend.Element.KeyRequested += OnNativeMediaKey;
@@ -32,6 +31,8 @@ public partial class ViewerHostView
         AudioPanel.Visibility = media.AudioOnly ? Visibility.Visible : Visibility.Collapsed;
         AudioTitle.Text = file.Name;
         AudioArtwork.Source = media.AudioOnly ? preview : null;
+        AudioArtwork.Visibility = media.AudioOnly && preview is not null ? Visibility.Visible : Visibility.Collapsed;
+        if (media.AudioOnly && preview is null) _ = LoadAudioArtworkAsync(file, media, token);
         ImageViewer.Source = null;
         _resizeTimer.Stop();
         ImageViewer.Visibility = TextPanel.Visibility = ThumbnailFallbackBadge.Visibility = Visibility.Collapsed;
@@ -53,6 +54,20 @@ public partial class ViewerHostView
     }
 
     public bool HasVideoSurface => _media is { AudioOnly: false };
+    private async Task LoadAudioArtworkAsync(FileEntry file, MediaPresentation media, CancellationToken token)
+    {
+        try
+        {
+            if (_viewerThumbnails is null) return;
+            var bytes = await _viewerThumbnails.GetThumbnailPngAsync(file, 220, 220, token);
+            if (bytes is null) return;
+            var bitmap = await Task.Run(() => ThumbnailViewerHandler.DecodePng(bytes), token);
+            if (token.IsCancellationRequested || !_active || !ReferenceEquals(file, _currentFile) || !ReferenceEquals(media, _media)) return;
+            AudioArtwork.Source = bitmap;
+            AudioArtwork.Visibility = Visibility.Visible;
+        }
+        catch (Exception) { /* Optional artwork failure must not interrupt playback or reserve an empty image slot. */ }
+    }
     public void SetVideoExclusions(IEnumerable<Rect> exclusions)
     {
         if (_media is not { AudioOnly: false } media || !media.Backend.Element.IsLoaded) return;
@@ -109,24 +124,16 @@ public partial class ViewerHostView
         MediaHost.Content = null;
         MediaHost.Visibility = AudioPanel.Visibility = Visibility.Collapsed;
         AudioArtwork.Source = null;
+        AudioArtwork.Visibility = Visibility.Collapsed;
         OnPlaybackChanged();
     }
 
     public void TogglePlayback() => RunPlayback(controller => controller.Toggle());
     public void StopPlayback() => RunPlayback(controller => controller.Stop());
     public void SeekPlayback(double seconds) => RunPlayback(controller => controller.Seek(seconds));
-    public void SetPlaybackVolume(double volume)
-    {
-        if (!double.IsFinite(volume)) return;
-        _mediaVolume = Math.Clamp(volume, 0, 1);
-        RunPlayback(controller => controller.SetVolume(_mediaVolume));
-    }
-    public void SetPlaybackSpeed(double speed)
-    {
-        if (!double.IsFinite(speed)) return;
-        try { _media?.Controller.SetSpeed(speed); _mediaSpeed = Math.Clamp(speed, 0.5, 2); }
-        catch (Exception exception) { SetExternalStatus($"Playback speed could not be changed: {exception.Message}"); }
-    }
+    public void SetPlaybackVolume(double volume) => RunPlayback(controller => controller.SetVolume(volume));
+    public void TogglePlaybackMute() => RunPlayback(controller => controller.ToggleMute());
+    public void JumpPlayback(double seconds) => RunPlayback(controller => controller.Jump(seconds));
     private void RunPlayback(Action<MediaPlaybackController> action)
     {
         if (_media is null) return;

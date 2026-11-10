@@ -64,7 +64,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public event Action? StopPlaybackRequested;
     public event Action<double>? SeekPlaybackRequested;
     public event Action<double>? PlaybackVolumeRequested;
-    public event Action<double>? PlaybackSpeedRequested;
+    public event Action? TogglePlaybackMuteRequested;
+    public event Action<double>? JumpPlaybackRequested;
 
     public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
     {
@@ -469,7 +470,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         layout.Children.Add(_textToolbar.Control);
         _mediaToolbar = new MediaToolbarGroup(() => TogglePlaybackRequested?.Invoke(), () => StopPlaybackRequested?.Invoke(),
             seconds => SeekPlaybackRequested?.Invoke(seconds), volume => PlaybackVolumeRequested?.Invoke(volume),
-            speed => PlaybackSpeedRequested?.Invoke(speed));
+            () => TogglePlaybackMuteRequested?.Invoke(), seconds => JumpPlaybackRequested?.Invoke(seconds));
         _mediaToolbar.Control.Margin = new Thickness(8, 0, 8, 0);
         _mediaToolbar.Control.Visibility = _mediaControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
         _mediaToolbar.SetState(_mediaState);

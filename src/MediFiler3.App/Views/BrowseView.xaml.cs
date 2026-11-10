@@ -68,7 +68,8 @@ public partial class BrowseView : UserControl
     public void StopPlayback() => ViewerHost.StopPlayback();
     public void SeekPlayback(double seconds) => ViewerHost.SeekPlayback(seconds);
     public void SetPlaybackVolume(double volume) => ViewerHost.SetPlaybackVolume(volume);
-    public void SetPlaybackSpeed(double speed) => ViewerHost.SetPlaybackSpeed(speed);
+    public void TogglePlaybackMute() => ViewerHost.TogglePlaybackMute();
+    public void JumpPlayback(double seconds) => ViewerHost.JumpPlayback(seconds);
     public bool CanZoom => ViewerHost.CanZoom;
     public bool IsTextInteraction => ViewerHost.IsTextInteraction;
     public bool CanReadPreviousTextWindow => ViewerHost.CanReadPreviousTextWindow;

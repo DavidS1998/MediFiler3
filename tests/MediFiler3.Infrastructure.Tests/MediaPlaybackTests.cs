@@ -53,9 +53,54 @@ public sealed class MediaPlaybackTests
         Assert.Equal(TimeSpan.Zero, backend.Position);
         controller.SetVolume(2); Assert.Equal(1, backend.Volume);
         controller.SetVolume(double.NaN); Assert.Equal(1, backend.Volume);
-        controller.SetSpeed(10); Assert.Equal(2, backend.Speed);
-        controller.SetSpeed(-1); Assert.Equal(0.5, backend.Speed);
-        controller.SetSpeed(double.PositiveInfinity); Assert.Equal(0.5, backend.Speed);
+    }
+
+    [Fact]
+    public async Task MuteAndVolumeCarryAcrossMediaWithoutLosingUnmutedVolume()
+    {
+        var audio = new MediaAudioSettings();
+        var firstBackend = new Session();
+        using (var first = new MediaPlaybackController(firstBackend, audio))
+        {
+            await first.OpenAsync("first", CancellationToken.None);
+            first.SetVolume(0.7);
+            first.ToggleMute();
+            Assert.True(first.State.Muted);
+            Assert.True(firstBackend.IsMuted);
+            Assert.Equal(0.7, firstBackend.Volume);
+        }
+        var secondBackend = new Session();
+        using var second = new MediaPlaybackController(secondBackend, audio);
+        Assert.True(secondBackend.IsMuted); // Applied before opening/playing another file.
+        Assert.Equal(0.7, secondBackend.Volume);
+        await second.OpenAsync("second", CancellationToken.None);
+        second.SetVolume(0.4);
+        Assert.True(second.State.Muted);
+        second.ToggleMute();
+        Assert.False(second.State.Muted);
+        Assert.Equal(0.4, secondBackend.Volume);
+    }
+
+    [Fact]
+    public async Task FiveSecondJumpsClampAtEdgesAndPreservePlaybackState()
+    {
+        var backend = new Session();
+        using var controller = new MediaPlaybackController(backend);
+        controller.Jump(5);
+        Assert.Equal(TimeSpan.Zero, backend.Position);
+        await controller.OpenAsync("file", CancellationToken.None);
+        controller.Seek(58);
+        controller.Toggle();
+        controller.Jump(5);
+        Assert.Equal(TimeSpan.FromSeconds(60), backend.Position);
+        Assert.True(controller.State.Playing);
+        controller.Jump(-5);
+        Assert.Equal(TimeSpan.FromSeconds(55), backend.Position);
+        controller.Seek(2);
+        controller.Jump(-5);
+        Assert.Equal(TimeSpan.Zero, backend.Position);
+        controller.Jump(double.NaN);
+        Assert.Equal(TimeSpan.Zero, backend.Position);
     }
 
     [Fact]
@@ -138,7 +183,7 @@ public sealed class MediaPlaybackTests
         public TimeSpan? Duration { get; init; } = TimeSpan.FromSeconds(60);
         public TimeSpan Position { get; set; }
         public double Volume { get; set; } = 0.5;
-        public double Speed { get; set; } = 1;
+        public bool IsMuted { get; set; }
         public int PlayCalls { get; private set; }
         public int PauseCalls { get; private set; }
         public int Disposals { get; private set; }
