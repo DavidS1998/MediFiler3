@@ -19,6 +19,7 @@ namespace MediFiler3;
 public partial class App : System.Windows.Application
 {
     private IHost? _host;
+    private bool _settingsFlushedBeforeClose;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -33,6 +34,8 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<SqliteDatabase>();
                     services.AddSingleton<SqliteApplicationStateStore>();
                     services.AddSingleton<ApplicationSettingsService>();
+                    services.AddSingleton<WindowLayoutService>();
+                    services.AddSingleton<IWindowPlacementPlatform, WindowsWindowPlacement>();
                     services.AddSingleton<IRootFolderAvailabilityService, FileSystemRootFolderAvailabilityService>();
                     services.AddSingleton<RootFolderHistoryService>();
                     services.AddSingleton<IApplicationSettingsStore>(p => p.GetRequiredService<SqliteApplicationStateStore>());
@@ -70,18 +73,25 @@ public partial class App : System.Windows.Application
             var settings = _host.Services.GetRequiredService<ApplicationSettingsService>();
             settings.PersistenceFailed += exception => _host.Services.GetRequiredService<ILogger<App>>()
                 .LogWarning(exception, "Could not load/save settings; defaults or current session values remain available.");
-            Task.Run(() => settings.InitializeAsync()).GetAwaiter().GetResult();
+            var layout = _host.Services.GetRequiredService<WindowLayoutService>();
+            layout.PersistenceFailed += exception => _host.Services.GetRequiredService<ILogger<App>>()
+                .LogWarning(exception, "Could not load/save window layout; safe placement or current session values remain available.");
+            Task.Run(() => Task.WhenAll(settings.InitializeAsync(), layout.InitializeAsync())).GetAwaiter().GetResult();
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
             MainWindow = mainWindow;
+            mainWindow.Closing += (_, _) =>
+            {
+                FlushSettingsWithWarning();
+                _settingsFlushedBeforeClose = true;
+            };
             mainWindow.Show();
         }
         catch (Exception exception)
         {
             _host?.Services.GetService<ILogger<App>>()?.LogCritical(exception, "Application startup failed.");
-            MessageBox.Show(
+            ShowApplicationMessage(
                 "MediFiler3 could not start. See the application logs for details.",
                 "MediFiler3 startup error",
-                MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(-1);
         }
@@ -91,13 +101,7 @@ public partial class App : System.Windows.Application
     {
         if (_host is not null)
         {
-            try { _host.Services.GetRequiredService<ApplicationSettingsService>().FlushAsync().GetAwaiter().GetResult(); }
-            catch (Exception exception)
-            {
-                _host.Services.GetRequiredService<ILogger<App>>().LogError(exception, "Could not save settings at shutdown.");
-                MessageBox.Show("Settings could not be saved. Your latest preferences may not survive restart.",
-                    "MediFiler3 settings", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
+            if (!_settingsFlushedBeforeClose) FlushSettingsWithWarning();
             _host.Services.GetRequiredService<RootFolderHistoryService>().FlushAsync().GetAwaiter().GetResult();
             _host.StopAsync().GetAwaiter().GetResult();
             _host.Dispose();
@@ -106,5 +110,47 @@ public partial class App : System.Windows.Application
         WinUiXamlEnvironment.Shutdown();
 
         base.OnExit(e);
+    }
+
+    private void FlushSettingsWithWarning()
+    {
+        if (_host is null) return;
+        try { _host.Services.GetRequiredService<ApplicationSettingsService>().FlushAsync().GetAwaiter().GetResult(); }
+        catch (Exception exception)
+        {
+            _host.Services.GetRequiredService<ILogger<App>>().LogError(exception, "Could not save settings at shutdown.");
+            ShowApplicationMessage("Settings could not be saved. Your latest preferences may not survive restart.",
+                "MediFiler3 settings", MessageBoxImage.Warning);
+        }
+        try { _host.Services.GetRequiredService<WindowLayoutService>().FlushAsync().GetAwaiter().GetResult(); }
+        catch (Exception exception)
+        {
+            _host.Services.GetRequiredService<ILogger<App>>().LogError(exception, "Could not save window layout at shutdown.");
+            ShowApplicationMessage("Window layout could not be saved. Its latest size and position may not survive restart.",
+                "MediFiler3 window layout", MessageBoxImage.Warning);
+        }
+    }
+
+    private void ShowApplicationMessage(string message, string title, MessageBoxImage emergencyIcon)
+    {
+        if (WinUiXamlEnvironment.IsInitialized)
+        {
+            try
+            {
+                WinUiContentDialogHost.ShowAsync(MainWindow?.IsVisible == true ? MainWindow : null, title,
+                    () => new Microsoft.UI.Xaml.Controls.ContentDialog
+                    {
+                        Content = new Microsoft.UI.Xaml.Controls.TextBlock { Text = message, TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap },
+                        CloseButtonText = "OK", DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Close
+                    }).GetAwaiter().GetResult();
+                return;
+            }
+            catch (Exception exception)
+            {
+                _host?.Services.GetService<ILogger<App>>()?.LogWarning(exception, "WinUI could not display an application warning.");
+            }
+        }
+        // Startup failure can itself mean WinUI is unavailable; retain an emergency way to report it.
+        MessageBox.Show(message, title, MessageBoxButton.OK, emergencyIcon);
     }
 }

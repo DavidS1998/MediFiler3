@@ -27,11 +27,14 @@ internal static partial class Program
         var store = new SqliteApplicationStateStore(database);
         var settings = new ApplicationSettingsService(store);
         await settings.InitializeAsync();
+        var layout = new WindowLayoutService(store);
+        await layout.InitializeAsync();
         var state = new NavigationSessionState();
         var window = new MediFiler3.MainWindow(Microsoft.Extensions.Logging.Abstractions.NullLogger<MediFiler3.MainWindow>.Instance,
             new FileSystemFolderTreeService(), new FileSystemFileListingService(), state, new WicImageDecoder(Files), NativeThumbnails,
             operations, journal, new FileSystemTextContentService(Files), new External(), new Defaults(), settings,
-            new RootFolderHistoryService(store, availability), availability, new FileSystemCollisionPreviewService(NativeThumbnails), backupStore)
+            new RootFolderHistoryService(store, availability), availability, new FileSystemCollisionPreviewService(NativeThumbnails), backupStore,
+            layout, new WindowsWindowPlacement())
         { Opacity = 0, ShowInTaskbar = false, ShowActivated = false };
         window.Show();
         var browse = (BrowseView)Field(window, "_browseView")!;
@@ -139,19 +142,16 @@ internal static partial class Program
                             var root = dialog.Content?.GetType().GetProperty("RootElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                                 ?.GetValue(dialog.Content) as Microsoft.UI.Xaml.Controls.Grid;
                             if (root is null || root.Children.Count == 0) return;
-                            var border = (Microsoft.UI.Xaml.Controls.Border)root.Children[0];
-                            var content = (Microsoft.UI.Xaml.Controls.StackPanel)border.Child;
-                            Require(content.Children.Count == 2, "Collision explanation text is still displayed");
-                            var buttons = ((Microsoft.UI.Xaml.Controls.StackPanel)content.Children.Last()).Children
-                                .Cast<Microsoft.UI.Xaml.Controls.Button>().ToArray();
+                            var contentDialog = (Microsoft.UI.Xaml.Controls.ContentDialog)root.Children[0];
+                            var buttons = new[] { NativeDialogButton(contentDialog, "PrimaryButton"), NativeDialogButton(contentDialog, "SecondaryButton"), NativeDialogButton(contentDialog, "CloseButton") }
+                                .OfType<Microsoft.UI.Xaml.Controls.Button>().ToArray();
+                            if (buttons.Length != 3) return;
                             Require(buttons.Select(button => button.Content.ToString()).SequenceEqual(new[] { "Rename", "Overwrite", "Cancel" }), "Collision choices differ");
                             Require(buttons[1].IsEnabled == compatible, "Overwrite eligibility differs");
                             Require(dialog.Owner == window && dialog.Opacity == 0, "Dialog owner/hidden probe surface");
                             root.UpdateLayout();
-                            var bottom = ((Microsoft.UI.Xaml.Controls.StackPanel)content.Children.Last()).TransformToVisual(root)
-                                .TransformPoint(new Windows.Foundation.Point()).Y + ((Microsoft.UI.Xaml.Controls.StackPanel)content.Children.Last()).ActualHeight;
-                            Require(root.ActualHeight - bottom is >= 20 and <= 28, "Excess space below collision buttons");
-                            var comparison = (Microsoft.UI.Xaml.Controls.Grid)content.Children[0];
+                            Require(Math.Abs(dialog.ActualHeight - contentDialog.ActualHeight) <= 2, "Host has excess space around ContentDialog");
+                            var comparison = (Microsoft.UI.Xaml.Controls.Grid)contentDialog.Content;
                             Require(comparison.Children.Count == 2, "Missing side-by-side cards");
                             for (var index = 0; index < 2; index++)
                             {
@@ -199,10 +199,10 @@ internal static partial class Program
                         var root = dialog.Content?.GetType().GetProperty("RootElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                             ?.GetValue(dialog.Content) as Microsoft.UI.Xaml.Controls.Grid;
                         if (root is null || root.Children.Count == 0) return;
-                        var content = (Microsoft.UI.Xaml.Controls.StackPanel)((Microsoft.UI.Xaml.Controls.Border)root.Children[0]).Child;
-                        var buttons = (Microsoft.UI.Xaml.Controls.StackPanel)content.Children.Last();
+                        var contentDialog = (Microsoft.UI.Xaml.Controls.ContentDialog)root.Children[0];
                         Require(dialog.Title == "Name collision", "Rename opened an extra dialog");
-                        var chosen = (Microsoft.UI.Xaml.Controls.Button)buttons.Children[0];
+                        var chosen = NativeDialogButton(contentDialog, "PrimaryButton");
+                        if (chosen is null) return;
                         Require(chosen.IsEnabled, "Automatic Rename is disabled");
                         renamed = true;
                         timer.Stop();
@@ -246,10 +246,10 @@ internal static partial class Program
                             var root = dialog.Content?.GetType().GetProperty("RootElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                                 ?.GetValue(dialog.Content) as Microsoft.UI.Xaml.Controls.Grid;
                             if (root is null || root.Children.Count == 0) return;
-                            var content = (Microsoft.UI.Xaml.Controls.StackPanel)((Microsoft.UI.Xaml.Controls.Border)root.Children[0]).Child;
-                            Require(((Microsoft.UI.Xaml.Controls.TextBlock)content.Children[0]).Text.Contains("Undo and Redo"), "Cleanup lacks history warning");
-                            var buttons = (Microsoft.UI.Xaml.Controls.StackPanel)content.Children.Last();
-                            var chosen = (Microsoft.UI.Xaml.Controls.Button)buttons.Children[confirm ? 1 : 0];
+                            var contentDialog = (Microsoft.UI.Xaml.Controls.ContentDialog)root.Children[0];
+                            Require(((Microsoft.UI.Xaml.Controls.TextBlock)contentDialog.Content).Text.Contains("Undo and Redo"), "Cleanup lacks history warning");
+                            var chosen = NativeDialogButton(contentDialog, confirm ? "PrimaryButton" : "CloseButton");
+                            if (chosen is null) return;
                             timer.Stop(); clicked = true;
                             ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)new Microsoft.UI.Xaml.Automation.Peers.ButtonAutomationPeer(chosen)
                                 .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
@@ -278,8 +278,9 @@ internal static partial class Program
                     }
                     finally { timer.Stop(); settingsView.ClearBackupsRequested = callback; }
                 });
+            await RunContentDialogChecksAsync(toolbar, window);
         }
-        finally { window.Close(); }
+        finally { window.Close(); await layout.FlushAsync(); }
     }
 
     private sealed class CollisionDialogs(System.Windows.Threading.Dispatcher dispatcher) : IWinUiDialogService
@@ -294,5 +295,13 @@ internal static partial class Program
         public Task<bool> ConfirmAsync(string title, string message, string confirmAction) => Task.FromResult(false);
         public Task<MediFiler3.Application.Operations.FileCollisionResolution> ResolveCollisionAsync(MediFiler3.Application.Operations.FileCollision collision)
         { Collision = collision; ResolvedOnDispatcher = dispatcher.CheckAccess(); return Task.FromResult(Resolution); }
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Button? NativeDialogButton(Microsoft.UI.Xaml.DependencyObject parent, string name)
+    {
+        if (parent is Microsoft.UI.Xaml.Controls.Button button && button.Name == name) return button;
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+            if (NativeDialogButton(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index), name) is { } found) return found;
+        return null;
     }
 }

@@ -361,6 +361,7 @@ internal static partial class Program
         await RunSettingsAndRefreshChecksAsync();
         await RunHomeChecksAsync();
         await RunRootHistoryChecksAsync();
+        await RunWindowLayoutChecksAsync();
     }
 
     private static readonly string[] TextExtensions = [".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".config", ".cs", ".xaml", ".html", ".htm", ".css", ".js", ".ts", ".sql", ".ps1", ".sh", ".srt", ".nfo", ".toml", "README", "LICENSE"];

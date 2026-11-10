@@ -8,7 +8,7 @@ The manual acceptance below supersedes earlier pending-check notes: popup/high-D
 
 ## Collision regression run
 
-241 unit/filesystem tests and 109 native checks passed, zero failures/skips. FileCollisionTests covers repeated-name choices, preservation/undo/redo for files/folders/create-folder, rollback, type/race guards, history blockers, Shell-restore collisions and tampered backups. RootHistoryChecks exercises Browse dialog dispatch, actual renamed selection, grouped overwrite undo/redo, and the real hidden WinUI collision dialog choices/default results/disabled incompatible Overwrite. Physical keyboard, DPI and long-path appearance remain manual. Build/run used an isolated BaseOutputPath while the user app stayed running.
+241 unit/filesystem tests and 116 native checks passed, zero failures/skips. FileCollisionTests covers repeated-name choices, preservation/undo/redo for files/folders/create-folder, rollback, type/race guards, history blockers, Shell-restore collisions and tampered backups. RootHistoryChecks exercises Browse dialog dispatch, actual renamed selection, grouped overwrite undo/redo, and the real hidden WinUI collision dialog choices/default results/disabled incompatible Overwrite. Physical keyboard, DPI and long-path appearance remain manual. Build/run used an isolated BaseOutputPath while the user app stayed running.
 
 ## Root-history regression run
 
@@ -91,3 +91,5 @@ The existing unit/filesystem suite additionally covers navigation boundaries, co
 The user confirms these interactive checks pass. Phase 3 is complete. Cross-session volume/mute/settings persistence remains Phase 4.
 
 The [Phase 4 handover](PHASE4_HANDOVER.md) records step 4.1 completion and the remaining persistence work. Native fixture/codec limits above remain unchanged by user interactive acceptance.
+
+Step 4.5 window placement verification: 258 unit/filesystem tests and 122 native checks pass. WindowLayoutChecks uses isolated SQLite databases and transparent WPF windows to exercise normal/maximized restart, minimized close without losing restore bounds/state, first-show maximization, work-area shrinking and deferred adjustment during interactive resize. Unit tests model monitor removal/rearrangement, DPI and negative coordinates. Real monitor disconnection/mixed-DPI/taskbar relocation remain manual checks.

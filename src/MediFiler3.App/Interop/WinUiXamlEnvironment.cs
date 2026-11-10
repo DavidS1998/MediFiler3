@@ -11,6 +11,7 @@ internal static class WinUiXamlEnvironment
     private static DispatcherQueueController? _dispatcherQueueController;
     private static WindowsXamlManager? _xamlManager;
     private static WinUiXamlApplication? _application;
+    public static bool IsInitialized { get; private set; }
 
     public static void Initialize()
     {
@@ -24,10 +25,12 @@ internal static class WinUiXamlEnvironment
         _xamlManager = WindowsXamlManager.InitializeForCurrentThread();
         _application.InitializeResources();
         WinUiInputMessageFilter.Install();
+        IsInitialized = true;
     }
 
     public static void Shutdown()
     {
+        IsInitialized = false;
         _xamlManager?.Dispose();
         _xamlManager = null;
         _application = null;

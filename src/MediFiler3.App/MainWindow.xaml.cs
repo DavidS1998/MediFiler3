@@ -53,6 +53,7 @@ public partial class MainWindow : Window
     private bool _sourceInitialized;
     private long _historyRequest;
     private CancellationTokenSource? _historyAvailabilityCancellation;
+    private readonly WindowLayoutController _windowLayout;
 
     public Brush TitleBarBackground
     {
@@ -74,7 +75,7 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability, IFileCollisionPreviewService collisionPreviews, IOperationBackupMaintenance backupMaintenance)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability, IFileCollisionPreviewService collisionPreviews, IOperationBackupMaintenance backupMaintenance, WindowLayoutService windowLayout, IWindowPlacementPlatform windowPlacement)
     {
         _homeView = new HomeView(rootHistory, rootAvailability);
         _homeView.AddFoldersRequested += OnLoadFoldersRequested;
@@ -167,6 +168,8 @@ public partial class MainWindow : Window
         UpdateViewerControls();
         SourceInitialized += OnWindowSourceInitialized;
         ApplySidebarLayout();
+        _windowLayout = new WindowLayoutController(this, windowLayout, windowPlacement);
+        _windowLayout.PlacementFailed += exception => _logger.LogWarning(exception, "Could not capture or reconcile window placement.");
         logger.LogInformation("Main window initialized.");
     }
 

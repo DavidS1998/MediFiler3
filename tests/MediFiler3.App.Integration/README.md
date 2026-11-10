@@ -32,3 +32,7 @@ Collision checks use isolated fixtures and stubbed responses for Browse integrat
 Collision presentation checks also wait for both real PNG thumbnails and sizes, validate folder placeholders, and verify one-click numbered Rename without a second dialog, no explanatory body text, and a 24 px inset below the buttons. Browse rename checks assert extension-free initial input.
 
 RootHistoryChecks also opens Settings and drives the actual Clear overwrite backups button and native confirmation. Cancel retains backups/history; Clear removes journal-owned stored versions, retires dependent history, reports completion and leaves the current destination unchanged. All backup storage uses runner-owned fixtures.
+
+ContentDialogChecks drives actual ContentDialog primary/close buttons for file/folder/new-folder naming and trimmed/cancelled results, host close/Escape cancellation and an ownerless warning. Collision and cleanup probes also inspect ContentDialog controls and operate their template buttons. Physical Enter/Tab/focus and DPI remain manual checks.
+
+WindowLayoutChecks uses runner-owned SQLite databases and transparent WPF windows for normal/maximized/minimized restart, first-show maximization and normal restore bounds. A synthetic WM_DISPLAYCHANGE with an injected work-area list exercises real HWND resizing/clamping and deferred adjustment until WM_EXITSIZEMOVE. Pure unit tests cover removed/rearranged monitors, mixed DPI geometry and invalid layouts; physical monitor/DPI/taskbar transitions remain manual.

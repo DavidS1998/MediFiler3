@@ -14,7 +14,8 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
 
 // Bounds are normal restore bounds in logical units; minimized state is never persisted.
 public sealed record WindowLayout(double Left, double Top, double Width, double Height,
-    bool Maximized, double FolderTreeWidth)
+    bool Maximized, double FolderTreeWidth, string? MonitorDeviceName = null,
+    double? MonitorOffsetX = null, double? MonitorOffsetY = null)
 {
     public void Validate()
     {
@@ -22,6 +23,9 @@ public sealed record WindowLayout(double Left, double Top, double Width, double 
             !double.IsFinite(Width) || Width <= 0 || !double.IsFinite(Height) || Height <= 0 ||
             !double.IsFinite(FolderTreeWidth) || FolderTreeWidth <= 0)
             throw new ArgumentOutOfRangeException(nameof(Width), "Layout must contain finite bounds and positive sizes.");
+        if (MonitorOffsetX.HasValue != MonitorOffsetY.HasValue ||
+            MonitorOffsetX is { } x && !double.IsFinite(x) || MonitorOffsetY is { } y && !double.IsFinite(y))
+            throw new ArgumentOutOfRangeException(nameof(MonitorOffsetX), "Monitor offsets must be a finite pair.");
     }
 }
 
