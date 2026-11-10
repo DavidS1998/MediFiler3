@@ -6,6 +6,10 @@ Status: automated native integration has passed; the user confirmed Phase 3 pass
 
 The manual acceptance below supersedes earlier pending-check notes: popup/high-DPI appearance, focus/input, video overlay reachability, audible output/artwork, native external opening, and Browse mutations/undo/redo with active media are accepted by the user. Codec/fixture coverage limitations remain as documented.
 
+## Root-history regression run
+
+195 unit/filesystem tests and 101 native checks passed, zero failures/skips. RootOperationHistoryTests covers isolated undo/redo/branch invalidation, cross-root batches, identity-preserving root rename, overlapping nodes and schema-4 upgrade/rollback. RootHistoryChecks.cs constructs a real MainWindow and verifies startup/root-switch toolbar availability, scoped tooltips and Browse command guards. Native build/run used a temporary BaseOutputPath because the user app locks normal output; physical acceptance of the new behavior remains open.
+
 ## Home refinement regression run
 
 188 unit/filesystem tests and 99 native checks passed, zero failures/skips. Added formatter boundaries/timezone cases, native card containment during grow/shrink up to 3000 px, tooltip-only paths/exact dates, Locate/Remove-only actions and unified all-list removal. Native compact Home capture inspected. Earlier Ignore/recent-only checks below are historical and were replaced. Physical resize/DPI review remains open.

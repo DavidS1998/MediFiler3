@@ -525,14 +525,16 @@ The system must initially support:
 
 ### Behavior
 
-- Undo reverses the most recent successful operation.
-- Redo reapplies the most recently undone operation.
-- Executing a new operation after undoing clears the redo history.
+- Undo reverses the most recent successful operation belonging to the active root folder. Each root has an independent persistent stack; another root's actions must never be offered or executed.
+- Redo reapplies the most recently undone operation in the active root only.
+- Executing a new operation after undoing clears redo history only for that operation's root; redo in other roots is retained.
 - Failed operations must not be recorded as successful.
 - Operations must retain sufficient information to reverse themselves.
 - Filename conflicts must be handled safely.
 - Undo and redo should refresh all affected views and navigation state.
-- Related batch operations should be grouped into a single logical undo operation.
+- Related batch operations should be grouped into a single logical undo operation within their root scope. Cross-root file moves belong to their source root. Folder-menu actions belong to the root containing the target folder.
+
+Use the root's filesystem identity so a root rename preserves its scope. Determine active ownership through actual tree ancestry, including overlapping roots. With no active Browse root, disable Undo/Redo. Cancel pending history work when root context changes or Browse is left; reject stale preview results. Pre-scope journal entries remain stored for recovery/inspection, but cannot be safely assigned to active-root stacks automatically.
 
 ### Persistence
 

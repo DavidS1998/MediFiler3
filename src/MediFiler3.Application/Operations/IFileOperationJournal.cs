@@ -5,6 +5,7 @@ namespace MediFiler3.Application.Operations;
 /// <summary>Append-only persistence boundary for filesystem operation history.</summary>
 public interface IFileOperationJournal
 {
+    IFileOperationJournal ForRoot(string rootIdentity);
     Task AppendPreparedAsync(FileOperationRecord operation, CancellationToken cancellationToken = default);
 
     Task AppendEventAsync(

@@ -10,7 +10,7 @@ namespace MediFiler3.Infrastructure.Persistence;
 /// </summary>
 public sealed class SqliteDatabase : IHostedService
 {
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private bool _initialized;
@@ -155,28 +155,38 @@ public sealed class SqliteDatabase : IHostedService
             await migrate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using var state = connection.CreateCommand();
-        state.Transaction = transaction;
-        state.CommandText = """
-            CREATE TABLE ApplicationSettings (
-                Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
-                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
-                PayloadJson TEXT NOT NULL);
-            CREATE TABLE WindowLayout (
-                Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
-                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
-                PayloadJson TEXT NOT NULL);
-            CREATE TABLE RootFolderHistory (
-                Id TEXT NOT NULL PRIMARY KEY,
-                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
-                PayloadJson TEXT NOT NULL);
-            CREATE TABLE ThumbnailCacheIndex (
-                Id TEXT NOT NULL PRIMARY KEY,
-                PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
-                PayloadJson TEXT NOT NULL);
-            PRAGMA user_version = 4;
+        if (version < 4)
+        {
+            await using var state = connection.CreateCommand();
+            state.Transaction = transaction;
+            state.CommandText = """
+                CREATE TABLE ApplicationSettings (
+                    Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
+                    PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                    PayloadJson TEXT NOT NULL);
+                CREATE TABLE WindowLayout (
+                    Id TEXT NOT NULL PRIMARY KEY CHECK (Id = 'current'),
+                    PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                    PayloadJson TEXT NOT NULL);
+                CREATE TABLE RootFolderHistory (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                    PayloadJson TEXT NOT NULL);
+                CREATE TABLE ThumbnailCacheIndex (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    PayloadVersion INTEGER NOT NULL CHECK (PayloadVersion > 0),
+                    PayloadJson TEXT NOT NULL);
+                """;
+            await state.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        await using var scope = connection.CreateCommand();
+        scope.Transaction = transaction;
+        scope.CommandText = """
+            ALTER TABLE FileOperations ADD COLUMN RootScope TEXT NULL;
+            CREATE INDEX IX_FileOperations_RootScope ON FileOperations(RootScope);
+            PRAGMA user_version = 5;
             """;
-        await state.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await scope.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task CreateJournalSchemaAsync(

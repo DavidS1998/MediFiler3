@@ -334,12 +334,13 @@ public partial class BrowseView : UserControl
 
     private async Task CreateSubfolderAsync(FolderTreeEntry parent)
     {
+        var root = _navigationState.GetRootForFolder(parent);
         var name = await RequireDialogService().PromptTextAsync(
             "New folder", $"Create a folder inside {parent.Name}.", "New folder", "Create");
         if (string.IsNullOrWhiteSpace(name)) return;
 
         await RunFolderOperationAsync(
-            () => _fileOrganizationService.CreateFolderAsync(parent.Path, name),
+            async () => await (await GetRootOperationsAsync(root)).CreateFolderAsync(parent.Path, name),
             preferredFolderPath: _navigationState.ActiveFolder?.Path);
     }
 
@@ -348,6 +349,7 @@ public partial class BrowseView : UserControl
 
     private async Task RenameFolderAsync(FolderTreeEntry folder)
     {
+        var root = _navigationState.GetRootForFolder(folder);
         var name = await RequireDialogService().PromptTextAsync(
             "Rename folder", "Enter the folder's new name.", folder.Name, "Rename");
         if (string.IsNullOrWhiteSpace(name)) return;
@@ -356,7 +358,7 @@ public partial class BrowseView : UserControl
         var mappedActivePath = MapDescendantPath(activePath, folder.Path, destinationPath);
 
         await RunFolderOperationAsync(
-            () => _fileOrganizationService.RenameFolderAsync(folder.Path, name),
+            async () => await (await GetRootOperationsAsync(root)).RenameFolderAsync(folder.Path, name),
             oldPath: folder.Path,
             newPath: destinationPath,
             preferredFolderPath: mappedActivePath);
@@ -364,6 +366,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveFolderAsync(FolderTreeEntry folder)
     {
+        var root = _navigationState.GetRootForFolder(folder);
         var initialPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path)) ?? folder.Path;
         var picker = new Microsoft.Win32.OpenFolderDialog
         {
@@ -378,7 +381,7 @@ public partial class BrowseView : UserControl
         var mappedActivePath = MapDescendantPath(_navigationState.ActiveFolder?.Path, folder.Path, destinationPath);
 
         await RunFolderOperationAsync(
-            () => _fileOrganizationService.MoveFolderAsync(folder.Path, destinationFolder),
+            async () => await (await GetRootOperationsAsync(root)).MoveFolderAsync(folder.Path, destinationFolder),
             oldPath: folder.Path,
             newPath: destinationPath,
             preferredFolderPath: mappedActivePath);
@@ -386,11 +389,13 @@ public partial class BrowseView : UserControl
 
     private async Task DeleteFolderAsync(FolderTreeEntry folder)
     {
+        var root = _navigationState.GetRootForFolder(folder);
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
         var fallbackPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path));
         var mappedActivePath = IsPathWithin(activePath, folder.Path) ? fallbackPath : activePath;
-        var result = await _fileOrganizationService.SendToRecycleBinAsync(folder.Path, isDirectory: true);
+        var operations = await GetRootOperationsAsync(root);
+        var result = await operations.SendToRecycleBinAsync(folder.Path, isDirectory: true);
         if (result.Outcome == FileOrganizationOutcome.ConfirmationRequired)
         {
             var confirmed = await RequireDialogService().ConfirmAsync(
@@ -398,7 +403,7 @@ public partial class BrowseView : UserControl
                 $"'{folder.Name}' contains files or subfolders. Send the folder and all its contents to the Windows Recycle Bin?\n\n{folder.Path}",
                 "Send to Recycle Bin");
             if (!confirmed) return;
-            result = await _fileOrganizationService.SendToRecycleBinAsync(
+            result = await operations.SendToRecycleBinAsync(
                 folder.Path, isDirectory: true, confirmNonEmptyDirectory: true);
         }
 
@@ -431,6 +436,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
+        var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null)
@@ -444,7 +450,7 @@ public partial class BrowseView : UserControl
         var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
         try
         {
-            var result = await _fileOrganizationService.MoveFileAsync(currentFile.FullPath, destination.Path);
+            var result = await (await GetRootOperationsAsync(root, requireActive: true)).MoveFileAsync(currentFile.FullPath, destination.Path);
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -465,6 +471,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null) return;
@@ -473,7 +480,7 @@ public partial class BrowseView : UserControl
         if (string.IsNullOrWhiteSpace(name)) return;
         try
         {
-            var result = await _fileOrganizationService.RenameFileAsync(currentFile.FullPath, name);
+            var result = await (await GetRootOperationsAsync(root, requireActive: true)).RenameFileAsync(currentFile.FullPath, name);
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -498,6 +505,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
+        var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null) return;
@@ -506,7 +514,7 @@ public partial class BrowseView : UserControl
         var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
         try
         {
-            var result = await _fileOrganizationService.SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
+            var result = await (await GetRootOperationsAsync(root, requireActive: true)).SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -529,13 +537,26 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        if (_historyBusy) return;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
+        var root = _navigationState.ActiveRoot;
+        if (root is null || !_viewerActive) return;
+        using var cancellation = new CancellationTokenSource();
+        _historyCancellation = cancellation;
+        _historyBusy = true;
+        void OnContextChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (!ReferenceEquals(root, _navigationState.ActiveRoot)) cancellation.Cancel();
+        }
+        _navigationState.PropertyChanged += OnContextChanged;
         try
         {
+            var operations = await GetRootOperationsAsync(root, requireActive: true, cancellation.Token);
             var result = undo
-                ? await _fileOrganizationService.UndoAsync()
-                : await _fileOrganizationService.RedoAsync();
+                ? await operations.UndoAsync(cancellation.Token)
+                : await operations.RedoAsync(cancellation.Token);
+            if (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive) return;
             ShowOperationNotice(result.Message);
             if (result.SucceededCount > 0) OperationHistoryChanged?.Invoke();
             if (result.SucceededCount == 0) return;
@@ -559,10 +580,12 @@ public partial class BrowseView : UserControl
             await RefreshFolderTreeAsync(preferredPath, pathMappings: pathMappings, preferredFilePath: preferredFilePath,
                 mapPreferredFolderWithMappings: false);
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception exception) when (IsOperationUiException(exception))
         {
             ShowOperationNotice($"Could not {(undo ? "undo" : "redo")} the operation: {exception.Message}");
         }
+        finally { _navigationState.PropertyChanged -= OnContextChanged; _historyBusy = false; _historyCancellation = null; }
     }
 
     private async Task RunFolderOperationAsync(
@@ -814,6 +837,8 @@ public partial class BrowseView : UserControl
 
     public void StopBackgroundFolderCounts()
     {
+        _historyCancellation?.Cancel();
+        _viewerActive = false;
         CompositionTarget.Rendering -= OnVideoSurfaceRendering;
         _navigationController.CancelPendingNavigation();
         _loadCancellation?.Cancel();
@@ -1383,7 +1408,20 @@ public partial class BrowseView : UserControl
         ViewerHost.LoadAsync(_navigationState.CurrentFile, clearCurrentImage, immediatePreview);
 
     public void ResetZoomToFit() => ViewerHost.ResetZoomToFit();
-    public void SetViewerActive(bool active) => ViewerHost.SetActive(active);
+    private bool _viewerActive = true;
+    private bool _historyBusy;
+    private CancellationTokenSource? _historyCancellation;
+    public void SetViewerActive(bool active) { _viewerActive = active; if (!active) _historyCancellation?.Cancel(); ViewerHost.SetActive(active); }
+
+    private async Task<IFileOrganizationService> GetRootOperationsAsync(FolderTreeEntry? root,
+        bool requireActive = false, CancellationToken token = default)
+    {
+        if (root is null) throw new InvalidOperationException("Select a folder in a loaded root first.");
+        var service = await _fileOrganizationService.ForRootAsync(root.Path, token);
+        if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive)))
+            throw new InvalidOperationException("The active root changed before the command could run.");
+        return service;
+    }
 
     private void ClearActivePresentation(string message, string detail)
     {

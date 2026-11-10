@@ -23,6 +23,7 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
     public string Name { get; }
     public string Path { get; }
     public bool IsRoot { get; }
+    public FolderTreeEntry? Parent { get; private set; }
     public ReadOnlyObservableCollection<FolderTreeEntry> Children { get; }
     public bool HasChildren => Children.Count > 0;
     public bool IsExpanded
@@ -57,6 +58,7 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
 
     public void AddChild(FolderTreeEntry child)
     {
+        child.Parent = this;
         _children.Add(child);
         var previousTotal = child.TotalFileCount;
         if (previousTotal is { } known) _knownChildFileCount += known;

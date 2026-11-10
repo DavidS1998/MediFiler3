@@ -26,7 +26,8 @@ public sealed record FileOperationRecord(
     DateTimeOffset CreatedUtc,
     int PayloadVersion,
     string? PayloadJson,
-    Guid? CompensatesOperationId = null);
+    Guid? CompensatesOperationId = null,
+    string? RootScope = null);
 
 public sealed record FileOperationEvent(
     long Sequence,

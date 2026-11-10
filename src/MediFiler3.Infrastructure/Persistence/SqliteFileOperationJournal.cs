@@ -5,12 +5,24 @@ using Microsoft.Data.Sqlite;
 
 namespace MediFiler3.Infrastructure.Persistence;
 
-public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileOperationJournal
+public sealed class SqliteFileOperationJournal(SqliteDatabase database, string? rootScope = null) : IFileOperationJournal
 {
+    public IFileOperationJournal ForRoot(string rootIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootIdentity);
+        return new SqliteFileOperationJournal(database, rootIdentity);
+    }
+
     public async Task AppendPreparedAsync(
         FileOperationRecord operation,
         CancellationToken cancellationToken = default)
     {
+        if (rootScope is not null)
+        {
+            if (operation.RootScope is not null && operation.RootScope != rootScope)
+                throw new InvalidOperationException("Operation belongs to another root.");
+            operation = operation with { RootScope = rootScope };
+        }
         if (operation.Id == Guid.Empty || operation.PayloadVersion < 0)
         {
             throw new ArgumentException("Operation ID and payload version are invalid.", nameof(operation));
@@ -18,15 +30,22 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
 
         await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        if (operation.CompensatesOperationId is { } originalId)
+        {
+            var original = await ReadOperationAsync(connection, (SqliteTransaction)transaction, originalId, cancellationToken).ConfigureAwait(false);
+            if (original is null || original.Operation.RootScope != operation.RootScope)
+                throw new InvalidOperationException("Compensation must belong to the original root.");
+        }
         await using (var insert = connection.CreateCommand())
         {
             insert.Transaction = (SqliteTransaction)transaction;
             insert.CommandText = """
                 INSERT INTO FileOperations
                     (Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc, PayloadVersion, PayloadJson,
-                     CompensatesOperationId)
-                VALUES ($id, $batch, $kind, $source, $destination, $created, $payloadVersion, $payload, $compensates);
+                     CompensatesOperationId, RootScope)
+                VALUES ($id, $batch, $kind, $source, $destination, $created, $payloadVersion, $payload, $compensates, $root);
                 """;
+            insert.Parameters.AddWithValue("$root", (object?)operation.RootScope ?? DBNull.Value);
             insert.Parameters.AddWithValue("$id", operation.Id.ToString("D"));
             insert.Parameters.AddWithValue("$batch", (object?)operation.BatchId?.ToString("D") ?? DBNull.Value);
             insert.Parameters.AddWithValue("$kind", operation.Kind.ToString());
@@ -43,7 +62,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
             FileOperationEventKind.Prepared, operation.CreatedUtc, null, cancellationToken).ConfigureAwait(false);
         if (operation.CompensatesOperationId is null)
         {
-            await InvalidateRedoPathAsync(connection, (SqliteTransaction)transaction, cancellationToken)
+            await InvalidateRedoPathAsync(connection, (SqliteTransaction)transaction, operation.RootScope, cancellationToken)
                 .ConfigureAwait(false);
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -58,6 +77,12 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
         await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
+        if (rootScope is not null)
+        {
+            var record = await ReadOperationAsync(connection, (SqliteTransaction)transaction, operationId, cancellationToken).ConfigureAwait(false);
+            if (record is null || record.Operation.RootScope != rootScope)
+                throw new InvalidOperationException("Operation belongs to another root.");
+        }
         var current = await GetLatestEventAsync(connection, (SqliteTransaction)transaction, operationId, cancellationToken)
             .ConfigureAwait(false);
         if (current is null)
@@ -79,7 +104,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var operation = await ReadOperationAsync(connection, null, operationId, cancellationToken).ConfigureAwait(false);
-        return operation is null ? null : operation with
+        return operation is null || (rootScope is not null && operation.Operation.RootScope != rootScope) ? null : operation with
         {
             Events = await ReadEventsAsync(connection, null, operationId, cancellationToken).ConfigureAwait(false)
         };
@@ -90,7 +115,8 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
     {
         await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id FROM FileOperations WHERE BatchId = $batch ORDER BY CreatedUtc, rowid;";
+        command.CommandText = "SELECT Id FROM FileOperations WHERE BatchId = $batch AND RootScope IS $root ORDER BY CreatedUtc, rowid;";
+        command.Parameters.AddWithValue("$root", (object?)rootScope ?? DBNull.Value);
         command.Parameters.AddWithValue("$batch", batchId.ToString("D"));
         var ids = new List<Guid>();
         await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
@@ -162,12 +188,13 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
             SELECT o.Id
             FROM FileOperations o
             JOIN FileOperationEvents e ON e.OperationId = o.Id
-            WHERE o.CompensatesOperationId IS NULL
+            WHERE o.CompensatesOperationId IS NULL AND o.RootScope IS $root
               AND e.Sequence = (SELECT MAX(last.Sequence) FROM FileOperationEvents last WHERE last.OperationId = o.Id)
               AND (e.Kind = $first OR ($second IS NOT NULL AND e.Kind = $second))
             ORDER BY e.Sequence DESC
             LIMIT 1;
             """;
+        command.Parameters.AddWithValue("$root", (object?)rootScope ?? DBNull.Value);
         command.Parameters.AddWithValue("$first", firstState);
         command.Parameters.AddWithValue("$second", (object?)secondState ?? DBNull.Value);
         var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -177,6 +204,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
     private static async Task InvalidateRedoPathAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
+        string? scope,
         CancellationToken cancellationToken)
     {
         await using var query = connection.CreateCommand();
@@ -184,10 +212,11 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
         query.CommandText = """
             SELECT o.Id FROM FileOperations o
             JOIN FileOperationEvents e ON e.OperationId = o.Id
-            WHERE o.CompensatesOperationId IS NULL
+            WHERE o.CompensatesOperationId IS NULL AND o.RootScope IS $root
               AND e.Sequence = (SELECT MAX(last.Sequence) FROM FileOperationEvents last WHERE last.OperationId = o.Id)
               AND e.Kind = 'Undone';
             """;
+        query.Parameters.AddWithValue("$root", (object?)scope ?? DBNull.Value);
         var ids = new List<Guid>();
         await using (var reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -270,7 +299,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
         command.Transaction = transaction;
         command.CommandText = """
             SELECT Id, BatchId, Kind, SourcePath, DestinationPath, CreatedUtc, PayloadVersion, PayloadJson,
-                   CompensatesOperationId
+                   CompensatesOperationId, RootScope
             FROM FileOperations WHERE Id = $id;
             """;
         command.Parameters.AddWithValue("$id", id.ToString("D"));
@@ -281,7 +310,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database) : IFileO
             Enum.Parse<FileOperationKind>(reader.GetString(2)), reader.IsDBNull(3) ? null : reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4), DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
             reader.GetInt32(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-            reader.IsDBNull(8) ? null : Guid.Parse(reader.GetString(8)));
+            reader.IsDBNull(8) ? null : Guid.Parse(reader.GetString(8)), reader.IsDBNull(9) ? null : reader.GetString(9));
         return new JournaledFileOperation(operation, []);
     }
 

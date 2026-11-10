@@ -24,3 +24,5 @@ The root-history native check uses the real SQLite service at Browse root public
 HomeChecks.cs exercises service-backed native Home cards via automation peers (stars, opening, missing-root choices and recent-only removal), responsive/empty/reopen cases and stale availability. It saves home-cards.png via native RenderTargetBitmap for visual inspection. Real folder picker and physical drag/drop remain manual checks.
 
 Home refinements: current checks use Locate/Remove only and unified all-list removal, verify tooltip-only paths/exact timestamps, and grow/shrink through 3000 px to check card containment. Earlier Ignore/recent-only behavior has been removed.
+
+RootHistoryChecks.cs uses the real MainWindow to verify per-root Undo/Redo button/tooltip availability and direct Browse execution after root switches. Journal fixtures are isolated from the user database. If a running app locks output, pass a separate BaseOutputPath consistently to build and run.

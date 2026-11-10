@@ -50,6 +50,7 @@ public sealed record FileOrganizationHistoryPreview(
 /// <summary>Application-owned use cases for journaled file and folder changes.</summary>
 public interface IFileOrganizationService
 {
+    Task<IFileOrganizationService> ForRootAsync(string rootPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> MoveFileAsync(string sourceFilePath, string destinationFolderPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> RenameFileAsync(string sourceFilePath, string newName, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> CreateFolderAsync(string parentFolderPath, string name, CancellationToken cancellationToken = default);

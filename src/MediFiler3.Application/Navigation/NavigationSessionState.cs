@@ -13,10 +13,23 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public ObservableCollection<FolderTreeEntry> Roots { get; } = [];
     public ObservableCollection<FileEntry> Files { get; } = [];
+    public FolderTreeEntry? ActiveRoot => GetRootForFolder(ActiveFolder);
+    public FolderTreeEntry? GetRootForFolder(FolderTreeEntry? folder)
+    {
+        if (folder is null) return null;
+        while (folder.Parent is not null) folder = folder.Parent;
+        return Roots.Contains(folder) ? folder : null;
+    }
+
     public FolderTreeEntry? ActiveFolder
     {
         get => _activeFolder;
-        private set => SetProperty(ref _activeFolder, value);
+        private set
+        {
+            var previousRoot = ActiveRoot;
+            if (SetProperty(ref _activeFolder, value) && !ReferenceEquals(previousRoot, ActiveRoot))
+                OnPropertyChanged(nameof(ActiveRoot));
+        }
     }
 
     public FileEntry? CurrentFile
@@ -43,6 +56,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
             Roots.Add(root);
         }
 
+        OnPropertyChanged(nameof(ActiveRoot));
         if (!preserveActiveContext)
         {
             ActiveFolder = null;

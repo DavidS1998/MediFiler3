@@ -42,6 +42,10 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private bool _refreshEnabled;
     private AppBarButton? _renameFileButton;
     private AppBarButton? _deleteFileButton;
+    private bool _canUndo;
+    private bool _canRedo;
+    private FileOrganizationHistoryPreview? _undoPreview;
+    private FileOrganizationHistoryPreview? _redoPreview;
     private AppBarButton? _undoButton;
     private AppBarButton? _redoButton;
     private string _folderTitleText = "MediFiler3";
@@ -245,6 +249,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public void SetHistoryAvailability(bool canUndo, bool canRedo,
         FileOrganizationHistoryPreview? undoPreview = null, FileOrganizationHistoryPreview? redoPreview = null)
     {
+        _canUndo = canUndo; _canRedo = canRedo;
+        _undoPreview = undoPreview; _redoPreview = redoPreview;
         if (_undoButton is not null)
         {
             _undoButton.IsEnabled = canUndo;
@@ -393,6 +399,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _textToolbar = null;
         _mediaToolbar = null;
         _externalToolbar = null;
+        _undoButton = null; _redoButton = null;
         _refreshButton = null;
         _renameFileButton = null;
         _deleteFileButton = null;
@@ -453,6 +460,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _deleteFileButton = CreateButton(Symbol.Delete, "Send current file to Recycle Bin", () => DeleteFileRequested?.Invoke());
         _undoButton = CreateButton(Symbol.Undo, "Undo last file operation", () => UndoRequested?.Invoke());
         _redoButton = CreateButton(Symbol.Redo, "Redo last file operation", () => RedoRequested?.Invoke());
+        SetHistoryAvailability(_canUndo, _canRedo, _undoPreview, _redoPreview);
         _renameFileButton.IsEnabled = _fileActionsEnabled;
         _deleteFileButton.IsEnabled = _fileActionsEnabled;
         middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));

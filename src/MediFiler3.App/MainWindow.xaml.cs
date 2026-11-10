@@ -51,6 +51,8 @@ public partial class MainWindow : Window
     private readonly IFileOperationJournal _operationJournal;
     private readonly IFileOrganizationService _fileOrganizationService;
     private bool _sourceInitialized;
+    private long _historyRequest;
+    private CancellationTokenSource? _historyAvailabilityCancellation;
 
     public Brush TitleBarBackground
     {
@@ -95,7 +97,7 @@ public partial class MainWindow : Window
         _browseView.SetFolderPinned(settings.Current.FolderTreePinned);
         _browseView.AudioSettingsChanged += (volume, muted) => settings.Update(s => s with { Volume = volume, Muted = muted });
         _browseView.FolderPinChanged += pinned => settings.Update(s => s with { FolderTreePinned = pinned });
-        Closed += (_, _) => { _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
+        Closed += (_, _) => { _historyAvailabilityCancellation?.Cancel(); _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount);
         _settingsView.CarouselNeighborCountChanged += count =>
         {
@@ -228,6 +230,7 @@ public partial class MainWindow : Window
 
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(NavigationSessionState.ActiveRoot)) _ = UpdateHistoryAvailabilityAsync();
         if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files) or
             nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.CurrentFile))
         {
@@ -247,35 +250,30 @@ public partial class MainWindow : Window
 
     private async Task UpdateHistoryAvailabilityAsync()
     {
+        var request = ++_historyRequest;
+        _historyAvailabilityCancellation?.Cancel();
+        _historyAvailabilityCancellation?.Dispose();
+        _historyAvailabilityCancellation = new CancellationTokenSource();
+        var token = _historyAvailabilityCancellation.Token;
+        var root = _navigationState.ActiveRoot;
+        ToolbarIsland.SetHistoryAvailability(false, false);
+        if (root is null || PageContent.Content != _browseView) return;
         try
         {
-            var undo = await _operationJournal.GetNextUndoAsync();
-            var redo = await _operationJournal.GetNextRedoAsync();
-            var isBrowseVisible = PageContent.Content == _browseView;
-            var undoPreview = isBrowseVisible
-                ? await _fileOrganizationService.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo)
-                : null;
-            var redoPreview = isBrowseVisible
-                ? await _fileOrganizationService.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo)
-                : null;
-            var canUndo = isBrowseVisible && IsHistoryOperationSupported(undo) && undoPreview is not null;
-            var canRedo = isBrowseVisible && IsHistoryOperationSupported(redo) && redoPreview is not null;
-            ToolbarIsland.SetHistoryAvailability(canUndo, canRedo,
-                canUndo ? undoPreview : null, canRedo ? redoPreview : null);
+            var operations = await _fileOrganizationService.ForRootAsync(root.Path, token);
+            var undo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo, token);
+            var redo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo, token);
+            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView) return;
+            ToolbarIsland.SetHistoryAvailability(undo is not null, redo is not null, undo, redo);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception exception) when (exception is IOException or InvalidOperationException or
                                            System.Security.SecurityException or System.Text.Json.JsonException)
         {
-            _logger.LogWarning(exception, "Could not update operation history commands.");
-            ToolbarIsland.SetHistoryAvailability(false, false);
+            _logger.LogWarning(exception, "Could not update root operation history commands.");
+            if (request == _historyRequest) ToolbarIsland.SetHistoryAvailability(false, false);
         }
     }
-
-    private static bool IsHistoryOperationSupported(MediFiler3.Domain.Operations.JournaledFileOperation? entry) =>
-        entry?.Operation.Kind is MediFiler3.Domain.Operations.FileOperationKind.Move or
-            MediFiler3.Domain.Operations.FileOperationKind.Rename or
-            MediFiler3.Domain.Operations.FileOperationKind.CreateFolder or
-            MediFiler3.Domain.Operations.FileOperationKind.SendToRecycleBin;
 
     private void UpdateFileActionAvailability()
     {

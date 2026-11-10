@@ -15,6 +15,15 @@ public sealed class FileSystemFileOrganizationService(
 {
     private const int PayloadVersion = 1;
 
+    public async Task<IFileOrganizationService> ForRootAsync(string rootPath, CancellationToken cancellationToken = default)
+    {
+        var path = Path.GetFullPath(rootPath);
+        var identity = await Task.Run(() => { EnsureFolder(path); return identities.GetIdentity(path); }, cancellationToken).ConfigureAwait(false);
+        if (!identity.Exists || !identity.Accessible || identity.Identity is null)
+            throw new IOException("The root folder identity could not be verified.");
+        return new FileSystemFileOrganizationService(journal.ForRoot(identity.Identity), identities, recycleBinRestoreService);
+    }
+
     public Task<FileOrganizationResult> MoveFileAsync(
         string sourceFilePath,
         string destinationFolderPath,
