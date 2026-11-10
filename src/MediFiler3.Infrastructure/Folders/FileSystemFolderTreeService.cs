@@ -98,6 +98,15 @@ public sealed class FileSystemFolderTreeService : IFolderTreeService
             {
                 var childPath = childInfo.FullName;
                 cancellationToken.ThrowIfCancellationRequested();
+                const string backupPrefix = ".MediFiler3-Undo-";
+                if (childInfo.Name.StartsWith(backupPrefix, StringComparison.Ordinal) &&
+                    Guid.TryParseExact(childInfo.Name[backupPrefix.Length..], "N", out _) &&
+                    childInfo.Attributes.HasFlag(FileAttributes.Hidden)) continue;
+                const string storagePrefix = ".MediFiler3-UndoBackups-";
+                if (childInfo.Name.StartsWith(storagePrefix, StringComparison.Ordinal) &&
+                    childInfo.Name.Length == storagePrefix.Length + 16 &&
+                    childInfo.Name[storagePrefix.Length..].All(Uri.IsHexDigit) &&
+                    childInfo.Attributes.HasFlag(FileAttributes.Hidden)) continue;
                 try
                 {
                     var attributes = childInfo.Attributes;

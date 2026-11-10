@@ -18,7 +18,7 @@ using GridUnitType = Microsoft.UI.Xaml.GridUnitType;
 
 namespace MediFiler3.Interop;
 
-public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
+public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 {
     private DesktopWindowXamlSource? _xamlSource;
     private TextBlock? _folderDetails;
@@ -92,6 +92,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             ResizeMode = System.Windows.ResizeMode.NoResize,
             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
             Owner = owner,
+            Opacity = owner.Opacity,
+            ShowActivated = owner.ShowActivated,
             ShowInTaskbar = false,
             Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 0))
         };
@@ -183,12 +185,13 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
                 Spacing = 8
             };
             var cancel = new Microsoft.UI.Xaml.Controls.Button { Content = "Cancel", MinWidth = 100 };
-            cancel.Click += (_, _) => window.Close();
+            cancel.Click += (_, _) => window.Dispatcher.BeginInvoke(new Action(window.Close));
+            cancel.Loaded += (_, _) => cancel.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
             var confirm = new Microsoft.UI.Xaml.Controls.Button { Content = confirmAction, MinWidth = 150 };
             confirm.Click += (_, _) =>
             {
                 confirmed = true;
-                window.Close();
+                window.Dispatcher.BeginInvoke(new Action(window.Close));
             };
             buttons.Children.Add(cancel);
             buttons.Children.Add(confirm);
@@ -203,6 +206,54 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         return Task.FromResult(confirmed);
     }
 
+    public Task<FileCollisionResolution> ResolveCollisionAsync(FileCollision collision)
+    {
+        var owner = System.Windows.Window.GetWindow(this);
+        if (owner is null) return Task.FromResult(new FileCollisionResolution(FileCollisionChoice.Cancel));
+        var window = CreateDialogWindow(owner, "Name collision", 720, 420);
+        using var previewsCancellation = new CancellationTokenSource();
+        window.Closed += (_, _) => previewsCancellation.Cancel();
+        var host = new WinUiDialogIsland();
+        window.Content = host;
+        var choice = FileCollisionChoice.Cancel;
+        window.ContentRendered += (_, _) =>
+        {
+            var content = new StackPanel { Spacing = 16, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Top };
+            content.Children.Add(CreateCollisionComparison(collision, previewsCancellation.Token));
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right };
+            foreach (var option in new[] { FileCollisionChoice.Rename, FileCollisionChoice.Overwrite, FileCollisionChoice.Cancel })
+            {
+                var button = new Microsoft.UI.Xaml.Controls.Button { Content = option.ToString(), MinWidth = 100,
+                    IsEnabled = option switch
+                    {
+                        FileCollisionChoice.Overwrite => collision.CanOverwrite,
+                        FileCollisionChoice.Rename => !string.IsNullOrWhiteSpace(collision.SuggestedName),
+                        _ => true
+                    } };
+                if (option == FileCollisionChoice.Rename) ToolTipService.SetToolTip(button, $"Rename to {collision.SuggestedName}");
+                if (option == FileCollisionChoice.Overwrite && collision.IsDirectory && collision.CanOverwrite)
+                    ToolTipService.SetToolTip(button, "Replace the whole destination folder, including its contents; preserve it for Undo.");
+                button.Click += (_, _) => { choice = option; window.Dispatcher.BeginInvoke(new Action(window.Close)); };
+                if (option == FileCollisionChoice.Cancel) button.Loaded += (_, _) => button.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                buttons.Children.Add(button);
+            }
+            content.Children.Add(buttons);
+            content.SizeChanged += (_, _) =>
+            {
+                // The native island cannot supply WPF SizeToContent measurements.
+                // Fit its content plus the 24 px insets and the actual window chrome.
+                var chrome = Math.Max(0, window.ActualHeight - host.ActualHeight);
+                window.Height = Math.Ceiling(content.ActualHeight + 48 + chrome);
+            };
+            host.RootElement!.Children.Add(new Border { Padding = new Thickness(24), Child = content });
+        };
+        window.PreviewKeyDown += (_, args) => { if (args.Key == System.Windows.Input.Key.Escape) { args.Handled = true; window.Close(); } };
+        window.ShowDialog();
+        return Task.FromResult(new FileCollisionResolution(choice,
+            choice == FileCollisionChoice.Rename ? collision.SuggestedName : null));
+    }
+
     private static System.Windows.Window CreateDialogWindow(System.Windows.Window owner, string title, double width, double height) =>
         new()
         {
@@ -212,6 +263,8 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
             ResizeMode = System.Windows.ResizeMode.NoResize,
             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner,
             Owner = owner,
+            Opacity = owner.Opacity,
+            ShowActivated = owner.ShowActivated,
             ShowInTaskbar = false,
             Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 0, 0))
         };

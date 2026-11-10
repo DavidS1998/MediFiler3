@@ -52,7 +52,7 @@ public sealed class ApplicationPersistenceTests
         Assert.Equal(0, (await journal.GetAsync(completed))!.Operation.PayloadVersion);
         Assert.Equal(3L, await ScalarAsync(temp.DatabasePath, "SELECT count(*) FROM FileOperationsV1;"));
         await new SqliteApplicationStateStore(reopened).SaveAsync(new ApplicationSettings(Muted: true));
-        Assert.Equal(5L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
     }
 
     [Fact]
@@ -138,6 +138,7 @@ public sealed class ApplicationPersistenceTests
             before.Add((await temp.Journal.GetAsync(operation.Id))!);
 
         await MakeLegacyAsync(temp, version);
+        SqliteConnection.ClearAllPools(); // Simulate restarting after constructing the legacy schema.
         var database = new SqliteDatabase(temp.DatabasePath);
         await database.InitializeAsync();
         await database.InitializeAsync();
@@ -154,7 +155,7 @@ public sealed class ApplicationPersistenceTests
         Assert.Equal(redo.Id, (await journal.GetNextRedoAsync())!.Operation.Id);
         Assert.Equal(pending.Id, Assert.Single(await journal.GetIncompleteAsync()).Operation.Id);
         await new SqliteApplicationStateStore(database).SaveAsync(new ApplicationSettings(Volume: 0.9));
-        Assert.Equal(5L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
     }
 
     [Theory]
@@ -165,6 +166,7 @@ public sealed class ApplicationPersistenceTests
         using var temp = new TemporaryDatabase();
         await temp.Database.InitializeAsync();
         await MakeLegacyAsync(temp, version);
+        SqliteConnection.ClearAllPools();
         // Force failure after journal migration and the first new state table have executed.
         await ExecuteAsync(temp.DatabasePath, "CREATE TABLE WindowLayout (Unexpected TEXT);");
         var database = new SqliteDatabase(temp.DatabasePath);
@@ -177,7 +179,7 @@ public sealed class ApplicationPersistenceTests
                 "SELECT count(*) FROM pragma_table_info('FileOperations') WHERE name = 'CompensatesOperationId';"));
         await ExecuteAsync(temp.DatabasePath, "DROP TABLE WindowLayout;");
         await database.InitializeAsync();
-        Assert.Equal(5L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
     }
 
     [Fact]
@@ -188,7 +190,7 @@ public sealed class ApplicationPersistenceTests
         await ExecuteAsync(temp.DatabasePath, "PRAGMA user_version = 99;");
         await Assert.ThrowsAsync<InvalidOperationException>(() => new SqliteDatabase(temp.DatabasePath).InitializeAsync());
         Assert.Equal(99L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
-        await ExecuteAsync(temp.DatabasePath, "PRAGMA user_version = 5; INSERT INTO ApplicationSettings VALUES ('current', 99, '{}');");
+        await ExecuteAsync(temp.DatabasePath, "PRAGMA user_version = 6; INSERT INTO ApplicationSettings VALUES ('current', 99, '{}');");
         var store = (IApplicationSettingsStore)new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
         await Assert.ThrowsAsync<InvalidDataException>(() => store.LoadAsync());
         Assert.Equal(99L, await ScalarAsync(temp.DatabasePath, "SELECT PayloadVersion FROM ApplicationSettings;"));

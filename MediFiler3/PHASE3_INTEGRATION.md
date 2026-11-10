@@ -6,6 +6,10 @@ Status: automated native integration has passed; the user confirmed Phase 3 pass
 
 The manual acceptance below supersedes earlier pending-check notes: popup/high-DPI appearance, focus/input, video overlay reachability, audible output/artwork, native external opening, and Browse mutations/undo/redo with active media are accepted by the user. Codec/fixture coverage limitations remain as documented.
 
+## Collision regression run
+
+241 unit/filesystem tests and 109 native checks passed, zero failures/skips. FileCollisionTests covers repeated-name choices, preservation/undo/redo for files/folders/create-folder, rollback, type/race guards, history blockers, Shell-restore collisions and tampered backups. RootHistoryChecks exercises Browse dialog dispatch, actual renamed selection, grouped overwrite undo/redo, and the real hidden WinUI collision dialog choices/default results/disabled incompatible Overwrite. Physical keyboard, DPI and long-path appearance remain manual. Build/run used an isolated BaseOutputPath while the user app stayed running.
+
 ## Root-history regression run
 
 195 unit/filesystem tests and 101 native checks passed, zero failures/skips. RootOperationHistoryTests covers isolated undo/redo/branch invalidation, cross-root batches, identity-preserving root rename, overlapping nodes and schema-4 upgrade/rollback. RootHistoryChecks.cs constructs a real MainWindow and verifies startup/root-switch toolbar availability, scoped tooltips and Browse command guards. Native build/run used a temporary BaseOutputPath because the user app locks normal output; physical acceptance of the new behavior remains open.

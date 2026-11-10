@@ -74,7 +74,7 @@ public partial class MainWindow : Window
 
     public MainWindow(ILogger<MainWindow> logger, IFolderTreeService folderTreeService, IFileListingService fileListingService,
         NavigationSessionState navigationState, WicImageDecoder imageDecoder, IThumbnailService thumbnailService,
-        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability)
+        IFileOrganizationService fileOrganizationService, IFileOperationJournal operationJournal, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, ApplicationSettingsService settings, RootFolderHistoryService rootHistory, IRootFolderAvailabilityService rootAvailability, IFileCollisionPreviewService collisionPreviews, IOperationBackupMaintenance backupMaintenance)
     {
         _homeView = new HomeView(rootHistory, rootAvailability);
         _homeView.AddFoldersRequested += OnLoadFoldersRequested;
@@ -105,6 +105,25 @@ public partial class MainWindow : Window
             settings.Update(s => s with { CarouselIconCount = count * 2 + 1 });
         };
         InitializeComponent();
+        ToolbarIsland.CollisionPreviews = collisionPreviews;
+        _settingsView.ClearBackupsRequested = async () =>
+        {
+            if (!await ToolbarIsland.ConfirmAsync("Clear overwrite backups",
+                "Permanently delete stored overwrite backups? Undo and Redo will be removed for the affected operations. Current files will remain in place.", "Clear backups")) return;
+            _settingsView.SetBackupCleanupStatus("Clearing overwrite backups…");
+            try
+            {
+                var result = await backupMaintenance.ClearAsync();
+                _settingsView.SetBackupCleanupStatus($"Cleared {result.RemovedCount} backups." +
+                    (result.Issues.Count == 0 ? string.Empty : $" {result.Issues.Count} backups could not be cleared.\n" + string.Join("\n", result.Issues.Take(3))));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
+            {
+                _logger.LogWarning(exception, "Could not clear overwrite backups.");
+                _settingsView.SetBackupCleanupStatus($"Could not finish clearing backups: {exception.Message}");
+            }
+            finally { await UpdateHistoryAvailabilityAsync(); }
+        };
         _browseView.DialogService = ToolbarIsland;
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;

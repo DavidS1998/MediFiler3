@@ -1,4 +1,5 @@
 using MediFiler3.Infrastructure.Persistence;
+using MediFiler3.Infrastructure.Operations;
 using Microsoft.Data.Sqlite;
 
 namespace MediFiler3.Infrastructure.Tests;
@@ -13,11 +14,13 @@ internal sealed class TemporaryDatabase : IDisposable
         DatabasePath = Path.Combine(_directory, "journal.db");
         Database = new SqliteDatabase(DatabasePath);
         Journal = new SqliteFileOperationJournal(Database);
+        Backups = new FileSystemOperationBackupStore(Journal, new WindowsFileIdentityProvider(), Path.Combine(_directory, "app-managed", "UndoBackups"));
     }
 
     public string DatabasePath { get; }
     public SqliteDatabase Database { get; }
     public SqliteFileOperationJournal Journal { get; }
+    public FileSystemOperationBackupStore Backups { get; }
 
     public void Dispose()
     {

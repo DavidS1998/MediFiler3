@@ -8,7 +8,8 @@ public enum FileOrganizationOutcome
     Failed,
     RecoveryRequired,
     ConfirmationRequired,
-    Conflict
+    Conflict,
+    Cancelled
 }
 
 public sealed record FileOrganizationResult(
@@ -51,6 +52,7 @@ public sealed record FileOrganizationHistoryPreview(
 public interface IFileOrganizationService
 {
     Task<IFileOrganizationService> ForRootAsync(string rootPath, CancellationToken cancellationToken = default);
+    IFileOrganizationService WithCollisionResolver(IFileCollisionResolver resolver);
     Task<FileOrganizationResult> MoveFileAsync(string sourceFilePath, string destinationFolderPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> RenameFileAsync(string sourceFilePath, string newName, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> CreateFolderAsync(string parentFolderPath, string name, CancellationToken cancellationToken = default);

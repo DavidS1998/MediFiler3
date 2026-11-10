@@ -14,7 +14,8 @@ public enum FileOperationEventKind
     RecoveryRequired,
     Undone,
     Redone,
-    RedoInvalidated
+    RedoInvalidated,
+    HistoryDiscarded
 }
 
 public sealed record FileOperationRecord(
@@ -49,7 +50,9 @@ public abstract record FileOperationPayload;
 public sealed record PathOperationPayload(
     bool IsDirectory,
     bool CrossVolume,
-    string? SourceIdentity = null) : FileOperationPayload;
+    string? SourceIdentity = null,
+    bool IsReplacementBackup = false,
+    int? OriginalAttributes = null) : FileOperationPayload;
 
 public sealed record CreateFolderPayload(
     string? ParentIdentity = null,
@@ -66,7 +69,12 @@ public sealed record OperationEventDetails(
     string? VerifiedDestinationIdentity = null,
     string? RestoreToken = null,
     int? PayloadVersion = null,
-    string? PayloadJson = null);
+    string? PayloadJson = null,
+    string? ResolvedPath = null,
+    PreservedCollisionItem? DisplacedItem = null);
+
+public sealed record PreservedCollisionItem(string OriginalPath, string BackupPath, bool IsDirectory,
+    string Identity, int Attributes);
 
 public enum RecoveryConclusion { Completed, Failed, Ambiguous }
 

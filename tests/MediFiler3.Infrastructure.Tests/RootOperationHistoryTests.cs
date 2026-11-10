@@ -131,7 +131,33 @@ public sealed class RootOperationHistoryTests
         Assert.NotNull(await journal.GetNextUndoAsync());
         Assert.Null(await journal.ForRoot("root-A").GetNextUndoAsync());
         Assert.Equal(settings, await ((IApplicationSettingsStore)new SqliteApplicationStateStore(database)).LoadAsync());
-        Assert.Equal(5L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(6)]
+    public async Task CompatibilityUpgradePreservesScopedHistoryAndSettings(int version)
+    {
+        using var temp = new TemporaryDatabase();
+        var journal = temp.Journal.ForRoot("root-A");
+        var operation = Record(null);
+        await journal.AppendPreparedAsync(operation);
+        await journal.AppendEventAsync(operation.Id, FileOperationEventKind.Completed);
+        var before = (await journal.GetAsync(operation.Id))!;
+        var settings = new ApplicationSettings(true, 0.7, 17, true);
+        await new SqliteApplicationStateStore(temp.Database).SaveAsync(settings);
+        await SqlAsync(temp.DatabasePath, $"PRAGMA user_version = {version};");
+        SqliteConnection.ClearAllPools();
+
+        var reopened = new SqliteDatabase(temp.DatabasePath);
+        var migrated = new SqliteFileOperationJournal(reopened).ForRoot("root-A");
+        var after = (await migrated.GetAsync(operation.Id))!;
+        Assert.Equal(before.Operation, after.Operation);
+        Assert.Equal(before.Events.ToArray(), after.Events.ToArray());
+        Assert.NotNull(await migrated.GetNextUndoAsync());
+        Assert.Equal(settings, await ((IApplicationSettingsStore)new SqliteApplicationStateStore(reopened)).LoadAsync());
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
     }
 
     [Fact]

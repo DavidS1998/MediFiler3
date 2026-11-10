@@ -44,6 +44,9 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<IRecycleBinRestoreService, WindowsRecycleBinRestoreService>();
                     services.AddSingleton<IFileOrganizationService, FileSystemFileOrganizationService>();
                     services.AddSingleton<IFileIdentityProvider, WindowsFileIdentityProvider>();
+                    services.AddSingleton<FileSystemOperationBackupStore>();
+                    services.AddSingleton<IFileOperationBackupStore>(p => p.GetRequiredService<FileSystemOperationBackupStore>());
+                    services.AddSingleton<IOperationBackupMaintenance>(p => p.GetRequiredService<FileSystemOperationBackupStore>());
                     services.AddSingleton<IFileOperationRecoveryInspector, FileSystemOperationRecoveryInspector>();
                     services.AddSingleton<OperationJournalRecoveryService>();
                     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<OperationJournalRecoveryService>());
@@ -51,6 +54,7 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();
                     services.AddSingleton<IThumbnailService, FileSystemThumbnailService>();
+                    services.AddSingleton<IFileCollisionPreviewService, FileSystemCollisionPreviewService>();
                     services.AddSingleton<ITextContentService, FileSystemTextContentService>();
                     services.AddSingleton<IWindowsFileLaunchAdapter, WindowsFileLaunchAdapter>();
                     services.AddSingleton<IExternalFileService, WindowsExternalFileService>();

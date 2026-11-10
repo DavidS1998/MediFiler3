@@ -7,6 +7,63 @@ namespace MediFiler3.Infrastructure.Persistence;
 
 public sealed class SqliteFileOperationJournal(SqliteDatabase database, string? rootScope = null) : IFileOperationJournal
 {
+    public async Task<IReadOnlyList<JournaledFileOperation>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id FROM FileOperations WHERE $root IS NULL OR RootScope IS $root ORDER BY rowid;";
+        command.Parameters.AddWithValue("$root", (object?)rootScope ?? DBNull.Value);
+        var ids = new List<Guid>();
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) ids.Add(Guid.Parse(reader.GetString(0)));
+        var result = new List<JournaledFileOperation>();
+        foreach (var id in ids)
+            if (await GetAsync(id, cancellationToken).ConfigureAwait(false) is { } entry) result.Add(entry);
+        return result;
+    }
+
+    public async Task DiscardHistoryAsync(Guid operationId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var entry = await ReadOperationAsync(connection, transaction, operationId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException("Backup operation was not found.");
+        if (rootScope is not null && entry.Operation.RootScope != rootScope) throw new InvalidOperationException("Operation belongs to another root.");
+        while (entry.Operation.CompensatesOperationId is { } parent)
+            entry = await ReadOperationAsync(connection, transaction, parent, cancellationToken).ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Backup ownership is incomplete.");
+        await using var query = connection.CreateCommand();
+        query.Transaction = transaction;
+        query.CommandText = """
+            WITH RECURSIVE Owned(Id) AS (
+                SELECT Id FROM FileOperations
+                WHERE CompensatesOperationId IS NULL AND RootScope IS $root
+                  AND (Id = $id OR ($batch IS NOT NULL AND BatchId = $batch))
+                UNION
+                SELECT child.Id FROM FileOperations child JOIN Owned parent ON child.CompensatesOperationId = parent.Id
+                WHERE child.RootScope IS $root
+            )
+            SELECT o.Id, o.CompensatesOperationId IS NULL FROM FileOperations o JOIN Owned ON o.Id = Owned.Id;
+            """;
+        query.Parameters.AddWithValue("$root", (object?)entry.Operation.RootScope ?? DBNull.Value);
+        query.Parameters.AddWithValue("$id", entry.Operation.Id.ToString("D"));
+        query.Parameters.AddWithValue("$batch", (object?)entry.Operation.BatchId?.ToString("D") ?? DBNull.Value);
+        var ids = new List<(Guid Id, bool Original)>();
+        await using (var reader = await query.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) ids.Add((Guid.Parse(reader.GetString(0)), reader.GetBoolean(1)));
+        foreach (var (id, original) in ids)
+        {
+            var current = await GetLatestEventAsync(connection, transaction, id, cancellationToken).ConfigureAwait(false);
+            if (current?.Kind is not (FileOperationEventKind.Completed or FileOperationEventKind.Redone or
+                FileOperationEventKind.Undone or FileOperationEventKind.RedoInvalidated or FileOperationEventKind.HistoryDiscarded or FileOperationEventKind.Failed))
+                throw new InvalidOperationException("The history group has an unresolved operation; backups were retained for recovery.");
+            if (original)
+                await InsertEventAsync(connection, transaction, id, FileOperationEventKind.HistoryDiscarded, DateTimeOffset.UtcNow,
+                    "{\"Message\":\"Overwrite backups cleared from Settings; this history group is retired.\"}", cancellationToken).ConfigureAwait(false);
+        }
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public IFileOperationJournal ForRoot(string rootIdentity)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootIdentity);
@@ -145,7 +202,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database, string? 
             WHERE e.Sequence = (
                 SELECT MAX(last.Sequence) FROM FileOperationEvents last WHERE last.OperationId = o.Id
             )
-            AND e.Kind NOT IN ('Completed', 'Failed', 'RecoveryRequired', 'Undone', 'Redone', 'RedoInvalidated')
+            AND e.Kind NOT IN ('Completed', 'Failed', 'RecoveryRequired', 'Undone', 'Redone', 'RedoInvalidated', 'HistoryDiscarded')
             ORDER BY o.CreatedUtc;
             """;
 
@@ -244,9 +301,9 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database, string? 
                 FileOperationEventKind.RecoveryRequired,
             FileOperationEventKind.SourceRemoved => next is FileOperationEventKind.Completed or
                 FileOperationEventKind.RecoveryRequired,
-            FileOperationEventKind.Completed => next is FileOperationEventKind.Undone,
-            FileOperationEventKind.Undone => next is FileOperationEventKind.Redone or FileOperationEventKind.RedoInvalidated,
-            FileOperationEventKind.Redone => next is FileOperationEventKind.Undone,
+            FileOperationEventKind.Completed => next is FileOperationEventKind.Undone or FileOperationEventKind.RecoveryRequired,
+            FileOperationEventKind.Undone => next is FileOperationEventKind.Redone or FileOperationEventKind.RedoInvalidated or FileOperationEventKind.RecoveryRequired,
+            FileOperationEventKind.Redone => next is FileOperationEventKind.Undone or FileOperationEventKind.RecoveryRequired,
             _ => false
         };
 

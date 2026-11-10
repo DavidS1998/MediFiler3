@@ -13,6 +13,12 @@
                            VerticalAlignment="Center" Foreground="#E7E8EA" />
                 <interop:WinUiCarouselSettingsIsland x:Name="CarouselSliderIsland" Height="48" />
             </DockPanel>
+            <TextBlock Text="Overwrite backups" FontSize="18" FontWeight="SemiBold" Foreground="#E7E8EA" Margin="0,28,0,4" />
+            <TextBlock Text="Replaced files are kept in app-managed storage for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."
+                       Foreground="#A3A6AE" TextWrapping="Wrap" />
+            <Button x:Name="ClearBackupsButton" Content="Clear overwrite backups" HorizontalAlignment="Left"
+                    Padding="16,8" Margin="0,16,0,0" Click="OnClearBackupsClick" />
+            <TextBlock x:Name="BackupCleanupStatus" Foreground="#A3A6AE" TextWrapping="Wrap" Margin="0,12,0,0" />
         </StackPanel>
     </Grid>
 </UserControl>

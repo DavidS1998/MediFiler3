@@ -10,7 +10,7 @@ namespace MediFiler3.Infrastructure.Persistence;
 /// </summary>
 public sealed class SqliteDatabase : IHostedService
 {
-    private const int CurrentSchemaVersion = 5;
+    private const int CurrentSchemaVersion = 7;
     private readonly string _connectionString;
     private readonly SemaphoreSlim _initializationLock = new(1, 1);
     private bool _initialized;
@@ -179,14 +179,23 @@ public sealed class SqliteDatabase : IHostedService
                 """;
             await state.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
-        await using var scope = connection.CreateCommand();
-        scope.Transaction = transaction;
-        scope.CommandText = """
-            ALTER TABLE FileOperations ADD COLUMN RootScope TEXT NULL;
-            CREATE INDEX IX_FileOperations_RootScope ON FileOperations(RootScope);
-            PRAGMA user_version = 5;
-            """;
-        await scope.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        if (version < 5)
+        {
+            await using var scope = connection.CreateCommand();
+            scope.Transaction = transaction;
+            scope.CommandText = """
+                ALTER TABLE FileOperations ADD COLUMN RootScope TEXT NULL;
+                CREATE INDEX IX_FileOperations_RootScope ON FileOperations(RootScope);
+                """;
+            await scope.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Version 7 also gates HistoryDiscarded events used before backup cleanup.
+        // Older builds must reject history semantics they cannot fully interpret.
+        await using var compatibility = connection.CreateCommand();
+        compatibility.Transaction = transaction;
+        compatibility.CommandText = "PRAGMA user_version = 7;";
+        await compatibility.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task CreateJournalSchemaAsync(

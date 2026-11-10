@@ -6,6 +6,8 @@ namespace MediFiler3.Application.Operations;
 public interface IFileOperationJournal
 {
     IFileOperationJournal ForRoot(string rootIdentity);
+    Task<IReadOnlyList<JournaledFileOperation>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task DiscardHistoryAsync(Guid operationId, CancellationToken cancellationToken = default);
     Task AppendPreparedAsync(FileOperationRecord operation, CancellationToken cancellationToken = default);
 
     Task AppendEventAsync(

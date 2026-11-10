@@ -26,3 +26,9 @@ HomeChecks.cs exercises service-backed native Home cards via automation peers (s
 Home refinements: current checks use Locate/Remove only and unified all-list removal, verify tooltip-only paths/exact timestamps, and grow/shrink through 3000 px to check card containment. Earlier Ignore/recent-only behavior has been removed.
 
 RootHistoryChecks.cs uses the real MainWindow to verify per-root Undo/Redo button/tooltip availability and direct Browse execution after root switches. Journal fixtures are isolated from the user database. If a running app locks output, pass a separate BaseOutputPath consistently to build and run.
+
+Collision checks use isolated fixtures and stubbed responses for Browse integration, then exercise the real owned WinUI collision dialog in transparent test windows using automation peers. They verify Rename/Overwrite/Cancel, disabled incompatible Overwrite, dispatcher delivery, chosen file selection and grouped replacement history. Real physical keyboard/DPI/long-path dialog review remains manual.
+
+Collision presentation checks also wait for both real PNG thumbnails and sizes, validate folder placeholders, and verify one-click numbered Rename without a second dialog, no explanatory body text, and a 24 px inset below the buttons. Browse rename checks assert extension-free initial input.
+
+RootHistoryChecks also opens Settings and drives the actual Clear overwrite backups button and native confirmation. Cancel retains backups/history; Clear removes journal-owned stored versions, retires dependent history, reports completion and leaves the current destination unchanged. All backup storage uses runner-owned fixtures.

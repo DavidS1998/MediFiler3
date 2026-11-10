@@ -476,11 +476,12 @@ public partial class BrowseView : UserControl
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null) return;
         var name = await RequireDialogService().PromptTextAsync(
-            "Rename file", "Enter the file's new name.", currentFile.Name, "Rename");
+            "Rename file", "Enter the file's new name.", FileRenameName.EditableName(currentFile.Name), "Rename");
         if (string.IsNullOrWhiteSpace(name)) return;
         try
         {
-            var result = await (await GetRootOperationsAsync(root, requireActive: true)).RenameFileAsync(currentFile.FullPath, name);
+            var result = await (await GetRootOperationsAsync(root, requireActive: true)).RenameFileAsync(currentFile.FullPath,
+                FileRenameName.CompleteName(currentFile.Name, name));
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -488,7 +489,7 @@ public partial class BrowseView : UserControl
                 return;
             }
 
-            ShowOperationNotice($"Renamed file to {name}.");
+            ShowOperationNotice($"Renamed file to {Path.GetFileName(result.AffectedPath ?? name)}.");
             await ReloadFilesInActiveFolderAsync(result.AffectedPath);
         }
         catch (Exception exception) when (IsOperationUiException(exception))
@@ -558,7 +559,7 @@ public partial class BrowseView : UserControl
                 : await operations.RedoAsync(cancellation.Token);
             if (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive) return;
             ShowOperationNotice(result.Message);
-            if (result.SucceededCount > 0) OperationHistoryChanged?.Invoke();
+            OperationHistoryChanged?.Invoke();
             if (result.SucceededCount == 0) return;
 
             var pathMappings = result.Results.Where(item => item.Succeeded && item.PreviousPath is not null &&
@@ -599,6 +600,11 @@ public partial class BrowseView : UserControl
         try
         {
             var result = await operation();
+            if (result.Succeeded && newPath is not null && result.AffectedPath is not null)
+            {
+                preferredFolderPath = MapDescendantPath(preferredFolderPath, newPath, result.AffectedPath);
+                newPath = result.AffectedPath;
+            }
             await CompleteFolderOperationAsync(result, oldPath, newPath, deletedPath, preferredFolderPath);
         }
         catch (Exception exception) when (IsOperationUiException(exception))
@@ -1420,7 +1426,8 @@ public partial class BrowseView : UserControl
         var service = await _fileOrganizationService.ForRootAsync(root.Path, token);
         if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive)))
             throw new InvalidOperationException("The active root changed before the command could run.");
-        return service;
+        return DialogService is null ? service : service.WithCollisionResolver(new BrowseCollisionResolver(Dispatcher, DialogService,
+            () => _viewerActive && _navigationState.Roots.Contains(root) && (!requireActive || ReferenceEquals(root, _navigationState.ActiveRoot))));
     }
 
     private void ClearActivePresentation(string message, string detail)

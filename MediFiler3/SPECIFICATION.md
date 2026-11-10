@@ -295,7 +295,7 @@ After a successful move:
 
 The move operation should be atomic where possible and handle errors such as insufficient permissions, locked files, and filename conflicts.
 
-Moving a file should never overwrite an existing file silently.
+On a name collision, offer Rename, Overwrite, or Cancel. Rename automatically applies the next available numbered incoming name and rechecks it; Overwrite requires an explicit choice and preserves the existing item for Undo; Cancel leaves both items unchanged. Never overwrite silently.
 
 ### Multiple-file operations
 
@@ -530,7 +530,7 @@ The system must initially support:
 - Executing a new operation after undoing clears redo history only for that operation's root; redo in other roots is retained.
 - Failed operations must not be recorded as successful.
 - Operations must retain sufficient information to reverse themselves.
-- Filename conflicts must be handled safely.
+- Filename conflicts must offer Rename, Overwrite, and Cancel. Overwrite preserves the displaced item; incompatible file/folder types, links and unsafe ancestor locations cannot be overwritten.
 - Undo and redo should refresh all affected views and navigation state.
 - Related batch operations should be grouped into a single logical undo operation within their root scope. Cross-root file moves belong to their source root. Folder-menu actions belong to the root containing the target folder.
 
@@ -543,6 +543,18 @@ The operation history should persist across application restarts where practical
 Use a persistent operation journal, preferably backed by SQLite.
 
 The system should handle cases where files have been externally modified, moved, or deleted since an operation was recorded. It must never silently overwrite existing files during undo or redo.
+
+### Collision choices
+
+Use an owned WinUI dialog with Rename, Overwrite and Cancel (also window-close/Escape), defaulting to cancellation. Compare incoming and existing files side by side with asynchronously loaded thumbnails and file sizes, retaining a clear placeholder when no preview is available. Include paths and exact byte counts on hover; label folders without scanning recursive sizes. Disable unsupported Overwrite. Regular operations rename the incoming item. Folder Overwrite replaces the whole destination folder, not a merge; retain its contents for Undo and describe this in the Overwrite tooltip. Create-folder collisions use the same workflow. Show only comparison cards and action buttons, with no explanatory body text. Fit the dialog height to its content with 24 px insets and 16 px between cards and buttons. A new collision after Rename must be checked again.
+
+File Rename fields show only the name before its extension and preserve the original extension on submission. Collision Rename applies an available numbered suffix directly, without another dialog, before the extension: Test.png, Test (1).png, Test (2).png. Skip names occupied by files or folders and continue an existing numeric suffix. Folder names remain editable in full.
+
+Undo/Redo collisions offer the same choices after verifying the recorded source identity. In that context Rename temporarily renames the blocking existing item so the recorded operation can keep its paths; the opposite history action restores the displaced item. Overwrite also preserves the blocker for the opposite action. Keep all operations/compensation in the existing root scope. Do not offer collision choices to bypass changed/missing source identity or unsafe folder-delete checks.
+
+Preserve replacements via verified journaled backups in dedicated app-managed storage, grouped with the incoming operation so one Undo restores both versions. Use %LOCALAPPDATA%\MediFiler3\UndoBackups when it shares the destination volume; otherwise use a dedicated hidden user-specific backup folder at that volume's root. Keep backups on the original volume to preserve identities and safe folder moves. If managed storage is unavailable, refuse replacement without falling back to sibling backups. Verify identities again after confirmation, roll back preservation when installing the incoming item fails, and report partial/recovery-required outcomes without overwriting a new intervening item.
+
+Settings provides Clear overwrite backups. Require explicit confirmation that cleanup permanently deletes saved versions and removes affected Undo/Redo groups. Retire the whole owning root-scoped history group durably before deleting its verified backups, preserving journal evidence and unrelated history. Serialize cleanup with file operations. Never remove current/restored user files, untracked lookalikes, links, changed-identity backups or unresolved recovery data. Report retained/failed items and permit retry. Legacy sibling backups remain usable and are included in explicit cleanup; do not relocate old journal paths automatically. No automatic expiry or purge is enabled.
 
 ### Safety
 
