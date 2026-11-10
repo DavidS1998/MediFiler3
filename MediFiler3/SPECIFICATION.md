@@ -195,7 +195,7 @@ For file types without an integrated viewer:
 - Allow the user to open the file using its associated default Windows application.
 - Handle missing file associations and launch failures gracefully.
 
-Provide distinct Open in default application and Open with actions, including when no thumbnail exists or an integrated preview fails. Show the filename and full path alongside the fallback; retain file size in the toolbar. Ctrl+Enter opens the current file in its default application; Ctrl+Shift+Enter shows the native Windows application chooser. Capture the selected file when invoked, prevent duplicate in-flight requests, and show completion/errors only for the matching active file. Treat chooser cancellation as a normal outcome. Missing associations should explain that Open with can select an application, without automatically launching a second action.
+Provide distinct Open in default application and Open with actions, including when no thumbnail exists or an integrated preview fails. For files without an integrated handler, right-clicking the viewer opens the native Open With chooser, whether or not a thumbnail is shown. Ignore empty/inactive viewers and prevent duplicate in-flight chooser requests through the shared external-opening action. Show the filename and full path alongside the fallback; retain file size in the toolbar. Ctrl+Enter opens the current file in its default application; Ctrl+Shift+Enter shows the native Windows application chooser. Capture the selected file when invoked, prevent duplicate in-flight requests, and show completion/errors only for the matching active file. Treat chooser cancellation as a normal outcome. Missing associations should explain that Open with can select an application, without automatically launching a second action.
 
 Use compact WinUI AppBarButtons in the center toolbar for these actions, matching the existing 32-pixel primary-command styling. Both actions apply to all selected file types, including images and text, and remain visible but disabled when no file is selected. Image/text controls remain in the right toolbar independently. Resolve the effective default application asynchronously, displaying its application icon on the button and `Open in ApplicationName` in the tooltip/accessibility label where available. Keep a generic open label/icon if lookup fails; when Windows reports no association, show `No default application`, disable that action, and retain Open with. Refresh on file changes and after returning from external-opening actions, reject obsolete results, and keep lookup work bounded. The fallback's information/status panel remains WPF.
 
@@ -211,13 +211,13 @@ For example:
 | Video | Navigate files | Play / pause |
 | Audio | Navigate files | Play / pause |
 | Text | Navigate files | Toggle document scrolling |
-| Unsupported | Navigate files | Optional context menu / open externally |
+| Unsupported | Navigate files | Open the native Open With chooser |
 
 The application should communicate the current interaction mode through subtle visual indicators where necessary.
 
 Avoid relying on right-click alone for essential functionality. All primary interactions should also have keyboard shortcuts or accessible alternatives.
 
-The exact interaction model should be implemented centrally and remain consistent across viewing modes.
+The exact interaction model should be implemented centrally and remain consistent across viewing modes. Five consecutive navigation attempts past a folder boundary enter the adjacent nonempty folder in loaded tree order, skipping empty folders. Backward overscroll selects the previous folder's last file; forward overscroll selects the next folder's first file.
 
 # 4. File carousel
 

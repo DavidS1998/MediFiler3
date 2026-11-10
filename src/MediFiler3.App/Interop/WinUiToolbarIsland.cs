@@ -257,10 +257,10 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 
         const int maxItems = 8;
         var lines = preview.Items.Take(maxItems).Select(item =>
-            $"{item.Action}: {item.SourcePath ?? "â€”"} â†’ {item.DestinationPath ?? "â€”"}").ToList();
+            $"{item.Action}: {item.SourcePath ?? "-"} -> {item.DestinationPath ?? "-"}").ToList();
         lines.Insert(0, $"{action} {preview.Items.Count} {(preview.Items.Count == 1 ? "change" : "changes")}:");
         if (preview.Items.Count > maxItems)
-            lines.Add($"â€¦ and {preview.Items.Count - maxItems} more");
+            lines.Add($"... and {preview.Items.Count - maxItems} more");
 
         return new ToolTip
         {

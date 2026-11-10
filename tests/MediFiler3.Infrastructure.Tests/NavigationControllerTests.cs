@@ -49,6 +49,65 @@ public sealed class NavigationControllerTests
     }
 
     [Fact]
+    public async Task BackwardOverscrollSkipsEmptyFoldersAndSelectsTheirPredecessorsLastFile()
+    {
+        var previous = new FolderTreeEntry("Previous", "root/previous");
+        var empty = new FolderTreeEntry("Empty", "root/empty");
+        var current = new FolderTreeEntry("Current", "root/current");
+        var state = new NavigationSessionState();
+        state.ReplaceRoots([previous, empty, current]);
+        state.SetActiveFolder(current);
+        state.ReplaceFiles([File("current-first"), File("current-last")]);
+        var previousFiles = new[] { File("previous-first"), File("previous-middle"), File("previous-last") };
+        var activated = new List<FolderTreeEntry>();
+        var presented = new TaskCompletionSource<FileEntry>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var controller = new NavigationController(state, async folder =>
+        {
+            activated.Add(folder);
+            await Task.Yield(); // Exercise the actual asynchronous folder-listing boundary.
+            state.SetActiveFolder(folder);
+            state.ReplaceFiles(ReferenceEquals(folder, previous) ? previousFiles : []);
+        });
+        controller.FileSelected += file => presented.TrySetResult(file);
+
+        for (int attempt = 0; attempt < 4; attempt++) controller.NavigateByOneFile(-1);
+        Assert.Empty(activated);
+        controller.NavigateByOneFile(-1);
+
+        Assert.Same(previousFiles[^1], await presented.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(new[] { empty, previous }, activated);
+        Assert.Same(previous, state.ActiveFolder);
+        Assert.Same(previousFiles[^1], state.CurrentFile);
+        Assert.Equal(3, state.CurrentFilePosition);
+        controller.NavigateByOneFile(-1);
+        Assert.Same(previousFiles[1], state.CurrentFile);
+    }
+
+    [Fact]
+    public void ForwardOverscrollStillEntersTheNextFolderAtItsFirstFile()
+    {
+        var current = new FolderTreeEntry("Current", "current");
+        var next = new FolderTreeEntry("Next", "next");
+        var state = new NavigationSessionState();
+        state.ReplaceRoots([current, next]);
+        state.SetActiveFolder(current);
+        state.ReplaceFiles([File("current")]);
+        var nextFiles = new[] { File("next-first"), File("next-last") };
+        var controller = new NavigationController(state, folder =>
+        {
+            state.SetActiveFolder(folder);
+            state.ReplaceFiles(nextFiles);
+            return Task.CompletedTask;
+        });
+
+        for (int attempt = 0; attempt < 5; attempt++) controller.NavigateByOneFile(1);
+
+        Assert.Same(next, state.ActiveFolder);
+        Assert.Same(nextFiles[0], state.CurrentFile);
+        Assert.Equal(1, state.CurrentFilePosition);
+    }
+
+    [Fact]
     public void ReversingDirectionResetsBoundaryAttempts()
     {
         var root = new FolderTreeEntry("Root", "root");

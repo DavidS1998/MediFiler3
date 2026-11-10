@@ -87,6 +87,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
                 folder.IsSelected = true;
                 if (_navigationState.Files.Count > 0)
                 {
+                    if (direction < 0) SelectFile(_navigationState.Files[^1]);
                     ResetBoundaryAttempts();
                     return;
                 }

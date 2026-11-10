@@ -288,6 +288,13 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (IsButtonInput(e.OriginalSource)) return;
+        if (Capabilities == ViewerCapabilities.None && ExternalOpenState.Visible)
+        {
+            e.Handled = true;
+            _ = OpenExternallyAsync(ExternalFileAction.ChooseApplication);
+            return;
+        }
         if (Capabilities.HasFlag(ViewerCapabilities.Playback))
         { TogglePlayback(); e.Handled = true; return; }
         if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll))
