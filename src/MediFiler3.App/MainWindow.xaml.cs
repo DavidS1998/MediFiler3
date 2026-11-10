@@ -95,6 +95,12 @@ public partial class MainWindow : Window
         ToolbarIsland.ZoomOutRequested += _browseView.ZoomOutFromToolbar;
         ToolbarIsland.OpenDefaultRequested += async () => await _browseView.OpenExternallyAsync(ExternalFileAction.DefaultApplication);
         ToolbarIsland.OpenWithRequested += async () => await _browseView.OpenExternallyAsync(ExternalFileAction.ChooseApplication);
+        ToolbarIsland.TogglePlaybackRequested += _browseView.TogglePlayback;
+        ToolbarIsland.StopPlaybackRequested += _browseView.StopPlayback;
+        ToolbarIsland.SeekPlaybackRequested += _browseView.SeekPlayback;
+        ToolbarIsland.PlaybackVolumeRequested += _browseView.SetPlaybackVolume;
+        ToolbarIsland.PlaybackSpeedRequested += _browseView.SetPlaybackSpeed;
+        _browseView.PlaybackStateChanged += () => ToolbarIsland.SetMediaPlaybackState(_browseView.PlaybackState);
         ToolbarIsland.ToggleTextInteractionRequested += _browseView.ToggleTextInteraction;
         ToolbarIsland.PreviousTextWindowRequested += async () => await _browseView.ReadTextWindowAsync(false);
         ToolbarIsland.NextTextWindowRequested += async () => await _browseView.ReadTextWindowAsync(true);
@@ -300,6 +306,7 @@ public partial class MainWindow : Window
         ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView ? external : external with { Visible = false });
         ToolbarIsland.SetTextViewerState(_browseView.IsTextInteraction,
             _browseView.CanReadPreviousTextWindow, _browseView.CanReadNextTextWindow);
+        ToolbarIsland.SetMediaPlaybackState(_browseView.PlaybackState);
     }
 
     private async void OnLoadFoldersRequested()

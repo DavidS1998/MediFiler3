@@ -62,6 +62,13 @@ public partial class BrowseView : UserControl
     public double CurrentZoomLevel => ViewerHost.CurrentZoomLevel;
     public ExternalOpenState ExternalOpenState => ViewerHost.ExternalOpenState;
     public Task OpenExternallyAsync(ExternalFileAction action) => ViewerHost.OpenExternallyAsync(action);
+    public MediaPlaybackState PlaybackState => ViewerHost.PlaybackState;
+    public event Action? PlaybackStateChanged;
+    public void TogglePlayback() => ViewerHost.TogglePlayback();
+    public void StopPlayback() => ViewerHost.StopPlayback();
+    public void SeekPlayback(double seconds) => ViewerHost.SeekPlayback(seconds);
+    public void SetPlaybackVolume(double volume) => ViewerHost.SetPlaybackVolume(volume);
+    public void SetPlaybackSpeed(double speed) => ViewerHost.SetPlaybackSpeed(speed);
     public bool CanZoom => ViewerHost.CanZoom;
     public bool IsTextInteraction => ViewerHost.IsTextInteraction;
     public bool CanReadPreviousTextWindow => ViewerHost.CanReadPreviousTextWindow;
@@ -104,6 +111,8 @@ public partial class BrowseView : UserControl
         InitializeComponent();
         ViewerHost.Initialize(imageDecoder, thumbnailService, textContentService, externalFileService, defaultApplications);
         ViewerHost.NavigationRequested += NavigateByOneFile;
+        CompositionTarget.Rendering += OnVideoSurfaceRendering;
+        ViewerHost.PlaybackStateChanged += () => PlaybackStateChanged?.Invoke();
         ViewerHost.ZoomLevelChanged += value => ZoomLevelChanged?.Invoke(value);
         ViewerHost.PresentationChanged += () => PresentationChanged?.Invoke();
 
@@ -345,6 +354,7 @@ public partial class BrowseView : UserControl
 
     private async Task DeleteFolderAsync(FolderTreeEntry folder)
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
         var fallbackPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path));
         var mappedActivePath = IsPathWithin(activePath, folder.Path) ? fallbackPath : activePath;
@@ -389,6 +399,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null)
         {
@@ -422,6 +433,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null) return;
         var name = await RequireDialogService().PromptTextAsync(
@@ -454,6 +466,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var currentFile = _navigationState.CurrentFile;
         if (currentFile is null) return;
         var files = _navigationState.Files.ToArray();
@@ -484,6 +497,7 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
         try
         {
@@ -526,6 +540,7 @@ public partial class BrowseView : UserControl
         string? deletedPath = null,
         string? preferredFolderPath = null)
     {
+        using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         try
         {
             var result = await operation();
@@ -738,6 +753,7 @@ public partial class BrowseView : UserControl
 
     public void StopBackgroundFolderCounts()
     {
+        CompositionTarget.Rendering -= OnVideoSurfaceRendering;
         _navigationController.CancelPendingNavigation();
         _loadCancellation?.Cancel();
         _fileLoadCancellation?.Cancel();
@@ -949,6 +965,25 @@ public partial class BrowseView : UserControl
         FolderPinButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty,
             _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open");
         SetFolderOverlayVisible(_folderOverlayPinned || _folderOverlayVisible);
+    }
+
+    private void OnVideoSurfaceRendering(object? sender, EventArgs args)
+    {
+        if (!ViewerHost.HasVideoSurface || !IsVisible) return;
+        // Native HWNDs otherwise cover WPF overlays. Cut out only their visible regions, preserving video layout.
+        var width = BrowseSurface.ActualWidth;
+        var height = BrowseSurface.ActualHeight;
+        if (width <= 0 || height <= 0) return;
+        var folderWidth = Math.Clamp(FolderOverlay.ActualWidth + FolderOverlayTransform.X, 0, width);
+        var carouselHeight = Math.Clamp(CarouselOverlay.ActualHeight - CarouselOverlayTransform.Y, 0, height);
+        var exclusions = new List<Rect>
+        {
+            new(0, 0, Math.Max(26, folderWidth), height),
+            new(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight))
+        };
+        if (OperationNotice.Visibility == Visibility.Visible)
+            exclusions.Add(OperationNotice.TransformToAncestor(BrowseSurface).TransformBounds(new Rect(OperationNotice.RenderSize)));
+        ViewerHost.SetVideoExclusions(exclusions);
     }
 
     private void OnBrowseSurfaceSizeChanged(object sender, SizeChangedEventArgs e)

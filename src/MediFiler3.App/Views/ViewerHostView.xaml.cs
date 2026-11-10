@@ -57,7 +57,7 @@ public partial class ViewerHostView : UserControl
         _externalFiles = externalFiles;
         _defaultApplication = new DefaultApplicationResolver(defaultApplications);
         _defaultApplication.Changed += () => PresentationChanged?.Invoke();
-        _coordinator = new ViewerCoordinator<ViewerPresentation>([new ImageViewerHandler(decoder), new TextViewerHandler(text), new ThumbnailViewerHandler(thumbnails)]);
+        _coordinator = new ViewerCoordinator<ViewerPresentation>([new ImageViewerHandler(decoder), new TextViewerHandler(text), new MediaViewerHandler(), new ThumbnailViewerHandler(thumbnails)]);
     }
 
     public bool HandleKey(KeyEventArgs e)
@@ -71,6 +71,8 @@ public partial class ViewerHostView : UserControl
             return true;
         }
         if (IsButtonInput(e.OriginalSource)) return false;
+        if (Capabilities.HasFlag(ViewerCapabilities.Playback) && e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None)
+        { TogglePlayback(); e.Handled = true; return true; }
         if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll))
         {
             if (e.Key == Key.F4) { ToggleTextInteraction(); e.Handled = true; return true; }
@@ -95,6 +97,7 @@ public partial class ViewerHostView : UserControl
         _active = active;
         if (!active)
         {
+            ReleaseMedia();
             HideExternalFallback();
             _textScrollOffset = TextViewer.VerticalOffset;
             TextViewer.Text = string.Empty;
@@ -112,6 +115,7 @@ public partial class ViewerHostView : UserControl
 
     public void Clear()
     {
+        ReleaseMedia();
         HideExternalFallback();
         _metadata = null;
         TextViewer.Text = string.Empty;
@@ -130,6 +134,8 @@ public partial class ViewerHostView : UserControl
     {
         if (!ReferenceEquals(file, _currentFile))
         {
+            _resizeTimer.Stop();
+            ReleaseMedia();
             HideExternalFallback();
             _metadata = null;
             _textOffset = 0;
@@ -158,6 +164,7 @@ public partial class ViewerHostView : UserControl
         var file = _currentFile;
         if (!_active) return;
         EnsureDefaultApplication();
+        if (_media is not null) ReleaseMedia();
         _coordinator?.Cancel();
         if (clearCurrentImage)
         {
@@ -184,6 +191,11 @@ public partial class ViewerHostView : UserControl
             {
                 ShowImageMessage("No integrated viewer or thumbnail is available.", file.Name);
                 ShowExternalFallback(file);
+                return;
+            }
+            if (result.Presentation is MediaPresentation mediaPresentation)
+            {
+                await OpenMediaAsync(file, mediaPresentation, immediatePreview, request);
                 return;
             }
             if (result.Presentation is TextPresentation textPresentation)
@@ -268,6 +280,8 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportRightButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
+        if (Capabilities.HasFlag(ViewerCapabilities.Playback))
+        { TogglePlayback(); e.Handled = true; return; }
         if (Capabilities.HasFlag(ViewerCapabilities.DocumentScroll))
         {
             ToggleTextInteraction();
@@ -439,7 +453,7 @@ public partial class ViewerHostView : UserControl
 
     private void OnImageViewportSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (_currentFile is not null && ImageViewer.Source is not null)
+        if (_currentFile is not null && ImageViewer.Source is not null && !Capabilities.HasFlag(ViewerCapabilities.Playback))
         {
             _resizeTimer.Stop();
             _resizeTimer.Start();

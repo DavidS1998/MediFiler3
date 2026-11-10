@@ -144,6 +144,10 @@ Zooming should support viewing the original image resolution without unnecessari
 
 ### Video
 
+The backend is WinUI MediaPlayerElement with Windows.Media.Playback.MediaPlayer, hosted in a XAML Island within the WPF application. It uses installed Windows media components without a bundled codec runtime. Routed video targets are MP4/M4V, WMV, WebM and MKV; audio targets are MP3, WAV, WMA, M4A/AAC, ADTS AAC and Opus. Extensions route to handlers; codec/container combinations may depend on Windows media extensions. Unsupported variants show an error and retain external-opening actions. FLAC and other extensions remain deferred.
+
+Media opens paused, with Space/right-click or a WinUI toolbar control toggling playback. The right toolbar provides play/pause, stop, seeking/progress, and separate volume and playback-speed buttons. Each opens a compact popup free of the toolbar root's height constraint; volume must not require scrolling past speed controls. Playback speed ranges from 0.5×–2× where supported. Duration appears with file-size metadata after opening. Close media before file/folder mutations, undo/redo, navigation, leaving Browse, and shutdown; reload paused when returning or when a cancelled/failed operation leaves the same file selected. Preserve volume/rate for the current session; persistence is future work. Media opening has a cancellable 30-second timeout and clear external fallback on failure. Native video must preserve access to WPF folder/carousel overlays and their reveal edges.
+
 When displaying a video:
 
 - Display an embedded video player.

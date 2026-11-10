@@ -26,6 +26,9 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private string _fileMetadataText = string.Empty;
     private ImageToolbarGroup? _imageToolbar;
     private TextToolbarGroup? _textToolbar;
+    private MediaToolbarGroup? _mediaToolbar;
+    private bool _mediaControlsVisible;
+    private MediFiler3.Application.Viewing.MediaPlaybackState _mediaState = MediFiler3.Application.Viewing.MediaPlaybackState.Empty;
     private ExternalOpenToolbarGroup? _externalToolbar;
     private MediFiler3.Application.Files.ExternalOpenState _externalState = new(false, false, null);
     private bool _textControlsVisible;
@@ -57,6 +60,11 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public event Action? NextTextWindowRequested;
     public event Action? OpenDefaultRequested;
     public event Action? OpenWithRequested;
+    public event Action? TogglePlaybackRequested;
+    public event Action? StopPlaybackRequested;
+    public event Action<double>? SeekPlaybackRequested;
+    public event Action<double>? PlaybackVolumeRequested;
+    public event Action<double>? PlaybackSpeedRequested;
 
     public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
     {
@@ -317,6 +325,9 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _imageControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.Zoom);
         _imageControlsEnabled = _imageControlsVisible && canInteract;
         _textControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.DocumentScroll);
+        _mediaControlsVisible = capabilities.HasFlag(MediFiler3.Application.Viewing.ViewerCapabilities.Playback);
+        if (_mediaToolbar is not null) _mediaToolbar.Control.Visibility = _mediaControlsVisible
+            ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
         if (_textToolbar is not null)
             _textToolbar.Control.Visibility = _textControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
         if (_imageToolbar is not null)
@@ -339,6 +350,12 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _externalState = state;
         _externalToolbar?.SetState(state);
 
+    }
+
+    public void SetMediaPlaybackState(MediFiler3.Application.Viewing.MediaPlaybackState state)
+    {
+        _mediaState = state;
+        _mediaToolbar?.SetState(state);
     }
 
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
@@ -365,6 +382,7 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _fileMetadata = null;
         _imageToolbar = null;
         _textToolbar = null;
+        _mediaToolbar = null;
         _externalToolbar = null;
         _renameFileButton = null;
         _deleteFileButton = null;
@@ -449,6 +467,14 @@ public sealed class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _textToolbar.SetState(_textScrolling, _canPreviousText, _canNextText);
         Grid.SetColumn(_textToolbar.Control, 2);
         layout.Children.Add(_textToolbar.Control);
+        _mediaToolbar = new MediaToolbarGroup(() => TogglePlaybackRequested?.Invoke(), () => StopPlaybackRequested?.Invoke(),
+            seconds => SeekPlaybackRequested?.Invoke(seconds), volume => PlaybackVolumeRequested?.Invoke(volume),
+            speed => PlaybackSpeedRequested?.Invoke(speed));
+        _mediaToolbar.Control.Margin = new Thickness(8, 0, 8, 0);
+        _mediaToolbar.Control.Visibility = _mediaControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        _mediaToolbar.SetState(_mediaState);
+        Grid.SetColumn(_mediaToolbar.Control, 2);
+        layout.Children.Add(_mediaToolbar.Control);
         SetExternalOpenState(_externalState);
 
         return layout;

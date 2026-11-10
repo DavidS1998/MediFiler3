@@ -12,6 +12,15 @@
             </Grid.RowDefinitions>
             <Image x:Name="ImageViewer" Stretch="Uniform" Visibility="Collapsed" HorizontalAlignment="Stretch"
                    VerticalAlignment="Stretch" RenderTransformOrigin="0.5,0.5" />
+            <ContentControl x:Name="MediaHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch" />
+            <StackPanel x:Name="AudioPanel" Visibility="Collapsed" HorizontalAlignment="Center"
+                        VerticalAlignment="Center" MaxWidth="420" Margin="24" IsHitTestVisible="False">
+                <Image x:Name="AudioArtwork" Height="220" Width="220" Stretch="Uniform" Margin="0,0,0,16" />
+                <TextBlock x:Name="AudioTitle" Foreground="White" FontSize="20" TextAlignment="Center" TextWrapping="Wrap" />
+                <TextBlock Text="Audio · Space or right-click to play/pause" Foreground="#A3A6AE"
+                           TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,0" />
+            </StackPanel>
             <Grid x:Name="TextPanel" Visibility="Collapsed" Margin="324,12,324,24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
