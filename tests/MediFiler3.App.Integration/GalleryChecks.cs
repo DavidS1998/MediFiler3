@@ -15,6 +15,7 @@ internal static partial class Program
         WinUiGalleryIsland Gallery() => (WinUiGalleryIsland)Field(browse, "_gallery")!;
         Microsoft.UI.Xaml.Controls.GridView Grid() => (Microsoft.UI.Xaml.Controls.GridView)Field(Gallery(), "_grid")!;
         var host = (ViewerHostView)browse.FindName("ViewerHost");
+        await RunThumbnailRenderingChecksAsync();
         await LoadRestartRootsAsync(window, [directory]);
         await WaitUntil(() => state.Files.Count == 80 && browse.CanZoom);
         await Check("sidebar Gallery preserves shared context and suspends Browse resources", async () =>
@@ -31,7 +32,7 @@ internal static partial class Program
             Require(((FrameworkElement)browse.FindName("CarouselOverlay")).Visibility == Visibility.Collapsed, "Gallery displays Browse carousel");
             await WaitUntil(() => HasGalleryImage(Grid()));
             await WaitUntil(() => thumbnails.Requests.Count(r => r.Path == current!.FullPath) > carouselRequests);
-            Require(thumbnails.Requests.Where(r => r.Path == current!.FullPath).All(r => r.Width == 400 && r.Height == 400), "Carousel and Gallery use different thumbnail/cache sources");
+            Require(thumbnails.Requests.Where(r => r.Path == current!.FullPath).All(r => r.Width == 0 && r.Height == 0), "Carousel and Gallery do not share platform-default thumbnail requests");
         });
         await Check("Gallery sliders independently resize rectangular thumbnails and persist", async () =>
         {
@@ -100,9 +101,11 @@ internal static partial class Program
             var current = Grid().SelectedItem;
             await WaitUntil(() => Grid().ContainerFromItem(current) is Microsoft.UI.Xaml.Controls.GridViewItem);
             var item = (Microsoft.UI.Xaml.Controls.GridViewItem)Grid().ContainerFromItem(current);
-            var border = (Microsoft.UI.Xaml.Controls.Border)((Microsoft.UI.Xaml.Controls.Grid)item.ContentTemplateRoot).Children[3];
-            Require(border.Visibility == Microsoft.UI.Xaml.Visibility.Visible && border.BorderThickness.Left == 3 && border.BorderBrush is Microsoft.UI.Xaml.Media.SolidColorBrush color && color.Color.A == 255,
+            var highlight = (Microsoft.UI.Xaml.Controls.Grid)((Microsoft.UI.Xaml.Controls.Grid)item.ContentTemplateRoot).Children[3];
+            var border = (Microsoft.UI.Xaml.Controls.Border)highlight.Children[0];
+            Require(highlight.Visibility == Microsoft.UI.Xaml.Visibility.Visible && border.BorderThickness.Left == 5 && border.BorderBrush is Microsoft.UI.Xaml.Media.SolidColorBrush color && color.Color == Microsoft.UI.Colors.DeepPink && border.Child is null,
                 "Selected tile lacks a visible distinct border");
+            Require(highlight.Children.Count == 1, "Gallery selection still has a patterned overlay");
         });
         await Check("Gallery uses tight cropped tiles and hides gradient captions while hovered", async () =>
         {
@@ -164,8 +167,42 @@ internal static partial class Program
             Require(thumbnails.Calls == calls, "Inactive Gallery keeps scheduling thumbnail work");
             state.ReplaceFiles(files);
             navigation.SelectDestination("Gallery");
-            await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland island && Field(island, "_grid") is not null);
+            await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland island && Field(island, "_grid") is Microsoft.UI.Xaml.Controls.GridView { IsLoaded: true, Items.Count: 80 });
             Require(Grid().Items.Count == 80, "Gallery did not adopt the requested shared context");
+        });
+        await Check("Gallery defers retained-list replacements until native reattachment and survives repeated large returns", async () =>
+        {
+            var files = state.Files.ToArray();
+            var source = Grid().ItemsSource;
+            var large = Enumerable.Range(0, 10000).Select(i => new FileEntry(System.IO.Path.Combine(directory, $"return-{i}.unknown"), $"return-{i}.unknown", 1, DateTime.UnixEpoch)).ToArray();
+            var resets = 0; var individualChanges = 0;
+            var notifications = (System.Collections.Specialized.INotifyCollectionChanged)source;
+            System.Collections.Specialized.NotifyCollectionChangedEventHandler changed = (_, args) =>
+            {
+                if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++;
+                else individualChanges++;
+            };
+            notifications.CollectionChanged += changed;
+            try
+            {
+                for (var round = 0; round < 2; round++)
+                {
+                    navigation.SelectDestination("Settings"); await Task.Delay(80);
+                    state.ReplaceFiles(large); navigation.SelectDestination("Gallery");
+                    Require(Grid().Items.Count == files.Length, "Retained list mutated inside the native sidebar callback");
+                    await WaitUntil(() => Grid().IsLoaded && Grid().Items.Count == large.Length && Gallery().RealizedCount > 0);
+                    typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.A, true]);
+                    typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.Escape, false]);
+                    Grid().ScrollIntoView(Grid().Items[9000]); await Task.Delay(80);
+                    navigation.SelectDestination("Home"); await Task.Delay(80);
+                    state.ReplaceFiles(files); navigation.SelectDestination("Gallery");
+                    Require(Grid().Items.Count == large.Length, "Large retained list mutated before the sidebar callback returned");
+                    await WaitUntil(() => Grid().IsLoaded && Grid().Items.Count == files.Length && Gallery().RealizedCount > 0);
+                    Require(ReferenceEquals(source, Grid().ItemsSource), "Large returns replaced the native source");
+                }
+                Require(resets == 4 && individualChanges == 0, "Disjoint listing replacement exposed intermediate native collection indices");
+            }
+            finally { notifications.CollectionChanged -= changed; }
         });
         await Check("Gallery selection hands current context back to Browse on request", async () =>
         {
@@ -184,7 +221,7 @@ internal static partial class Program
             typeof(BrowseView).GetMethod("HandleCarouselTileClick", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse, [file, 2]);
             await WaitUntil(() => browse.IsGallery && ReferenceEquals(Grid().SelectedItem, file) && Grid().ContainerFromItem(file) is Microsoft.UI.Xaml.Controls.GridViewItem);
             var root = (Microsoft.UI.Xaml.Controls.Grid)((Microsoft.UI.Xaml.Controls.GridViewItem)Grid().ContainerFromItem(file)).ContentTemplateRoot;
-            Require(ReferenceEquals(state.CurrentFile, file) && ((Microsoft.UI.Xaml.Controls.Border)root.Children[3]).Visibility == Microsoft.UI.Xaml.Visibility.Visible, "Carousel target is not highlighted in Gallery");
+            Require(ReferenceEquals(state.CurrentFile, file) && root.Children[3].Visibility == Microsoft.UI.Xaml.Visibility.Visible, "Carousel target is not highlighted in Gallery");
         });
         await Check("Unpinned tree hover spans sidebar and tree without closing between them", async () =>
         {
@@ -215,8 +252,12 @@ internal static partial class Program
             await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland island && island.RealizedCount > 0);
             window.ToggleFullscreen(); ((System.Windows.Threading.DispatcherTimer)Field(window, "_fullscreenTimer")!).Stop();
             typeof(MediFiler3.MainWindow).GetMethod("SetFullscreenChrome", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [true, true]);
-            await Task.Delay(220);
-            typeof(BrowseView).GetMethod("OnVideoSurfaceRendering", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse, [null, EventArgs.Empty]);
+            await WaitUntil(() =>
+            {
+                typeof(BrowseView).GetMethod("OnVideoSurfaceRendering", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse, [null, EventArgs.Empty]);
+                var regions = (Rect[])Field(Gallery(), "_exclusions")!;
+                return regions.Any(r => r.Width >= 300 && r.Height > 100) && regions.Any(r => r.Height == 48);
+            });
             var cuts = (Rect[])Field(Gallery(), "_exclusions")!;
             Require(cuts.Any(r => r.Width >= 300 && r.Height > 100) && cuts.Any(r => r.Height == 48), "Gallery covers tree or shell reveal");
             Require(Field(Gallery(), "_regionKey") is not null, "Gallery HWND clipping was not applied");

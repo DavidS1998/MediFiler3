@@ -1,5 +1,63 @@
 # Architecture and decisions
 
+## Current decision index and handover (2026-11-11)
+
+Use [PROJECT_STATUS.md](PROJECT_STATUS.md) for the active snapshot and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for implementation caveats/code ownership. The dated records below retain rationale; newer decisions supersede earlier experiments.
+
+| Area | Active decision |
+|---|---|
+| Thumbnail request | Gallery/carousel call GetDefaultThumbnailPngAsync; Windows SingleItem-only overload, returned dimensions preserved, separate shared private 0x0 cache bucket; explicit-size callers unchanged |
+| Display processing | No manual blur, no SoftThumbnailDecoder; raw PNG decode, WPF HighQuality scaling, existing square-first Gallery framing and hover-fit |
+| Freshness exception | Known-invalidated/default image fallback uses fresh source at bounded 256px, persistent freshness markers; F5 is not a normal Windows-provider comparison |
+| Selection visuals | Solid five-pixel #FF1493 pink, square carousel/current/ghost frames; no dash/accent/inner-stroke experiment remains |
+| Input | Native Ctrl/Shift Extended selection plus Alt-hover paint; mode-local state and guarded command snapshots |
+| Native source lifetime | Retain grid/ItemsSource/LRU; defer updates until loaded; atomic Reset for disjoint/empty lists, incremental diffs for shared paths; reapply HWND clipping and defer reveals |
+| Next phase | 5.1-5.3 implemented; Gallery file mutations/history stay guarded for 5.4; continuous reader and other sorts deferred |
+
+No implementation changes were made for this final documentation handover. Fresh verification: 316 unit/filesystem and 181 full native checks passed, clean build. Historical native collection faults and physical/DPI/provider-performance limits remain documented rather than declared impossible.
+
+## Dated decision records
+
+## Platform-default previews and unfiltered presentation (2026-11-11)
+
+IThumbnailService adds GetDefaultThumbnailPngAsync, with a 256px compatibility fallback for non-Windows implementations. FileSystemThumbnailService overrides it and shares the existing request/cache core, using private 0x0 dimensions in the key to distinguish Windows-default previews from explicit-size entries. Normal Windows generation uses the SingleItem-only overload, allowing platform defaults for sizing/options, and normalizes to PNG at the returned dimensions (scale 1). Explicit-size callers retain their previous resize/clamp contract, keys and cache entries. Retention, worker bounds, per-key deduplication, invalidation/freshness markers and schema/payload versions are unchanged. Default results are cached at their creation-time resolution; live monitor/DPI changes do not automatically invalidate them.
+
+Freshness-sensitive images retain the stale-Windows-thumbnail bypass. For default requests this direct-source fallback is bounded at the SingleItem preferred 256px size without upscaling, including image fallback when Windows returns an icon/no thumbnail. Explicit-size fallback continues using the requested bounds. This exception preserves known same-metadata refresh/restart correctness rather than trusting stale provider pixels.
+
+Display convolution/softening and the native blur re-encode are removed. Gallery decodes the original shared PNG directly into WinUI BitmapImage; carousel uses ThumbnailViewerHandler.DecodePng then the existing center crop and HighQuality scaling. Original pixels, aspect ratios and current crop/hover geometry survive. No source/cache purge or new timer is introduced; both views use the same default bucket, while viewer/collision explicit-size calls remain independent.
+
+The prior Render/Loaded deferral remains, but wholly disjoint or emptied native listings are now batched as one Reset using a private ObservableCollection subclass. Obsolete tile work/selection/hover state is released first; the collection object and decoded LRU remain retained. This avoids exposing transient indices through thousands of native Add/Remove notifications, a path that reproduced the earlier access violation even after reattachment deferral. Shared-path changes still use the existing incremental path to retain unaffected images. The large-return regression observes native source notifications and requires four resets with no per-item notifications for four complete replacements.
+
+## Solid bright-pink selection outlines (2026-11-11)
+
+Latest border styling supersedes accent resources and patterned strokes below: Gallery selection and the carousel current item use one solid five-pixel #FF1493 (DeepPink) outline. The noninteractive selection wrapper remains for visibility toggling; dashed rectangles and inner strokes are removed. Square corners and minimal presentation softening are unchanged.
+
+## Minimal softening and larger grey/white dashes (2026-11-11)
+
+Latest tuning supersedes the stronger filter and black stroke below: presentation softening is now a single separable [1,14,1]/16 pass per axis with clamped immediate neighbors. It preserves most source detail and only blends about 6% across an isolated black/white edge. Existing cancellation, premultiplied-alpha, frozen-output and immutable-cache behavior is unchanged. Native/WPF selection overlays now use grey (#808080) underneath white dashes, with 2.5/2.5 dash/gap multipliers at the same 2.5-pixel stroke thickness, increasing the pattern length by 25%. Accent base and square geometry remain unchanged.
+
+## Patterned square selection and display-only softening (2026-11-11)
+
+Carousel normal/current frames and fade-out ghosts are square. Gallery's selection overlay is now a noninteractive Grid containing the existing accent outline/dark inner edge, then coincident black solid and white dashed Rectangles (2.5-pixel stroke, 2/2 dash/gap multipliers, inset 1.25). The same overlay geometry appears on the current carousel tile. Selection visibility toggles the entire overlay; no animated marching effect, extra hit target or image-layout change is introduced. Native theme and WPF dynamic accent resources remain in use. See [WinUI Rectangle stroke/dash properties](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.shapes.rectangle).
+
+Services/SoftThumbnailDecoder is an App presentation helper, separate from the raw thumbnail service/cache and main viewer decoder. It reads the original PNG, converts to premultiplied BGRA, applies three separable [1,4,6,4,1]/16 Gaussian-style passes with clamped edges and row-level cancellation, and freezes the resulting WPF BitmapSource. Carousel crops that softened source using its existing path. Gallery performs the same work inside its three-worker permit and converts the result to an ephemeral in-memory PNG for native BitmapImage loading. Existing native decoded LRU bounds and retained-image identity remain intact; no new unbounded cache or background timer exists. The source PNG is never mutated or replaced, so repeated decodes do not compound blur, and old disk PNGs immediately benefit without invalidation. Full-size viewer/GIF/media decoding stays unchanged. Extra decode/filter/PNG-conversion cost remains unbenchmarked; subjective strength and live-library performance need review.
+
+## Alt-hover and platform rendering resources (2026-11-11)
+
+Alt replaces Ctrl for Gallery hover painting. Pointer enter/move and keydown read VirtualKey.Menu; Menu/LeftMenu/RightMenu keyup ends the gesture. Application GalleryHoverSelection retains direction and visited paths, with no click compensation. Native Ctrl-click/Ctrl+Shift click are restored by removing the pointer-press/tap handlers. All previous context/deactivation/recycling safeguards remain. This supersedes the Ctrl-specific input details below.
+
+Selection outlines keep the five-pixel/dark-inner-edge geometry but take their color from platform resources: native ThemeResource SystemAccentColor and WPF DynamicResource SystemColors.AccentColorBrushKey. Framework resource updates follow accent changes; no extra event lifetime or application setting is needed. Current OS colors are checked by the integration runner; live physical color/theme transitions remain manual.
+
+WinRT BitmapTransform now explicitly uses Fant when normalizing/resizing PNGs. WPF carousel images use RenderOptions.BitmapScalingMode=HighQuality for display downscaling. PNG storage remains lossless and the Windows thumbnail request has no new quality argument. Fant improves the application's controlled resize step; it cannot undo aliasing or restore source detail already lost in a Windows/embedded thumbnail. Cache keys/schema remain unchanged and existing PNGs survive; F5's fresh-source decode exercises the new filter without a blanket purge. Worker/cache bounds, uncropped aspect preservation and main-viewer decoding are unchanged. See Microsoft's [interpolation modes](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.imaging.bitmapinterpolationmode), [Windows theme resources](https://learn.microsoft.com/en-us/windows/apps/develop/ui/theming) and [WPF accent resource support](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/whats-new/net90).
+
+## Ctrl-hover painting and selection contrast (2026-11-11)
+
+GalleryHoverSelection is an Application gesture state layered over GallerySelectionState.SetSelected. The first Ctrl-hovered valid path selects add or remove; per-path pre-hover bookkeeping prevents repeated toggles and preserves ordinary Ctrl-click results after painting. Native pointer enter/move and Ctrl keydown apply the gesture, key release/grid exit/context changes/deactivation/destruction end it. Ctrl-left-click applies the pre-hover toggle once and handles the event; Ctrl+Shift clicks remain native. Unmodified input and native ranges/automation keep their existing paths. A moved pointer can adopt a recycled tile without requiring another enter event. Revisited paths return before full-list membership lookup; no timer, filesystem/thumbnail work or persisted gesture state is added.
+
+Gallery and the carousel current item share cyan five-pixel highlights with a dark one-pixel inner edge. Carousel draws its highlight above the image to avoid image overflow covering the border, preserving its 150-pixel display size. Counter text has eight black one-pixel-offset decorative copies behind a single semibold white live-region label, with 24-pixel right clearance. Shared thumbnails remain bounded by the existing 400-by-400 requests, aspect-correct PNGs and original-source size; an 800-square-to-400-square decode test now verifies effective resolution and warm identity. No provider/cache/schema/operation policy changes occur.
+
+An intermediate native run reproduced the earlier retained-list access violation inside ObservableCollection notifications during a sidebar Gallery callback. SetFiles now coalesces the latest requested snapshot and applies native diffs at WPF Render priority, after the host is visible/loaded and the native grid is loaded, outside that callback. Initial setup without a grid remains immediate; Loaded/LayoutUpdated and activation resume pending changes without a timer. The same source and incremental survivor updates are retained. Repeated 80/10,000-file Home/Settings returns, select-all/clear and distant scrolling verify deferred mutation and retained source identity. This addresses a concrete reattachment/reentrancy path; it does not prove every native crash scenario absent.
+
 ## Phase 5.3 native Gallery input and selection scope (2026-11-11)
 
 WinUiGalleryIsland uses GridView Extended selection so Windows owns Ctrl/Shift pointer selection, keyboard movement/ranges, focus visuals and Selection/SelectionItem automation patterns. Native SelectionChanged snapshots feed GallerySelectionState.ReplaceSelection with validated case-insensitive paths, focus and range-anchor policy. GotFocus mirrors focus-only movement. Session changes update native selection under a reentrancy guard; unchanged native sets are left intact to preserve native focus/anchor behavior. Bulk Clear and SelectAll avoid individually clearing thousands of selected items. Selection adds no thumbnail requests or full-list realization.

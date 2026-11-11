@@ -1252,7 +1252,6 @@ public partial class BrowseView : UserControl
             CarouselItems.Add(_carouselTrailingSpacer);
         }
 
-        const int thumbnailSize = 400; // Same source/cache bucket as Gallery; carousel still renders at 150.
         var start = Math.Max(0, currentIndex - _carouselNeighborsOnEachSide);
         var end = Math.Min(files.Count - 1, currentIndex + _carouselNeighborsOnEachSide);
         _carouselStartIndex = start;
@@ -1347,7 +1346,7 @@ public partial class BrowseView : UserControl
             {
                 item.ThumbnailCancellation?.Dispose();
                 item.ThumbnailCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                return item.ThumbnailTask = LoadCarouselThumbnailAsync(item, thumbnailSize, item.ThumbnailCancellation.Token);
+                return item.ThumbnailTask = LoadCarouselThumbnailAsync(item, item.ThumbnailCancellation.Token);
             });
 
         await Task.WhenAll(loads);
@@ -1429,18 +1428,18 @@ public partial class BrowseView : UserControl
         return null;
     }
 
-    private async Task<BitmapSource?> LoadCarouselThumbnailAsync(CarouselThumbnailItem item, int thumbnailSize,
+    private async Task<BitmapSource?> LoadCarouselThumbnailAsync(CarouselThumbnailItem item,
         CancellationToken cancellationToken)
     {
         try
         {
-            var pngBytes = await _thumbnailService.GetThumbnailPngAsync(item.File, thumbnailSize, thumbnailSize, cancellationToken);
+            var pngBytes = await _thumbnailService.GetDefaultThumbnailPngAsync(item.File, cancellationToken);
             if (pngBytes is null || cancellationToken.IsCancellationRequested || !CarouselItems.Contains(item))
             {
                 return null;
             }
 
-            var bitmap = await Task.Run(() => DecodePng(pngBytes), cancellationToken);
+            var bitmap = await Task.Run(() => ThumbnailViewerHandler.DecodePng(pngBytes), cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!cancellationToken.IsCancellationRequested && CarouselItems.Contains(item))
             {
@@ -1524,18 +1523,6 @@ public partial class BrowseView : UserControl
         CarouselList.SelectedItem = null;
         EmptyFilesNotice.Visibility = Visibility.Visible;
         ViewerHost.ShowImageMessage(message, detail);
-    }
-
-    private static BitmapSource DecodePng(byte[] pngBytes)
-    {
-        using var stream = new MemoryStream(pngBytes, writable: false);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        return image;
     }
 
     private static BitmapSource CropThumbnail(BitmapSource source)

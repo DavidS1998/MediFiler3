@@ -40,10 +40,15 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
     private readonly HashSet<PendingThumbnail> _pendingThumbnails = [];
     private readonly Dictionary<string, RequestGate> _requestGates = [];
 
-    public async Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
+    public Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken) =>
+        GetThumbnailCoreAsync(file, Math.Max(1, width), Math.Max(1, height), windowsDefaults: false, cancellationToken);
+
+    public Task<byte[]?> GetDefaultThumbnailPngAsync(FileEntry file, CancellationToken cancellationToken) =>
+        GetThumbnailCoreAsync(file, 0, 0, windowsDefaults: true, cancellationToken);
+
+    private async Task<byte[]?> GetThumbnailCoreAsync(FileEntry file, int width, int height, bool windowsDefaults, CancellationToken cancellationToken)
     {
-        width = Math.Max(1, width);
-        height = Math.Max(1, height);
+        // The private 0x0 bucket separates platform-default previews from old fixed-size PNGs.
         var key = CreateCacheKey(file, width, height);
         long revision;
         PendingThumbnail pending;
@@ -99,7 +104,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
             finally { _cacheGate.Release(); }
             await _workers.WaitAsync(cancellationToken).ConfigureAwait(false); enteredWorker = true;
             cancellationToken.ThrowIfCancellationRequested();
-            var bytes = await Task.Run(() => GenerateThumbnailAsync(file, width, height, freshSource, cancellationToken), cancellationToken).ConfigureAwait(false);
+            var bytes = await Task.Run(() => GenerateThumbnailAsync(file, width, height, windowsDefaults, freshSource, cancellationToken), cancellationToken).ConfigureAwait(false);
             await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -130,20 +135,26 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         }
     }
 
-    private static async Task<byte[]?> GenerateThumbnailAsync(FileEntry file, int width, int height, bool freshSource, CancellationToken token)
+    private static async Task<byte[]?> GenerateThumbnailAsync(FileEntry file, int width, int height, bool windowsDefaults, bool freshSource, CancellationToken token)
     {
         try
         {
             token.ThrowIfCancellationRequested();
             var item = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(file.FullPath)).AsTask(token).ConfigureAwait(false);
+            // Known invalidations still bypass stale Windows previews. Keep this source
+            // fallback bounded using SingleItem's default preferred size, without upscaling.
+            var fallbackWidth = windowsDefaults ? 256 : width;
+            var fallbackHeight = windowsDefaults ? 256 : height;
             if (freshSource && ImageExtensions.Contains(file.Extension))
             {
                 // Windows can retain a stale system thumbnail after same-size/timestamp edits.
                 using var source = await item.OpenAsync(FileAccessMode.Read).AsTask(token).ConfigureAwait(false);
-                return await EncodeThumbnailPngAsync(source, width, height, token).ConfigureAwait(false);
+                return await EncodeThumbnailPngAsync(source, fallbackWidth, fallbackHeight, token).ConfigureAwait(false);
             }
-            using var thumbnail = await item.GetThumbnailAsync(ThumbnailMode.SingleItem,
-                (uint)Math.Max(width, height), ThumbnailOptions.ResizeThumbnail).AsTask(token).ConfigureAwait(false);
+            using var thumbnail = windowsDefaults
+                ? await item.GetThumbnailAsync(ThumbnailMode.SingleItem).AsTask(token).ConfigureAwait(false)
+                : await item.GetThumbnailAsync(ThumbnailMode.SingleItem,
+                    (uint)Math.Max(width, height), ThumbnailOptions.ResizeThumbnail).AsTask(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
             // Preserve the existing thumbnail-only contract: file icons are placeholders, not previews.
             if (thumbnail is null || thumbnail.Type != ThumbnailType.Image || thumbnail.Size == 0)
@@ -151,7 +162,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
                 if (!ImageExtensions.Contains(file.Extension)) return null;
                 // Keep supported image previews available if Windows supplies only an icon.
                 using var source = await item.OpenAsync(FileAccessMode.Read).AsTask(token).ConfigureAwait(false);
-                return await EncodeThumbnailPngAsync(source, width, height, token).ConfigureAwait(false);
+                return await EncodeThumbnailPngAsync(source, fallbackWidth, fallbackHeight, token).ConfigureAwait(false);
             }
             return await EncodeThumbnailPngAsync(thumbnail, width, height, token).ConfigureAwait(false);
         }
@@ -166,9 +177,13 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
     private static async Task<byte[]> EncodeThumbnailPngAsync(IRandomAccessStream source, int width, int height, CancellationToken token)
     {
         var decoder = await BitmapDecoder.CreateAsync(source).AsTask(token).ConfigureAwait(false);
-        var scale = Math.Min(1d, Math.Min((double)width / decoder.OrientedPixelWidth, (double)height / decoder.OrientedPixelHeight));
+        // Default previews keep the exact dimensions Windows returned; PNG normalization
+        // must not silently resize them back into the previous 400px bucket.
+        var scale = width == 0 && height == 0 ? 1d : Math.Min(1d,
+            Math.Min((double)width / decoder.OrientedPixelWidth, (double)height / decoder.OrientedPixelHeight));
         var transform = new BitmapTransform
         {
+            InterpolationMode = BitmapInterpolationMode.Fant,
             ScaledWidth = (uint)Math.Max(1, Math.Floor(decoder.PixelWidth * scale)),
             ScaledHeight = (uint)Math.Max(1, Math.Floor(decoder.PixelHeight * scale))
         };

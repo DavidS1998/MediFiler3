@@ -1,5 +1,7 @@
 # Phase 4 acceptance report
 
+> This historical report retains Phase 4's actual acceptance evidence and still-open physical checks. Current Phase 5 automation does not mark those checks passed; see [PROJECT_STATUS.md](PROJECT_STATUS.md) and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for the latest implementation/verification.
+
 Updated 2026-11-10. Automated step 4.7 is complete. The user tentatively accepted Phase 4 overall while acknowledging that not all physical use cases could be tested; unverified cases below remain known limits. Phase 3's earlier manual acceptance remains recorded separately and does not imply acceptance of the later Home/dialog/backup/layout/watcher changes.
 
 ## Automated evidence

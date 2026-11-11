@@ -40,7 +40,7 @@ internal static partial class Program
             foreach (var index in new[] { 0, 2 })
             {
                 var container = (GridViewItem)Grid().ContainerFromItem(files[index]);
-                var border = (Border)((Grid)container.ContentTemplateRoot).Children[3];
+                var border = ((Grid)container.ContentTemplateRoot).Children[3];
                 Require(border.Visibility == Microsoft.UI.Xaml.Visibility.Visible, "A selected tile lost its border");
                 Require(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(container) == files[index].Name &&
                     Microsoft.UI.Xaml.Automation.AutomationProperties.GetHelpText(container).Contains(files[index].FullPath), "Accessible file information missing");
@@ -138,5 +138,69 @@ internal static partial class Program
             Require(selection.Count == 0, "Enter retained Gallery command targets in Browse");
             navigation.SelectDestination("Gallery");
         });
+        await Check("Gallery Alt hover paints add or remove once and ends on deactivation", async () =>
+        {
+            gallery().RevealCurrentFile(files[0]);
+            await WaitUntil(() => Grid().ContainerFromItem(files[2]) is GridViewItem);
+            selection.Clear();
+            void Hover(int index, bool alt)
+            {
+                var item = (GridViewItem)Grid().ContainerFromItem(files[index]);
+                typeof(WinUiGalleryIsland).GetField("_hoveredRoot", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(gallery(), item.ContentTemplateRoot);
+                typeof(WinUiGalleryIsland).GetMethod("PaintHoveredTile", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(gallery(), [alt]);
+            }
+            Hover(0, true); Hover(2, true); Hover(0, true);
+            Require(selection.Count == 2 && Grid().SelectedItems.Count == 2, "Alt hover did not add or repainted a visited file");
+            Hover(0, false); Hover(0, true); Hover(2, true); Hover(0, true);
+            Require(selection.Count == 0 && Grid().SelectedItems.Count == 0, "Starting selected did not invert the whole gesture");
+            Hover(0, false); Hover(0, true);
+            navigation.SelectDestination("Settings"); await Task.Delay(80);
+            navigation.SelectDestination("Gallery");
+            await WaitUntil(() => Grid().IsLoaded && Grid().ContainerFromItem(files[0]) is GridViewItem { IsLoaded: true } &&
+                Field(gallery(), "_selectionStatus") is TextBlock { IsLoaded: true });
+            Hover(0, true);
+            Require(selection.Count == 0, "Workspace deactivation did not end the old hover gesture");
+            Hover(0, false);
+        });
+        await Check("Gallery counter has an outline and scrollbar clearance with matching carousel current border", async () =>
+        {
+            var status = (TextBlock)Field(gallery(), "_selectionStatus")!;
+            var parent = (Grid)Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(status);
+            Require(parent.Margin.Right == 24 && !parent.IsHitTestVisible, "Selection counter lacks scrollbar clearance");
+            var outlines = parent.Children.OfType<TextBlock>().Where(text => text != status).ToArray();
+            Require(outlines.Length == 8 && outlines.All(text => text.Text == status.Text &&
+                text.Foreground is Microsoft.UI.Xaml.Media.SolidColorBrush brush && brush.Color == Microsoft.UI.Colors.Black), "Counter text outline missing");
+            navigation.SelectDestination("Browse");
+            var list = (System.Windows.Controls.ListBox)browse.FindName("CarouselList");
+            await WaitUntil(() => list.SelectedItem is CarouselThumbnailItem item && item.IsCurrent && list.ItemContainerGenerator.ContainerFromItem(item) is not null);
+            var container = list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem);
+            System.Windows.Controls.Border? FindBorder(System.Windows.DependencyObject element, string name = "CurrentThumbnailBorder")
+            {
+                if (element is System.Windows.Controls.Border border && border.Name == name) return border;
+                for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(element); i++)
+                    if (FindBorder(System.Windows.Media.VisualTreeHelper.GetChild(element, i), name) is { } found) return found;
+                return null;
+            }
+            await WaitUntil(() => FindBorder(container) is not null);
+            var current = FindBorder(container)!;
+            Require(FindBorder(container, "ThumbnailBorder")?.CornerRadius == new System.Windows.CornerRadius(0), "Carousel image container is still rounded");
+            Require(current.Visibility == System.Windows.Visibility.Visible && current.BorderThickness.Left == 5 &&
+                current.CornerRadius == new System.Windows.CornerRadius(0) &&
+                current.BorderBrush is System.Windows.Media.SolidColorBrush color && color.Color == System.Windows.Media.Colors.DeepPink &&
+                current.Child is null, "Carousel current border does not match Gallery");
+            var highlight = (System.Windows.Controls.Grid)current.Parent;
+            Require(highlight.IsVisible && highlight.Children.Count == 1, "Carousel selection still has a patterned overlay");
+            Require(FindHighQualityImage((System.Windows.DependencyObject)highlight.Parent), "Carousel image does not use high-quality scaling");
+            navigation.SelectDestination("Gallery");
+        });
+    }
+
+    private static bool FindHighQualityImage(System.Windows.DependencyObject element)
+    {
+        if (element is System.Windows.Controls.Image image)
+            return System.Windows.Media.RenderOptions.GetBitmapScalingMode(image) == System.Windows.Media.BitmapScalingMode.HighQuality;
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(element); i++)
+            if (FindHighQualityImage(System.Windows.Media.VisualTreeHelper.GetChild(element, i))) return true;
+        return false;
     }
 }

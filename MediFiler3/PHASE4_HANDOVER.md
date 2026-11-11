@@ -1,5 +1,7 @@
 # Phase 4 and UX continuation handover
 
+> Historical Phase 4 baseline. Current Phase 5 state/Git/verification are in [PROJECT_STATUS.md](PROJECT_STATUS.md) and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md). Keep the safety and ownership policies below, but do not use the older baseline/counts or Gallery-not-started continuation instructions as current status.
+
 Updated 2026-11-10. Start with PROJECT_STATUS.md for the consolidated snapshot, ARCHITECTURE.md for policy and PHASE4_ACCEPTANCE.md for evidence/physical limits. Earlier pre-4.6 proposals and uncommitted-state notes are superseded by this handover.
 
 ## Baseline and scope

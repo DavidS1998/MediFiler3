@@ -10,6 +10,51 @@ public sealed partial class WinUiGalleryIsland
 {
     private MenuFlyout? _selectionMenu;
     private long _selectionContextVersion;
+    private readonly List<TextBlock> _selectionOutlines = [];
+
+    private Grid CreateSelectionStatus()
+    {
+        var host = new Grid { HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Bottom,
+            Margin = new Thickness(8, 8, 24, 8), IsHitTestVisible = false };
+        for (var y = -1; y <= 1; y++)
+            for (var x = -1; x <= 1; x++)
+            {
+                if (x == 0 && y == 0) continue;
+                var outline = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black),
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    RenderTransform = new Microsoft.UI.Xaml.Media.TranslateTransform { X = x, Y = y } };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(outline, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                _selectionOutlines.Add(outline); host.Children.Add(outline);
+            }
+        _selectionStatus = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetLiveSetting(_selectionStatus, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+        host.Children.Add(_selectionStatus);
+        return host;
+    }
+
+    private static bool ControlHeld() => (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) &
+        Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+    private static bool AltHeld() => (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu) &
+        Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+
+    private void PaintHoveredTile(bool alt)
+    {
+        if (!alt) { _hoverSelection.Reset(); return; }
+        if (_active && _hoveredRoot is not null && FileFromElement(_hoveredRoot) is { } file)
+            _hoverSelection.Visit(_files, file, alt: true);
+    }
+
+    private void OnTilePointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (!_active || sender is not Grid root) return;
+        if (_hoveredRoot != root)
+        {
+            if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
+            _hoveredRoot = root; SetTileHover(root, true);
+        }
+        PaintHoveredTile(AltHeld());
+    }
     // Native Extended selection owns pointer/range/arrow behavior and exposes the
     // standard UI Automation Selection/SelectionItem patterns. Session state owns
     // the path-based snapshot used by commands and filesystem reconciliation.
@@ -40,6 +85,7 @@ public sealed partial class WinUiGalleryIsland
                 if (_selectionStatus.Text != text)
                 {
                     _selectionStatus.Text = text;
+                    foreach (var outline in _selectionOutlines) outline.Text = text;
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_selectionStatus, text);
                     Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(_selectionStatus)?
                         .RaiseAutomationEvent(Microsoft.UI.Xaml.Automation.Peers.AutomationEvents.LiveRegionChanged);

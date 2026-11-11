@@ -31,6 +31,104 @@ public sealed class ThumbnailMaintenanceTests : IDisposable
     }
 
     [Fact]
+    public async Task PlatformDefaultDimensionsMatchWindowsAndHaveTheirOwnSharedPersistentCacheBucket()
+    {
+        var source = Path.Combine(_root, "default-square.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(800, 800, 96, 96, PixelFormats.Gray8, null,
+            Enumerable.Repeat((byte)120, 800 * 800).ToArray(), 800)));
+        using (var output = File.Create(source)) encoder.Save(output);
+        var item = await Windows.Storage.StorageFile.GetFileFromPathAsync(source);
+        using var windows = await item.GetThumbnailAsync(Windows.Storage.FileProperties.ThumbnailMode.SingleItem);
+        Assert.NotNull(windows);
+        using var windowsStream = windows.AsStreamForRead();
+        var reference = BitmapDecoder.Create(windowsStream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+        var store = new Store(); byte[] original;
+        using (var cache = new FileSystemThumbnailService(store, Cache))
+        {
+            original = (await cache.GetDefaultThumbnailPngAsync(Entry(source), default))!;
+            Assert.NotNull(original);
+            using var png = new MemoryStream(original);
+            var decoded = BitmapDecoder.Create(png, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+            Assert.Equal(reference.PixelWidth, decoded.PixelWidth); Assert.Equal(reference.PixelHeight, decoded.PixelHeight);
+            Assert.Same(original, await cache.GetDefaultThumbnailPngAsync(Entry(source), default));
+            var fixedSize = await cache.GetThumbnailPngAsync(Entry(source), 400, 400, default);
+            Assert.NotNull(fixedSize); Assert.NotSame(original, fixedSize);
+            Assert.Equal(2, Directory.GetFiles(Cache, "*.png").Length);
+            await cache.FlushAsync();
+        }
+        using var reopened = new FileSystemThumbnailService(store, Cache);
+        Assert.Equal(original, await reopened.GetDefaultThumbnailPngAsync(Entry(source), default));
+    }
+
+    [Fact]
+    public async Task PlatformDefaultInvalidationStillBypassesStaleWindowsPixelsAcrossRestart()
+    {
+        var source = Path.Combine(_root, "default-fresh.png"); File.WriteAllBytes(source, Png(10));
+        var entry = Entry(source); var store = new Store(); byte[]? before;
+        using (var cache = new FileSystemThumbnailService(store, Cache))
+        {
+            before = await cache.GetDefaultThumbnailPngAsync(entry, default);
+            Assert.NotNull(before);
+            File.WriteAllBytes(source, Png(200)); File.SetLastWriteTimeUtc(source, entry.LastModifiedUtc);
+            Assert.Equal(entry.Size, new FileInfo(source).Length);
+            await cache.InvalidateAsync(source, false); await cache.FlushAsync();
+        }
+        using var reopened = new FileSystemThumbnailService(store, Cache);
+        var after = await reopened.GetDefaultThumbnailPngAsync(entry, default);
+        Assert.NotNull(after); Assert.NotEqual(before, after);
+        using var png = new MemoryStream(after);
+        var decoded = BitmapDecoder.Create(png, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+        var gray = new FormatConvertedBitmap(decoded, PixelFormats.Gray8, null, 0);
+        var pixel = new byte[4]; gray.CopyPixels(pixel, 2, 0);
+        Assert.All(pixel, value => Assert.True(value > 180, "Default-size preview used stale Windows pixels"));
+    }
+
+    [Fact]
+    public async Task FreshSourceDownsamplingSmoothsHighFrequencyPixelsWithoutChangingResolution()
+    {
+        const int size = 801;
+        var pixels = new byte[size * size];
+        for (var y = 0; y < size; y++)
+            for (var x = 0; x < size; x++) pixels[y * size + x] = (byte)(((x + y) % 2) * 255);
+        var source = Path.Combine(_root, "checkerboard.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(size, size, 96, 96, PixelFormats.Gray8, null, pixels, size)));
+        using (var stream = File.Create(source)) encoder.Save(stream);
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        await cache.InvalidateAsync(source, false); // Exercise the source decode used by F5, bypassing Windows' cached preview.
+        var bytes = await cache.GetThumbnailPngAsync(Entry(source), 400, 400, default);
+        Assert.NotNull(bytes);
+        using var png = new MemoryStream(bytes);
+        var decoded = BitmapDecoder.Create(png, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+        Assert.Equal(400, decoded.PixelWidth); Assert.Equal(400, decoded.PixelHeight);
+        var gray = new FormatConvertedBitmap(decoded, PixelFormats.Gray8, null, 0);
+        var middle = new byte[100 * 100];
+        gray.CopyPixels(new System.Windows.Int32Rect(150, 150, 100, 100), middle, 100, 0);
+        // Color management can shift the exact gray. Require averaged midtones,
+        // rather than the black/white extremes that produce sampling moire.
+        Assert.InRange(middle.Min(), (byte)96, (byte)160);
+        Assert.InRange(middle.Max(), (byte)96, (byte)160);
+    }
+
+    [Fact]
+    public async Task LargeSquarePreviewReallyDecodesAt400By400AndIsShared()
+    {
+        var source = Path.Combine(_root, "large-square.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(800, 800, 96, 96, PixelFormats.Gray8, null,
+            Enumerable.Repeat((byte)120, 800 * 800).ToArray(), 800)));
+        using (var stream = File.Create(source)) encoder.Save(stream);
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var bytes = await cache.GetThumbnailPngAsync(Entry(source), 400, 400, default);
+        Assert.NotNull(bytes);
+        using var png = new MemoryStream(bytes);
+        var decoded = BitmapDecoder.Create(png, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+        Assert.Equal(400, decoded.PixelWidth); Assert.Equal(400, decoded.PixelHeight);
+        Assert.Same(bytes, await cache.GetThumbnailPngAsync(Entry(source), 400, 400, default));
+    }
+
+    [Fact]
     public async Task MatchingCarouselAndGalleryRequestsReuseTheSameCachedPng()
     {
         var source = Path.Combine(_root, "shared.png"); File.WriteAllBytes(source, Png(10));

@@ -111,9 +111,10 @@ public partial class BrowseView
         if (point.X + 156 < 0 || point.X > CarouselList.ActualWidth) return;
         // A noninteractive visual keeps the old edge tile alive while the real list removes it immediately.
         var tile = new StackPanel { Width = 156, Height = 170, IsHitTestVisible = false };
-        var picture = new Border { Width = 150, Height = 150, CornerRadius = new CornerRadius(6), Background = new SolidColorBrush(Color.FromRgb(11, 12, 14)),
+        var picture = new Border { Width = 150, Height = 150, Background = new SolidColorBrush(Color.FromRgb(11, 12, 14)),
             Child = item.Thumbnail is null ? new TextBlock { Text = item.PlaceholderText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center }
                 : new Image { Source = item.Thumbnail, Stretch = Stretch.UniformToFill } };
+        RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.HighQuality);
         tile.Children.Add(picture);
         tile.Children.Add(new TextBlock { Text = item.Name, Foreground = Brushes.LightGray, FontSize = 11, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
         Canvas.SetLeft(tile, point.X); Canvas.SetTop(tile, point.Y);

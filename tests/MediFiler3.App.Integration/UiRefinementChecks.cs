@@ -102,6 +102,7 @@ internal static partial class Program
                 Require(browse.CarouselItems.Contains(kept), "Adjacent navigation recreated surviving tile");
                 var ghosts = (Canvas)browse.FindName("CarouselGhosts");
                 if (SystemParameters.ClientAreaAnimation) Require(ghosts.Children.Count > 0 && ghosts.Children.Count <= 24, "No bounded edge fade-out");
+                Require(ghosts.Children.OfType<StackPanel>().All(tile => tile.Children[0] is Border { CornerRadius.TopLeft: 0 }), "A fading carousel image still has rounded corners");
                 await Task.Delay(160);
                 Require(ghosts.Children.Count == 0, "Fade-out visuals were not released");
             });
@@ -185,6 +186,8 @@ internal static partial class Program
     {
         public int Calls;
         public readonly System.Collections.Concurrent.ConcurrentBag<(string Path, int Width, int Height)> Requests = [];
+        public Task<byte[]?> GetDefaultThumbnailPngAsync(FileEntry file, CancellationToken cancellationToken)
+        { Requests.Add((file.FullPath, 0, 0)); Interlocked.Increment(ref Calls); return NativeThumbnails.GetDefaultThumbnailPngAsync(file, cancellationToken); }
         public Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
         { Requests.Add((file.FullPath, width, height)); Interlocked.Increment(ref Calls); return NativeThumbnails.GetThumbnailPngAsync(file, width, height, cancellationToken); }
     }

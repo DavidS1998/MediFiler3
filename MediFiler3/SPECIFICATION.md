@@ -343,7 +343,7 @@ When Gallery is requested after Home or Settings, reveal the shared Browse curre
 
 Returning to Browse/Gallery from Home or Settings must reconcile the filesystem without invalidating unchanged thumbnails merely because watcher coverage restarted. Healthy startup compares metadata; actual change hints, F5, overflow and failed-coverage recovery retain explicit invalidation. Changes made while coverage was stopped with unchanged size/timestamp require F5.
 
-Thumbnail generation on application-cache misses uses StorageFile.GetThumbnailAsync/StorageItemThumbnail in SingleItem mode, normalized into shared aspect-correct PNGs. Keep existing cached PNGs usable. Known invalidated images must bypass stale Windows system thumbnails using a fresh WinRT image decode, preserving same-size/timestamp refresh and restart handling. Main viewer image decoding remains unchanged.
+Thumbnail generation on application-cache misses uses StorageFile.GetThumbnailAsync/StorageItemThumbnail in SingleItem mode, normalized into shared aspect-correct PNGs. Gallery/carousel use Windows' default sizing/options and preserve the returned dimensions, with a separate shared default-size cache bucket; keep explicit-size entries usable without a purge. Known invalidated images must bypass stale Windows system thumbnails using a fresh WinRT image decode, preserving same-size/timestamp refresh and restart handling (default fallback bounded at 256px). Main viewer image decoding remains unchanged.
 
 Browse and Gallery appear as separate tabs/destinations in the compact sidebar. They share folder/file context, but apply changes to the other view's expensive presentation when that view is requested. Switching tabs must not rescan the collection or load inactive viewer content/thumbnails.
 
@@ -368,15 +368,19 @@ The gallery view provides an overview of a folder's contents through a grid of t
 - Center Gallery rows in the available space. Selected/current tiles use a distinct visible border. Right-toolbar slider labels read Width and Height; the current locally adjusted slider width is 150 logical pixels.
 - Double-clicking a Browse carousel tile opens Gallery at that file and highlights it; single-click behavior remains Browse selection.
 - In normal mode, sidebar hover is the sole trigger to open the unpinned folder tree. Hovering the tree retains it once open; hide after leaving that combined area. The old content-edge hitbox must not open it. Preserve pinned-tree behavior and fullscreen's coordinated reveals.
-- Carousel and Gallery reuse the same 400-by-400 cached PNG thumbnail source, with mode-specific rendering. File-specific change hints must retain unaffected thumbnails and decoder work; explicit folder/root refreshes still invalidate their scope.
+- Carousel and Gallery reuse the same Windows-default-size cached PNG thumbnail source, with mode-specific rendering. File-specific change hints must retain unaffected thumbnails and decoder work; explicit folder/root refreshes still invalidate their scope.
 - Generate thumbnails asynchronously.
 - Virtualize the interface so only visible items and a reasonable surrounding buffer need to be rendered.
 - Support alphabetical sorting and other sorting options.
 - Support selecting individual files.
 - Support CTRL+click for selecting multiple files.
+- Holding Alt while hovering tiles selects each entered file immediately. The first file determines the gesture direction: start on a selected file to remove selection instead. Revisiting a file must not repeatedly toggle it. Reset the gesture on release, leaving Gallery's grid, context change or deactivation. Ctrl-hover does not paint; ordinary Ctrl-click and Ctrl+Shift range selection remain native.
 - Support SHIFT+click for selecting a range of files.
 - Use native extended selection and keyboard navigation, including modifier ranges/focus-only movement, Home/End, PageUp/Down and Space. Ctrl+A selects all; Escape clears selection; Enter opens the focused file in Browse. Keep native focus visuals and accessibility selection patterns.
 - Display an accessible selected-file count and filename/path/basic size information. Keep a distinct border on every selected tile.
+- Keep the count clear of the scrollbar and outline its text for readability over white images. Selected Gallery files and the carousel current/middle item use a solid bright-pink (#FF1493) five-pixel border, with no pattern or secondary stroke. Highlights stay noninteractive. Carousel images/current frames and fading edge items have square corners.
+- Render thumbnails without manual blur or display pixel filtering. Preserve dimensions, aspect ratio, transparency and cache/source contents; full-size viewer decoding stays unchanged.
+- Preserve Windows-default returned thumbnail dimensions during PNG normalization. Keep high-quality WPF carousel scaling and Fant interpolation where explicit-size/fresh-source fallback needs downsampling. Existing cached PNGs remain usable, and F5 retains freshness invalidation without changing crop geometry.
 - Home/Settings visits retain Gallery selection; switching to Browse clears mode-local selection. A new Gallery mode entry selects the shared current file once. Refresh/reveal must preserve surviving selections and an explicitly cleared selection.
 - A mouse/keyboard context menu offers Open in Browse, Select all and Clear selection. A selected target retains the set; an unselected target replaces it. Blank-space Open is disabled. Reject stale commands after listing/activity changes.
 - Until Phase 5.4 grouped-operation integration, keep Gallery file mutation/history commands guarded. Never apply a single-current-file mutation implicitly to a multi-selection.
@@ -832,6 +836,8 @@ Do not attempt to implement all features simultaneously.
 Phase 4 steps 4.1 through 4.6 are implemented: typed storage, current schema-7 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; step 4.5 implements monitor-aware window layout persistence; step 4.6 implements loaded-root reconciliation and agreed thumbnail-cache maintenance; 4.7 automated acceptance is complete. The user tentatively accepted Phase 4; PHASE4_ACCEPTANCE.md retains untested physical cases as verification limits. Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
 
 ## Phase 5 – Alternative viewing modes
+
+Current implementation: slices 5.1-5.3 are implemented, including Gallery selection/input and subsequent documented UX/resume/thumbnail refinements. Slice 5.4 grouped file mutation/history integration is next; its Gallery guards remain active. Slice 5.5 physical/performance acceptance is open. Continuous reader and additional sorts/drag-drop remain later scope. See [PROJECT_STATUS.md](PROJECT_STATUS.md), [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) and [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) for the active state; the broad requirements below are not a claim that every item is already implemented.
 
 - Gallery view.
 - Multiple file selection.

@@ -13,6 +13,16 @@ public sealed class GallerySelectionState
 
     public bool IsSelected(FileEntry file) => _selected.Contains(file.FullPath);
 
+    public void SetSelected(IReadOnlyList<FileEntry> files, FileEntry file, bool selected)
+    {
+        if (IndexOf(files, file.FullPath) < 0) return;
+        var changed = selected ? _selected.Add(file.FullPath) : _selected.Remove(file.FullPath);
+        if (!changed) return;
+        FocusedPath = file.FullPath;
+        AnchorPath ??= FocusedPath;
+        Changed?.Invoke();
+    }
+
     // Snapshots follow the current shared sort order, never click or hash-set order.
     public IReadOnlyList<FileEntry> GetSelectedFiles(IReadOnlyList<FileEntry> files) =>
         files.Where(IsSelected).ToArray();

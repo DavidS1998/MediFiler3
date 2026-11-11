@@ -1,5 +1,22 @@
 # Development plan
 
+## Current continuation state (2026-11-11)
+
+Phase 5.1-5.3 and the subsequent Gallery UX/resume/thumbnail refinements are implemented. Current rendering uses Windows-default shared PNG sizes with no manual blur, solid pink outlines, square carousel frames and Alt-hover selection; native Ctrl/Shift behavior stays standard. Full/disjoint native source changes batch one Reset, while shared-path changes remain incremental. Slider display dimensions remain independently persisted at 100-400/50, with fixed 150-pixel control widths.
+
+Current branch/HEAD: master/0880e94; subsequent source/tests remain uncommitted. Fresh handover verification: 316 unit/filesystem tests and 181 native checks passed without failures/skips; build zero warnings/errors. Current snapshot and next actions: [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation caveats and pending decisions: [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md). Earlier "not started", baseline hashes and intermediate counts below describe their original milestones.
+
+| Next work | Boundary |
+|---|---|
+| Thumbnail review | Latest Windows-default/no-blur appearance and DPI behavior await user feedback; crop changes were not adopted |
+| 5.4 | Plan concrete command scope/partial outcomes/cancellation, reuse existing grouped moves, add journal-backed grouped recycle and validate collisions/Undo/Redo; retain current guards until ready |
+| 5.5 | Continue targeted reconciliation/performance/native stability checks and physical acceptance; existing automation alone does not close these limits |
+| Later | Continuous reader, additional sorts/filtering and drag/drop remain separately scoped |
+
+This final turn is documentation/verification only, not authorization to implement the next slice or to commit/push.
+
+## Dated milestones
+
 ## Phase 5.3 implemented (2026-11-11)
 
 Native Gallery Extended selection now wires Ctrl/Shift pointer and native keyboard behavior to session selection, current-file focus and accessible borders/count/file information. Ctrl+A, Escape, focused Enter and a keyboard/mouse context menu provide validated selection/open commands. Reconciliation preserves current selected records and prunes stale old-grid input; Home/Settings preserve selection while Browse clears it. Select All remains virtualized for 10,000 files, with bulk clearing. Existing Gallery mutation/history guards remain until 5.4, which is the next implementation slice. No storage/provider/watcher/operation-policy changes were made. Build clean; 308 unit/filesystem tests and 176 native checks passed without failures/skips. Physical input, Narrator and mixed-DPI acceptance remains open; see PROJECT_STATUS.md for evidence and runner limits.
@@ -44,7 +61,7 @@ Verification: clean solution build; 289 unit/filesystem tests and 151 native che
 
 ## Phase 5 approved slices (2026-11-11)
 
-- **5.1 complete:** Application viewing-mode/session and Gallery selection foundations, validated Browse handoff, refresh reconciliation and eight business-logic regressions. Build clean; 284 unit/filesystem tests and 144 native checks pass without failures/skips. Gallery is not yet visible in the UI.
+- **5.1 complete:** Application viewing-mode/session and Gallery selection foundations, validated Browse handoff, refresh reconciliation and eight business-logic regressions. At that foundation-only milestone, 284 unit/filesystem tests and 144 native checks passed before 5.2 exposed the Gallery UI.
 - **5.2 complete:** Virtualized Gallery UI, retained bounded thumbnail work, shared collection/watcher lifecycle and two persisted independent right-toolbar width/height sliders (100–400, step 50), including the subsequent documented UX/resume fixes.
 - **5.3 complete:** Mouse/keyboard/accessibility and command scope wiring; Gallery mutations remain guarded pending 5.4.
 - **5.4 next:** Safe grouped operations, existing grouped moves and journal-backed grouped Recycle Bin support, partial-result/collision/Undo checks.
@@ -169,11 +186,11 @@ Step 4.5 implemented: logical normal bounds, monitor metadata/offsets and last n
 
 ## Immediate continuation
 
-Implementation baseline is `aa68870` (`Fullscreen support`), committed on master; the final handover changes documentation only. The user tentatively accepted Phase 4 and confirmed dialog appearance/root-flicker correction. Retain the untested physical scenarios in PHASE4_ACCEPTANCE.md without requiring exhaustive testing before all future work. Current fresh verification: 276 unit/filesystem tests and 144 native checks, zero failures/skips, clean build.
+Implementation baseline is `0880e94` (`Gallery view selection initial`) on master with later source/test refinements uncommitted. The current handover updates documentation only. Phase 4 remains tentatively accepted with open physical limits; Phase 5.1-5.3 are implemented, with current defaults and verification recorded above and in PROJECT_STATUS.md.
 
-Phase 5 is not started. Next conversation: read the current status/handover and inspect Git, then propose Gallery MVP scope and slices before implementation. Reuse navigation, sorting, watchers, thumbnails and root-scoped safe operations. Settle Gallery grid/tile sizing, keyboard/range-selection details, selected-item command scope and Browse handoff. Implement/review Gallery first; continuous reader follows with bounded lazy loading/preload and resource release. No new mode was authorized or implemented during this documentation request.
+Next conversation: read the current status and PHASE5_HANDOVER.md, inspect Git, and review feedback on the no-blur/Windows-default thumbnail experiment. If proceeding to 5.4, resolve the concrete grouped command and journal/partial-result behavior before implementation. Preserve the agreed Gallery selection/layout/watch/cache/native lifetime and operation safeguards. Continuous reader remains later; no new feature was implemented during this handover.
 
-The earlier recommendation to checkpoint the source is now satisfied by aa68870; do not treat it as an unfulfilled instruction to commit or push. Final handover Markdown may still be uncommitted.
+No automatic checkpoint is required: implementation and current handover Markdown are uncommitted, and this documentation request does not authorize staging, committing or pushing.
 
 ## UX refinement follow-up
 
