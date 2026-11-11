@@ -17,7 +17,7 @@ public sealed class ApplicationSettingsService(IApplicationSettingsStore store)
     {
         try
         {
-            var settings = await store.LoadAsync(token).ConfigureAwait(false);
+            var settings = (await store.LoadAsync(token).ConfigureAwait(false)).NormalizeGalleryDimensions();
             settings.Validate();
             lock (_sync) _current = settings;
         }

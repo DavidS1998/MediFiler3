@@ -1,59 +1,59 @@
-# Phase 4 continuation handover
+# Phase 4 and UX continuation handover
 
-Updated 2026-11-10. Read PROJECT_STATUS.md for the consolidated current snapshot and SPECIFICATION.md/ARCHITECTURE.md/DEVELOPMENT_PLAN.md for requirements, boundaries and sequence. This replaces the old pre-4.1 proposals; those are no longer instructions to reimplement completed work.
+Updated 2026-11-10. Start with PROJECT_STATUS.md for the consolidated snapshot, ARCHITECTURE.md for policy and PHASE4_ACCEPTANCE.md for evidence/physical limits. Earlier pre-4.6 proposals and uncommitted-state notes are superseded by this handover.
 
-## Current baseline and scope
+## Baseline and scope
 
-Phase 3 is complete and manually accepted. Phase 4 steps 4.1-4.6 are implemented; 4.7 automated acceptance is complete; physical acceptance remains pending. Home/dialog/backup/layout changes have automated coverage but still need the physical review listed in PROJECT_STATUS.md. Last full runs: 276 unit/filesystem tests and 144 native checks passed, no skips. Final build clean. The monitor-enumeration fallback is included in the current regression build; physical hot-plug and the forced failure branch remain unverified.
+Implementation is committed at `master`, **`aa68870` (`Fullscreen support`)**, 19 commits ahead of `origin/master` at handover start. Git was clean; this handover adds documentation-only edits and makes no commit/push. Inspect status/history next time and preserve subsequent user work.
 
-Implementation is at `master`, `b0b3ec1` (`WinUI dialogs and window state saving`) as the committed baseline before this uncommitted 4.6 implementation. Inspect current Git history/status; preserve subsequent work. The user explicitly approved the proposed 4.6 watcher/cache scope and authorized its implementation. Preserve existing work when continuing.
+Phase 3 is manually accepted. Phase 4 steps 4.1-4.6 and automated 4.7 acceptance are complete, including watcher/cache integration and later UX changes. The user tentatively accepted Phase 4 but could not test every physical use case. Dialog appearance and the root-label flicker fix were explicitly accepted. Newest changes: native Settings, persisted carousel off switch, compact centered Home, white filled favorite stars, optimized/fading carousel, session-only fullscreen with coordinated edge reveals, and native `.jfif` image/thumbnail routing.
 
-| Step | Status |
-|---|---|
-| 4.1 | Typed Application contracts, SQLite state stores and journal-preserving migrations implemented. Current database schema is 7; do not revert it to the original step-4.1 schema 4. |
-| 4.2 | Volume/mute restored before media, carousel density and folder pin persistence, coalesced saves/flush. Refresh/F5 implemented. |
-| 4.3 | Root-only usage/favorites, normalized explicit-open counting, bounded availability, Locate/Remove service. |
-| 4.4 | Native responsive Home cards, shared root stars, root opening, compact relative time/tooltips and unified Remove entry. Ignore is removed. |
-| Follow-ups | Root-scoped history, collision previews/automatic numbered Rename, app-managed backups/Settings cleanup and ContentDialog migration implemented. |
-| 4.5 | Monitor-aware normal bounds/maximized persistence, minimized-state handling and runtime work-area reconciliation implemented. No extra navigation preferences or adjustable panel widths were added. |
-| 4.6 | Implemented: loaded-root reconciliation, thumbnail index/invalidation and agreed retention/Settings maintenance. |
-| 4.7 | Automated restart/integration and viewer/operation regressions complete; physical checklist remains open in PHASE4_ACCEPTANCE.md. |
+Fresh handover verification: **276 unit/filesystem tests and 144 native checks passed, zero failures/skips; build zero warnings/errors**. Physical hover/DPI/taskbar/network/removable/permissions/input/animation checks and forced monitor-enumeration failure remain unverified; do not report them as passed.
 
-## Step 4.6 implemented policy (2026-11-10)
+## What to do next
 
-The user approved and implementation now includes loaded-root filesystem reconciliation and thumbnail maintenance. Schema stays 7; cache payload version stays 1 with additive optional SourcePath/Invalidated fields. No operation journal or backup lifecycle changes.
+No implementation was started by this handover. The recommended next feature is Phase 5 Gallery, then continuous reader. Review the specification and propose Gallery scope/slices before implementation: virtualization/tile sizing, keyboard/Ctrl/Shift selection, Browse handoff, grouped operations and watcher/cache/root-context integration. Neither viewing mode exists yet. A new checkpoint of source changes is not needed to obtain the old recommendation: source work is already in aa68870; the new handover Markdown may still be uncommitted.
 
-- FileSystemFolderChangeMonitor uses recursive coverage for all loaded roots while Browse is active, including inactive roots. Duplicate/nested coverage is reduced. Leaving Browse, new root loads and shutdown cancel the old session; returning starts a rescan. Refreshes with unchanged paths retain watcher coverage. Hierarchy reconciliation retains existing reparse/owned-backup exclusions and existing nodes/expansion, applying updates in batches of 32.
-- FolderChangeBuffer coalesces paths case-insensitively: 500 ms quiet debounce, 2 s maximum continuous-event delay, at most 1,024 pending distinct paths. Overflow/error requests root rescans. One awaited dispatcher consumer prevents unbounded callback queues. Commands, loading, dialogs and external-opening actions defer application; context revisions/cancellation reject obsolete work. App-generated changes merge through rescanning actual current state.
-- Watcher setup/health probes run off UI, with two shared probe permits, five-second healthy-root checks and failed-root exponential retries from 1 to 60 s. Failed coverage reports degraded status and polls the active folder during retries. Reconnection rescans hierarchy. A blocked Windows network call cannot be forcibly interrupted; permits bound simultaneous probes. Saved Home paths/history are never inferred or pruned.
-- Reconciliation retains the selected path or nearest bounded position. Unaffected image/text/media presentation remains active. Affected media reloads paused. Automatic work never records root visits. F5 remains available and force-invalidates active-folder thumbnails, including same-length/timestamp edits. Change hints force invalidation too; unsupported/missed notifications without changed metadata still require F5.
-- Existing PNG keys, three decoder workers and 32 MiB/512-entry memory LRU remain. ThumbnailCacheIndex now records owned filename/key, encoded byte size, last access and optional source mapping. Access writes batch every 30 s and flush at shutdown; failed writes retain pending state. Invalidated locked files remain marked invalid across restart and are retried rather than served as stale thumbnails. In-flight decoders cannot publish results from before invalidation/clear.
-- Idle housekeeping starts after 30 s without thumbnail requests, then at most hourly. Remove entries unused for 90 days; over 1 GiB, prune least recently used toward 900 MiB. Locked/unsafe entries may keep usage above target until retry. Maintenance runs off UI, serializes passes and yields cache access between 32-entry batches. Settings displays indexed usage and offers Clear thumbnail cache. Usage can undercount legacy files until adoption.
-- Only verified owned cache leaf names inside the resolved cache directory are eligible. Reject reparse directories/ancestors/leaves. Adopt valid legacy hash-named PNGs conservatively (unknown-age adoption starts at current time); unknown files remain. Legacy entries without source mapping invalidate conservatively. Recognized abandoned temporary writes older than one day can be removed. Source media, UndoBackups, saved settings/history and operation journal records are never cache-pruned. Explicit overwrite-backup cleanup and its confirmation/history-retirement rules remain separate.
-
-Automated coverage includes debounce/overflow, duplicate/nested roots, real nested/inactive-root notifications and cancellation, tree identity/count propagation, expiry/LRU, access bookkeeping, invalidation and queued decoders, locked deletion/restart, legacy/missing/corrupt entries, temporary ownership and linked-cache rejection. Native Browse checks cover insertion/deletion, inactive hierarchy, same-metadata edits, command deferral, overflow, tab lifetime, missing nested-folder fallback, visit counts and media continuity/paused reload.
-
-Step 4.7 automated restart/integration acceptance is complete (PHASE4_ACCEPTANCE.md). Physical review remains for network/removable disconnect/reconnect, live notification storms/large trees, new Settings cache controls and all previously recorded Home/dialog/backup/display checks. Existing codec limits and deferred feature scope remain unchanged.
+Do not make exhaustive physical acceptance a new prerequisite after the user's tentative acceptance. Retain the known limits and address concrete user-reported defects if they appear. Do not add extra codecs, themes, settings editors or unrelated features without discussion.
 
 ## Code map
 
 | Location | Continuation relevance |
 |---|---|
-| `src/MediFiler3.App/App.xaml.cs` | DI; database/recovery startup; settings/layout initialization before MainWindow; flush while UI is alive; final host shutdown. |
-| `src/MediFiler3.App/MainWindow.xaml.cs` | Home/Browse/Settings composition, shared root-loading/pickers/drops, toolbar history, backup cleanup confirmation, WindowLayoutController attachment. |
-| `src/MediFiler3.App/Views/BrowseView.xaml.cs` | LoadRootsAsync is the explicit-open counting boundary. RefreshAsync rescans without visits, preserves selection and rejects obsolete restoration. Operation refreshes and StopBackgroundFolderCounts are important watcher lifetime/coordination seams. |
-| `src/MediFiler3.Application/Navigation/` | Session/controller state, active root via node ancestry, file/folder selection boundaries. |
-| `src/MediFiler3.Application/Persistence/` | PersistenceContracts, ApplicationSettingsService, RootFolderHistoryService, WindowLayoutService and pure WindowPlacementPolicy. |
-| `src/MediFiler3.Infrastructure/Persistence/` | SqliteDatabase schema 7, typed state store, root-scoped append-only journal and recovery inspector. |
-| `src/MediFiler3.Infrastructure/Folders/` | Progressive hierarchy/count service and bounded root-availability checks. Retain reparse safeguards and hidden-owned-backup exclusions. |
-| `src/MediFiler3.Infrastructure/Files/FileSystemThumbnailService.cs` | Current WIC/Shell generation, three workers, disk cache, memory LRU and cache-key logic. Uses ThumbnailCacheIndex and the Maintenance partial. |
-| `src/MediFiler3.Infrastructure/Operations/` | FileSystemFileOrganizationService partials, identity-verified compensations, FileSystemOperationBackupStore and shared OperationMaintenanceGate. |
-| `src/MediFiler3.App/Interop/WinUiToolbarIsland.Dialogs.cs` and `WinUiContentDialogHost.cs` | Actual ContentDialog controls, dedicated XamlRoot, native primary/secondary/close buttons and modal WPF ownership. |
-| `src/MediFiler3.App/Interop/WinUiToolbarIsland.Collisions.cs` | Independent async comparison previews/sizes, cancellation and late-update guards. |
-| `src/MediFiler3.App/Services/WindowLayoutController.cs` | Dispatcher capture, closing order, display/work-area/DPI hooks and deferred reconciliation during interactive move/resize. |
-| `src/MediFiler3.App/Interop/WindowsWindowPlacement.cs` | Monitor/DPI enumeration, screen/workspace coordinate conversion and Win32 normal-bound capture/application. |
-| `tests/MediFiler3.Infrastructure.Tests/` | Business/filesystem/SQLite tests; WindowLayoutTests, OperationBackupTests, FileCollisionTests, RootOperationHistoryTests and existing cache/navigation tests. |
-| `tests/MediFiler3.App.Integration/` | Explicit WPF/WinUI runner; RootHistoryChecks, ContentDialogChecks, WindowLayoutChecks, HomeChecks and SettingsAndRefreshChecks. Not run by dotnet test. |
+| `src/MediFiler3.App/App.xaml.cs` | DI/startup/recovery; settings/layout before window; flush before host shutdown. |
+| `src/MediFiler3.App/MainWindow.xaml.cs` | Home/Browse/Settings composition, root loading, shared commands, persistence wiring and backup cleanup confirmation. |
+| `src/MediFiler3.App/MainWindow.Fullscreen.cs` | Monitor-sized transient fullscreen, F11/native message filter, 40 ms edge cursor polling, native caption reveal and combined sidebar/tree reveal. |
+| `src/MediFiler3.App/Views/BrowseView.xaml.cs` | Explicit root-visit boundary, progressive hierarchy/count lifecycle, F5, operations/media coordination and stable carousel updates. |
+| `src/MediFiler3.App/Views/BrowseView.Reconciliation.cs` | Awaited bounded dispatcher consumer, command deferral/context revisions, identity-preserving hierarchy merge and selection/media reconciliation. |
+| `src/MediFiler3.App/Views/BrowseView.Carousel.cs` | Carousel enabled/fullscreen state, forced tree reveal/offset, work cancellation/resumption, render-priority coalescing and bounded fade visuals. |
+| `src/MediFiler3.Application/Navigation/` | Session/root ownership, file-index map, selection and boundary navigation. Reuse for new viewing modes. |
+| `src/MediFiler3.Application/Folders/FolderTreeEntry.cs` | Stable nodes/count propagation; unchanged rescans/labels must not reintroduce root flicker. |
+| `src/MediFiler3.Application/Persistence/` | Typed settings/layout/history/cache contracts and services. Schema remains 7, JSON versions remain 1. |
+| `src/MediFiler3.Infrastructure/Folders/` | Progressive discovery/counting, bounded root probes and FileSystemFolderChangeMonitor. FolderChangeBuffer contract is in Application. |
+| `src/MediFiler3.Infrastructure/Files/FileSystemThumbnailService*.cs` | WIC/Shell PNG generation, worker/memory bounds, index/retention/invalidation and synchronized maintenance. |
+| `src/MediFiler3.App/Services/BitmapViewerHandlers.cs` | Image routing, including `.jfif`; keep thumbnail WIC extension routing consistent. |
+| `src/MediFiler3.App/Interop/WinUiCarouselSettingsIsland.cs` | Despite its old name, hosts the entire native Settings page. Callbacks are bridged to WPF; tests wait for native controls. |
+| `src/MediFiler3.App/Interop/WinUiHomeIsland.cs` | Centered bounded Home cards, compact header, native stars (white filled when on), shared actions and live captions. |
+| `src/MediFiler3.App/Interop/NativeSurfaceOrder.cs`, `WinUiMediaIsland.cs` | HWND stacking and native video exclusion regions; preserve native-overlay reachability. |
+| `src/MediFiler3.App/Services/WindowLayoutController.cs`, `Interop/WindowsWindowPlacement.cs` | Capture/flush order, transient fullscreen suppression, monitor/DPI and workspace/screen conversions. |
+| `src/MediFiler3.Infrastructure/Operations/` | Root-scoped safe mutations, identities, compensations, backup ownership and OperationMaintenanceGate. |
+| `src/MediFiler3.App/Interop/WinUiContentDialogHost.cs`, `WinUiToolbarIsland.Dialogs.cs`, `WinUiToolbarIsland.Collisions.cs` | Dedicated dialog root/lifetime/modal behavior and cancellable previews. |
+| `tests/MediFiler3.Infrastructure.Tests/` | SQLite/migrations/history/filesystem/cache/watcher/count/index regressions. |
+| `tests/MediFiler3.App.Integration/` | Explicit native runner: viewer/media/GIF/Home/dialog/layout/watch/UX checks and three fresh-process restart workers. Not executed by dotnet test. |
+
+## Policies and less-obvious safeguards
+
+The full agreed watcher/cache/UX policy is in ARCHITECTURE.md and summarized in PROJECT_STATUS.md. Keep these additional details in mind:
+
+- Settings CarouselEnabled defaults true for old payloads; disabling does not remove stored density or disable viewer artwork/fallbacks. Do not confuse a one-icon carousel with off.
+- NavigationSessionState's file-index map preserves record-equality membership and is rebuilt on collection changes, not each navigation step. Stable neighboring carousel objects and cancelled-item ThumbnailTask reset are necessary for smooth resumption.
+- Carousel edge ghosts are noninteractive and capped at 24; release them on completion/context reset. Use client-area animation preference. Do not delay real collection mutation to wait for a fade.
+- Fullscreen has no persisted flag. Capture normal layout before entering; keep persistence suppressed through native-caption reveal and shutdown. Caption uses actual WindowStyle changes; negative client-relative Y is valid over nonclient title-bar controls. The monitor's outer pixel rectangle stays fitted when caption visibility changes.
+- Fullscreen tree/sidebar reveals share a lifetime and tree offset. WPF mouse-leave crossing into native sidebar must not hide the forced tree. Native video clipping includes the offset; pin state stays independent.
+- NativeSurfaceOrder raises toolbar/sidebar above Home/Settings HWNDs. WPF ZIndex alone cannot order native surfaces. Folder menus reveal their toolbar anchor; open native popups hold the toolbar surface.
+- Hierarchy reconciliation preserves existing nodes/expansion. Unchanged children must not transition known totals through unknown; DisplayName notifies only when its actual text changes. Initial discovery and genuinely changed/incomplete counts still use unknown placeholders.
+- Watcher notifications are hints; bounded rescans converge state. Never count automatic work as root opens or guess new saved paths. Reuse the cancellation/context-generation guards in new modes. Native media must stay paused on affected reloads, and unrelated changes must retain its session.
+- Cache quota is an eventual idle target; legacy/locked/untracked items may affect reported usage. Cache, source media, overwrite backups and append-only operation history have distinct ownership/lifetimes. Never combine their cleanup policies.
 
 ## Implementation caveats to preserve
 
@@ -68,30 +68,12 @@ Step 4.7 automated restart/integration acceptance is complete (PHASE4_ACCEPTANCE
 - Window bounds are logical dimensions plus monitor-relative offsets; native monitor/workspace rectangles are pixels. Preserve taskbar workspace/screen conversion, last non-minimized state, normal restore bounds for maximized windows and temporary minimum-size relaxation. WPF's ShowActivated=false/maximized restriction is handled by deferred Loaded maximization for background windows.
 - Window capture on Closing must run before App flushes. Settings/layout write tasks cannot wait on a stopped dispatcher. Schema stays 7 for optional version-1 layout metadata; layout restoration never opens old roots or changes startup Home.
 
-## Acceptance and local workflow
+## Verification and limits
 
-Physical checks still needed: new Home layout/focus/drop/pickers; ContentDialog physical keyboard/DPI/long paths; cleanup on other-volume permission failures; monitor hot-plug/rearrangement, mixed DPI and taskbar relocation. Phase 3 manual acceptance must not be reported as acceptance of these later changes.
+Use the build/test/native commands in PROJECT_STATUS.md and the runner README. Build first, then --no-build runners; never launch concurrent builds sharing obj files. Keep a user's running app open and use a consistent temporary BaseOutputPath if needed. The supplied temporary media fixture directory existed and the fresh native run had zero skips. Actual launching/choosers, subjective input/appearance, audible output, every codec variant, deployment and physical network/monitor transitions are not established by automation.
 
-Use the commands in PROJECT_STATUS.md and the runner README. Keep a running user app open; use a temporary BaseOutputPath if normal output is locked. Build once before --no-build test/native runs; concurrent builds share obj directories and can fail with file locks. Runner data/fixtures are isolated, but copied media codec coverage is still limited (MKV is the WebM/Matroska subset). Step 4.6 adds source and automated checks; fixture codec limits remain unchanged.
+Existing limits: expanded tree virtualization is off; very large trees/GIF canvases remain costly; codec support is Windows-dependent; MKV fixture is the WebM/Matroska subset; same-size/timestamp edits without notifications need F5; blocked OS calls cannot be forcibly cancelled. PHASE4_ACCEPTANCE.md retains the unchecked physical scenarios. No unresolved reproducible issue is currently reported after the accepted flicker fix, but latest UX changes still benefit from user review.
 
 ## Suggested opening prompt
 
-Continue MediFiler3. Read the six project documents and inspect Git status. Steps 4.1-4.6 are implemented with uncommitted watcher/cache changes on top of the existing documentation edits. Review the completed step-4.7 automated restart/integration evidence and the remaining physical checklist in PHASE4_ACCEPTANCE.md. Preserve recorded root-history, collision/backup, ContentDialog, media, window-placement and 4.6 watcher/cache policy behavior.
-
-Step 4.7 evidence: three fresh-process restart checks are included in the native runner. See [PHASE4_ACCEPTANCE.md](PHASE4_ACCEPTANCE.md) for process boundaries, results, limits and the remaining physical checklist. No production behavior or schema changed during step 4.7.
-
-## UX refinement follow-up
-
-The user tentatively accepted Phase 4 while acknowledging that not every physical use case could be tested. Retain the unverified cases as known acceptance limits; do not represent them as passed. This follow-up is explicitly authorized UI refinement, not Phase 5 gallery/reader work.
-
-- Prefer suitable WinUI controls over WPF equivalents while keeping the WPF host. Settings now uses native WinUI buttons, ToggleSwitch, slider, text and ScrollViewer in one XAML Island. Existing cleanup confirmations, ownership and error reporting remain unchanged.
-- Settings > Show carousel persists CarouselEnabled (default true, additive optional ApplicationSettings version-1 JSON; schema stays 7). Disabled means no carousel, peek, bottom reveal strip or carousel thumbnail requests; viewer navigation/previews/fallbacks remain available. The disabled slider retains the previous density. Re-enable rebuilds the current neighborhood.
-- Home removes the redundant subtitle, uses 16 px header top spacing and a 12 px gap before the cards. Header/cards share a centered viewport-bounded width (maximum 1600 px with 32 px side margins), including wide windows. This supersedes the earlier left-aligned Home decision at the user's request.
-- F11 or the rightmost toolbar button toggles borderless fullscreen on the current monitor. Top edge hover reveals the native title bar and toolbar; left edge hover reveals sidebar and folder tree together, with the tree beside the sidebar; bottom hover reveals the carousel when enabled, with no fullscreen peek. Tree pin/reveal behavior remains unchanged. Native focus also supports F11; Escape exits from WPF content. Fullscreen is session-only. WindowLayoutController captures normal geometry before entering and suspends persistence of transient fullscreen bounds; leaving restores/clamps the prior normal/maximized placement, and closing fullscreen retains the prior restart layout. Display/DPI reconciliation refits fullscreen instead of saving it.
-- A fullscreen-only cursor timer handles edge hover over WPF and native HWNDs. Revealed native toolbar/sidebar surfaces are raised above Home/Settings islands; video clipping excludes those overlays without moving/reopening video. Open toolbar popups retain their surface. Folder menus reveal their toolbar anchor before opening. No always-on-top mode is introduced.
-- Carousel refresh no longer copies the full folder per navigation step. NavigationSessionState maintains an equality-compatible file-index map rebuilt only on list changes. Rapid visual updates coalesce at render priority, prioritize the nearest thumbnails, cancel departing-item work and retarget the running scroll animation rather than restarting it. Surviving tile objects remain stable. Disabled/inactive Browse cancels carousel work; returning resumes missing previews. Actual navigation steps and folder-boundary rules remain unchanged.
-- Entering edge tiles fade in over 110 ms; departing tiles use noninteractive fade-out visuals for 110 ms, capped at 24 and released on completion/context reset. Animation honors the Windows client-area animation preference and does not delay collection updates/hit testing.
-
-Verification includes native Settings controls/cleanup, carousel-off persistence through fresh processes, Home centering through 3000 px, 100,000-file navigation indexing, rapid carousel navigation/cancellation, tile identity/fades, F11 from WPF/native islands, native video continuity, edge chrome exclusion and restored/closing-fullscreen layout. Physical edge-hover/DPI/taskbar behavior and animation feel remain review items.
-
-Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.
+Continue MediFiler3. Read MediFiler3/AGENTS.md, SPECIFICATION.md, ARCHITECTURE.md, DEVELOPMENT_PLAN.md, PROJECT_STATUS.md, PHASE4_HANDOVER.md and PHASE4_ACCEPTANCE.md. Inspect Git status/history; the implementation handover baseline is aa68870 (Fullscreen support), with documentation-only updates possibly uncommitted. Phase 4 and its UX refinements are implemented and tentatively accepted; 276 unit/filesystem tests and 144 native checks passed. Summarize the current architecture, safeguards and known verification limits, then propose the Phase 5 Gallery MVP and implementation slices before changing code. Preserve root history, safe collisions/backups/Undo, native dialogs/media, cache/watchers, normal/fullscreen layout, carousel behavior, centered Home/white stars and .jfif routing. Gallery and continuous reader are not implemented.

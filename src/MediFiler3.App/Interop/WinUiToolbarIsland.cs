@@ -282,6 +282,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _deleteFileButton = null;
         _rootElement = null;
         _fullscreenButton = null;
+        _galleryControls = null; _galleryWidthSlider = null; _galleryHeightSlider = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -392,6 +393,9 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         layout.Children.Add(_mediaToolbar.Control);
         SetExternalOpenState(_externalState);
 
+        var gallery = CreateGalleryControls();
+        Grid.SetColumn(gallery, 2);
+        layout.Children.Add(gallery);
         return layout;
     }
 

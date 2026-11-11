@@ -1,0 +1,117 @@
+using System.ComponentModel;
+using System.Windows;
+using System.Windows.Threading;
+using MediFiler3.Application.Navigation;
+using MediFiler3.Domain.Files;
+using MediFiler3.Interop;
+
+namespace MediFiler3.Views;
+
+public partial class BrowseView
+{
+    private WinUiGalleryIsland? _gallery;
+    private bool _galleryRefreshQueued;
+    private bool _galleryFilesDirty = true;
+    private double _galleryWidth = 150, _galleryHeight = 150;
+    public bool IsGallery => _navigationState.ViewingMode == ViewingMode.Gallery;
+    public event Action? BrowseRequested;
+    public event Action? GalleryRequested;
+
+    private void OnGalleryContextChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(NavigationSessionState.Files))
+        {
+            _galleryFilesDirty = true;
+            QueueGalleryRefresh();
+        }
+    }
+
+    private void QueueGalleryRefresh()
+    {
+        if (!IsGallery || !_viewerActive || _galleryRefreshQueued) return;
+        _galleryRefreshQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() =>
+        {
+            _galleryRefreshQueued = false;
+            if (IsGallery && _viewerActive && _gallery is not null && _galleryFilesDirty)
+            {
+                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+                _galleryFilesDirty = false;
+            }
+        }));
+    }
+
+    public void SetGalleryTileSize(double width, double height)
+    {
+        _galleryWidth = width; _galleryHeight = height;
+        _gallery?.SetTileSize(width, height);
+    }
+
+    public void SetViewingMode(ViewingMode mode)
+    {
+        if (_navigationState.ViewingMode == mode) return;
+        _historyCancellation?.Cancel();
+        _navigationController.SwitchViewingMode(mode);
+        _commandRevision++;
+        ApplyViewingMode();
+    }
+
+    private void ApplyViewingMode()
+    {
+        var gallery = IsGallery && _viewerActive;
+        ViewerHost.Visibility = IsGallery ? Visibility.Collapsed : Visibility.Visible;
+        CarouselOverlay.Visibility = !IsGallery && _carouselEnabled ? Visibility.Visible : Visibility.Collapsed;
+        BottomRevealTarget.IsHitTestVisible = !IsGallery && _carouselEnabled;
+        if (IsGallery)
+        {
+            ViewerHost.SetActive(false);
+            _carouselRefreshVersion++;
+            _carouselLoadCancellation?.Cancel(); CancelCarouselItemLoads();
+            _carouselScrollTimer.Stop(); CarouselGhosts.Children.Clear();
+        }
+        _gallery?.SetActive(gallery);
+        GalleryHost.Visibility = gallery ? Visibility.Visible : Visibility.Collapsed;
+        if (gallery && _gallery is null)
+        {
+            _gallery = new WinUiGalleryIsland(_thumbnailService);
+            _gallery.FileSelected += file =>
+            {
+                if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;
+                _navigationState.GallerySelection.Select(_navigationState.Files, file);
+                _navigationState.SetCurrentFile(file);
+            };
+            _gallery.OpenRequested += file =>
+            {
+                if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;
+                _navigationState.SetCurrentFile(file);
+                BrowseRequested?.Invoke();
+            };
+            _gallery.RefreshRequested += () => RefreshRequested?.Invoke();
+            _gallery.SetTileSize(_galleryWidth, _galleryHeight);
+            _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+            _galleryFilesDirty = false;
+            GalleryHost.Children.Add(_gallery);
+        }
+        if (gallery && _gallery is not null)
+        {
+            if (_galleryFilesDirty)
+            {
+                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+                _galleryFilesDirty = false;
+            }
+            UpdateGalleryTreeInset();
+            _gallery.RevealCurrentFile(_navigationState.CurrentFile);
+        }
+        if (!IsGallery)
+        {
+            // Capture the shared file while inactive, then resume only the requested Browse context.
+            _ = ViewerHost.LoadAsync(_navigationState.CurrentFile, false);
+            ViewerHost.SetActive(_viewerActive);
+            if (_viewerActive) _ = RefreshCarouselAsync();
+        }
+        PresentationChanged?.Invoke();
+    }
+
+    private void UpdateGalleryTreeInset() => _gallery?.SetTreeInset(_folderOverlayPinned
+        ? FolderOverlay.Width + FolderOverlay.Margin.Left : 26);
+}

@@ -120,6 +120,7 @@ public partial class BrowseView : UserControl
         _thumbnailService = thumbnailService;
         _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
+        _navigationState.PropertyChanged += OnGalleryContextChanged;
         if (audioSettings is not null) ViewerHost.InitializeAudioSettings(audioSettings);
         ViewerHost.AudioSettingsChanged += (volume, muted) => AudioSettingsChanged?.Invoke(volume, muted);
         ViewerHost.RefreshRequested += () => RefreshRequested?.Invoke();
@@ -333,6 +334,7 @@ public partial class BrowseView : UserControl
         var item = FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject);
         if (item?.DataContext is not FolderTreeEntry destination) return;
         e.Handled = true;
+        if (IsGallery) return; // Grouped Gallery commands are introduced in 5.4.
         await MoveCurrentFileToFolderAsync(destination);
     }
 
@@ -444,6 +446,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
+        if (IsGallery) return;
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
@@ -480,6 +483,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        if (IsGallery) return;
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
@@ -516,6 +520,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
+        if (IsGallery) return;
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
@@ -549,6 +554,7 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        if (IsGallery) return;
         using var reconciliationDeferral = DeferReconciliation();
         if (_historyBusy) return;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
@@ -647,8 +653,11 @@ public partial class BrowseView : UserControl
     public async Task RefreshAsync()
     {
         using var reconciliationDeferral = DeferReconciliation();
-        if (_thumbnailService is IThumbnailCacheMaintenance cache && _navigationState.ActiveFolder is { } active)
-            await cache.InvalidateAsync(active.Path, true);
+        if (_navigationState.ActiveFolder is { } active)
+        {
+            if (_thumbnailService is IThumbnailCacheMaintenance cache) await cache.InvalidateAsync(active.Path, true);
+            _gallery?.InvalidateThumbnails([active.Path]);
+        }
         if (_navigationState.Roots.Count == 0) return;
         await RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path,
             preferredFilePath: _navigationState.CurrentFile?.FullPath,
@@ -865,6 +874,8 @@ public partial class BrowseView : UserControl
         StopWatching();
         _historyCancellation?.Cancel();
         _viewerActive = false;
+        _navigationState.PropertyChanged -= OnGalleryContextChanged;
+        if (_gallery is not null) { GalleryHost.Children.Remove(_gallery); _gallery.Dispose(); _gallery = null; }
         _carouselRefreshVersion++;
         _carouselLoadCancellation?.Cancel();
         CancelCarouselItemLoads();
@@ -980,10 +991,7 @@ public partial class BrowseView : UserControl
             if (source is ListBoxItem { DataContext: CarouselThumbnailItem item })
             {
                 e.Handled = true;
-                if (!ReferenceEquals(item.File, _navigationState.CurrentFile))
-                {
-                    SelectFile(item.File);
-                }
+                HandleCarouselTileClick(item.File, e.ClickCount);
 
                 return;
             }
@@ -1059,8 +1067,9 @@ public partial class BrowseView : UserControl
     private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var point = e.GetPosition(BrowseSurface);
-        var showFolder = _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel &&
-                         (point.X <= 32 || (_folderOverlayVisible && point.X <= FolderOverlay.Width));
+        _sidebarFolderReveal = SidebarHoverProbe?.Invoke() == true;
+        var showFolder = _folderOverlayPinned || _fullscreenFolderReveal || _sidebarFolderReveal || !_fullscreenCarousel &&
+                         (_folderOverlayVisible && point.X <= FolderOverlay.Width);
         var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
                            (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
         SetFolderOverlayVisible(showFolder);
@@ -1069,7 +1078,8 @@ public partial class BrowseView : UserControl
 
     private void OnBrowseSurfaceMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        SetFolderOverlayVisible(_folderOverlayPinned);
+        _sidebarFolderReveal = SidebarHoverProbe?.Invoke() == true;
+        SetFolderOverlayVisible(_folderOverlayPinned || _sidebarFolderReveal);
         SetCarouselOverlayVisible(false);
     }
 
@@ -1078,6 +1088,7 @@ public partial class BrowseView : UserControl
     private void ApplyFolderPin()
     {
         _folderOverlayPinned = FolderPinButton.IsChecked == true;
+        UpdateGalleryTreeInset();
         FolderPinChanged?.Invoke(_folderOverlayPinned);
         FolderPinGlyph.Text = _folderOverlayPinned ? "\uE77A" : "\uE718";
         FolderPinButton.ToolTip = _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open";
@@ -1088,7 +1099,7 @@ public partial class BrowseView : UserControl
 
     private void OnVideoSurfaceRendering(object? sender, EventArgs args)
     {
-        if (!ViewerHost.HasVideoSurface || !IsVisible) return;
+        if ((!ViewerHost.HasVideoSurface && (!IsGallery || _gallery is null)) || !IsVisible) return;
         // Native HWNDs otherwise cover WPF overlays. Cut out only their visible regions, preserving video layout.
         var width = BrowseSurface.ActualWidth;
         var height = BrowseSurface.ActualHeight;
@@ -1099,11 +1110,16 @@ public partial class BrowseView : UserControl
         {
             new(0, 0, Math.Max(26, folderWidth), height)
         };
-        if (_carouselEnabled) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
+        if (_carouselEnabled && !IsGallery) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
         foreach (var shellExclusion in _shellVideoExclusions) exclusions.Add(shellExclusion);
         if (OperationNotice.Visibility == Visibility.Visible)
             exclusions.Add(OperationNotice.TransformToAncestor(BrowseSurface).TransformBounds(new Rect(OperationNotice.RenderSize)));
         ViewerHost.SetVideoExclusions(exclusions);
+        if (IsGallery)
+        {
+            UpdateGalleryTreeInset();
+            _gallery?.SetExclusions(exclusions);
+        }
     }
 
     private void OnBrowseSurfaceSizeChanged(object sender, SizeChangedEventArgs e)
@@ -1114,7 +1130,7 @@ public partial class BrowseView : UserControl
 
     private void SetFolderOverlayVisible(bool isVisible)
     {
-        isVisible |= _folderOverlayPinned || _fullscreenFolderReveal;
+        isVisible |= _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel && _sidebarFolderReveal;
         if (_folderOverlayVisible == isVisible)
         {
             return;
@@ -1132,7 +1148,7 @@ public partial class BrowseView : UserControl
 
     private void SetCarouselOverlayVisible(bool isVisible)
     {
-        isVisible &= _carouselEnabled;
+        isVisible &= _carouselEnabled && !IsGallery;
         if (_carouselOverlayVisible == isVisible)
         {
             return;
@@ -1186,6 +1202,7 @@ public partial class BrowseView : UserControl
 
     private void PresentSelectedFile(FileEntry file)
     {
+        if (IsGallery) return;
         var item = CarouselItems.OfType<CarouselThumbnailItem>()
             .FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
         ViewerHost.ResetZoomState();
@@ -1196,7 +1213,7 @@ public partial class BrowseView : UserControl
 
     private async Task RefreshCarouselAsync()
     {
-        if (!_carouselEnabled || !_viewerActive) return;
+        if (!_carouselEnabled || !_viewerActive || IsGallery) return;
         var refreshVersion = ++_carouselRefreshVersion;
         if (_carouselLoadCancellation is null || _carouselLoadCancellation.IsCancellationRequested)
         {
@@ -1235,7 +1252,7 @@ public partial class BrowseView : UserControl
             CarouselItems.Add(_carouselTrailingSpacer);
         }
 
-        const int thumbnailSize = 150;
+        const int thumbnailSize = 400; // Same source/cache bucket as Gallery; carousel still renders at 150.
         var start = Math.Max(0, currentIndex - _carouselNeighborsOnEachSide);
         var end = Math.Min(files.Count - 1, currentIndex + _carouselNeighborsOnEachSide);
         _carouselStartIndex = start;
@@ -1448,7 +1465,7 @@ public partial class BrowseView : UserControl
     }
 
     private Task LoadCurrentImageAsync(bool clearCurrentImage, BitmapSource? immediatePreview = null) =>
-        ViewerHost.LoadAsync(_navigationState.CurrentFile, clearCurrentImage, immediatePreview);
+        IsGallery ? Task.CompletedTask : ViewerHost.LoadAsync(_navigationState.CurrentFile, clearCurrentImage, immediatePreview);
 
     public void ResetZoomToFit() => ViewerHost.ResetZoomToFit();
     private bool _viewerActive = true;
@@ -1466,7 +1483,8 @@ public partial class BrowseView : UserControl
             CancelCarouselItemLoads();
             _carouselScrollTimer.Stop();
         }
-        ViewerHost.SetActive(active);
+        if (IsGallery) ApplyViewingMode();
+        else ViewerHost.SetActive(active);
         if (active && changed) { StartWatching(); _ = RefreshCarouselAsync(); }
     }
 
@@ -1475,10 +1493,10 @@ public partial class BrowseView : UserControl
     {
         if (root is null) throw new InvalidOperationException("Select a folder in a loaded root first.");
         var service = await _fileOrganizationService.ForRootAsync(root.Path, token);
-        if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive)))
+        if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive || IsGallery)))
             throw new InvalidOperationException("The active root changed before the command could run.");
         return DialogService is null ? service : service.WithCollisionResolver(new BrowseCollisionResolver(Dispatcher, DialogService,
-            () => _viewerActive && _navigationState.Roots.Contains(root) && (!requireActive || ReferenceEquals(root, _navigationState.ActiveRoot))));
+            () => _viewerActive && _navigationState.Roots.Contains(root) && (!requireActive || !IsGallery && ReferenceEquals(root, _navigationState.ActiveRoot))));
     }
 
     private void ClearActivePresentation(string message, string detail)

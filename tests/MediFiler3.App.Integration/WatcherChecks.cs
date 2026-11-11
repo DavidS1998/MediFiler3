@@ -55,6 +55,11 @@ internal static partial class Program
                 var refreshed = browse.CarouselItems.OfType<CarouselThumbnailItem>().Single(i => i.File.FullPath == path);
                 Require(ReferenceEquals(item, refreshed) && refreshed.Thumbnail is not null && !ReferenceEquals(before, refreshed.Thumbnail), "Existing thumbnail was not refreshed");
                 Require(ReferenceEquals(selected, state.CurrentFile) && browse.IsTextInteraction, "Thumbnail refresh disturbed selected text");
+                var unaffectedPreview = refreshed.Thumbnail;
+                var unrelated = Path.Combine(first, "unrelated.txt"); File.WriteAllText(unrelated, "unrelated");
+                await monitor.Emit(new([unrelated], [], true));
+                Require(ReferenceEquals(unaffectedPreview, browse.CarouselItems.OfType<CarouselThumbnailItem>().Single(i => i.File.FullPath == path).Thumbnail), "Unrelated insertion flushed carousel previews");
+                File.Delete(unrelated); await monitor.Emit(new([unrelated], [], true));
                 File.Delete(path); await monitor.Emit(new([path], [], true));
             });
             await Check("watcher updates inactive-root hierarchy without another root visit", async () =>
@@ -133,6 +138,55 @@ internal static partial class Program
                     await WaitUntil(() => browse.PlaybackState.Ready);
                     Require(!browse.PlaybackState.Playing, "Changed media autoplayed");
                 });
+            await Check("Gallery shares live watcher coverage without reloading inactive Browse or counting visits", async () =>
+            {
+                var runs = monitor.Runs; var token = monitor.Token;
+                var visits = (await history.GetListsAsync()).Frequent.Sum(r => r.OpenCount);
+                browse.SetViewingMode(ViewingMode.Gallery);
+                await WaitUntil(() => Field(browse, "_gallery") is MediFiler3.Interop.WinUiGalleryIsland island && island.RealizedCount > 0);
+                var prior = Field(host, "_currentFile");
+                var path = Path.Combine(first, "gallery-added.txt"); File.WriteAllText(path, "gallery live update");
+                await monitor.Emit(new([path], [], false));
+                var gallery = (MediFiler3.Interop.WinUiGalleryIsland)Field(browse, "_gallery")!;
+                await WaitUntil(() => ((Microsoft.UI.Xaml.Controls.GridView)Field(gallery, "_grid")!).Items.Count == state.Files.Count);
+                Require(state.Files.Any(f => f.FullPath == path) && monitor.Runs == runs && !token.IsCancellationRequested, "Gallery lost or duplicated watcher coverage");
+                Require(ReferenceEquals(Field(host, "_currentFile"), prior) && !(bool)Field(host, "_active")!, "Live Gallery updates loaded inactive Browse");
+                Require((await history.GetListsAsync()).Frequent.Sum(r => r.OpenCount) == visits, "Mode/live update counted root visits");
+                state.SetCurrentFile(state.Files.Single(f => f.FullPath == path));
+                browse.SetViewingMode(ViewingMode.Browse);
+                await WaitUntil(() => browse.ViewerMetadata?.WordCount == 3);
+                Require(state.CurrentFile?.FullPath == path && monitor.Runs == runs, "Browse did not adopt requested Gallery context");
+            });
+            await Check("Retained Gallery previews refresh on same-metadata change hints", async () =>
+            {
+                browse.SetViewingMode(ViewingMode.Gallery);
+                var path = Path.Combine(first, "0-gallery.png"); File.Copy(Fixtures[".png"].FullPath, path);
+                await monitor.Emit(new([path], [], false));
+                var gallery = (MediFiler3.Interop.WinUiGalleryIsland)Field(browse, "_gallery")!;
+                var grid = (Microsoft.UI.Xaml.Controls.GridView)Field(gallery, "_grid")!;
+                var file = state.Files.Single(f => f.FullPath == path);
+                Microsoft.UI.Xaml.Controls.Image? Preview() =>
+                    (grid.ContainerFromItem(file) as Microsoft.UI.Xaml.Controls.GridViewItem)?.ContentTemplateRoot is Microsoft.UI.Xaml.Controls.Grid root
+                        ? (Microsoft.UI.Xaml.Controls.Image)root.Children[1] : null;
+                await WaitUntil(() => Preview()?.Source is not null);
+                var source = Preview()!.Source; var listing = grid.ItemsSource;
+                var timestamp = File.GetLastWriteTimeUtc(path);
+                File.WriteAllBytes(path, File.ReadAllBytes(path)); File.SetLastWriteTimeUtc(path, timestamp);
+                await monitor.Emit(new([path], [], false));
+                await WaitUntil(() => Preview()?.Source is not null && !ReferenceEquals(source, Preview()!.Source));
+                Require(ReferenceEquals(listing, grid.ItemsSource), "Same-metadata thumbnail refresh replaced entire Gallery listing");
+            });
+            await Check("Gallery F5 reconciles external additions with Browse presentation still inactive", async () =>
+            {
+                browse.SetViewingMode(ViewingMode.Gallery);
+                var path = Path.Combine(first, "gallery-refresh.txt"); File.WriteAllText(path, "refresh");
+                await browse.RefreshAsync();
+                await WaitUntil(() => state.Files.Any(f => f.FullPath == path));
+                var gallery = (MediFiler3.Interop.WinUiGalleryIsland)Field(browse, "_gallery")!;
+                await WaitUntil(() => ((Microsoft.UI.Xaml.Controls.GridView)Field(gallery, "_grid")!).Items.Count == state.Files.Count);
+                Require(!(bool)Field(host, "_active")!, "F5 resumed Browse inside Gallery");
+                browse.SetViewingMode(ViewingMode.Browse);
+            });
             await Check("Settings shows indexed cache usage and clears only thumbnail artifacts", async () =>
             {
                 await thumbnails.GetThumbnailPngAsync(Fixtures[".png"], 20, 20, default);

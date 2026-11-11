@@ -92,6 +92,7 @@ public partial class BrowseView
             foreach (var path in batch.Paths) await cache.InvalidateAsync(path, true, token);
         }
         if (!Current()) return false;
+        _gallery?.InvalidateThumbnails(batch.Paths.Concat(batch.RescanRoots));
         if (batch.Status is not null) StatusChanged?.Invoke(batch.Status);
 
         if (batch.HierarchyChanged || batch.RescanRoots.Count > 0)
@@ -152,9 +153,11 @@ public partial class BrowseView
         UpdateFolderFileCounts(folder.Path, files.Length);
         EmptyFilesNotice.Visibility = files.Length == 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         // Existing carousel items can otherwise keep stale same-size/timestamp images.
-        _carouselLoadCancellation?.Cancel();
         foreach (var item in CarouselItems.OfType<CarouselThumbnailItem>())
         {
+            if (!batch.RescanRoots.Any(root => IsPathWithin(item.File.FullPath, root)) &&
+                !batch.Paths.Any(path => IsPathWithin(item.File.FullPath, path))) continue;
+            item.ThumbnailCancellation?.Cancel();
             item.Thumbnail = null; item.UncroppedThumbnail = null; item.ThumbnailTask = null;
         }
         var reconciledSelection = _navigationState.CurrentFile;

@@ -27,6 +27,19 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
     private readonly LinkedList<MemoryEntry> _memoryLru = [];
     private long _memorySize;
     private readonly string _diskCachePath;
+    private sealed class PendingThumbnail(string path)
+    {
+        public string Path { get; } = path;
+        public bool Invalidated { get; set; }
+    }
+    private sealed class RequestGate
+    {
+        public SemaphoreSlim Mutex { get; } = new(1, 1);
+        public int Users { get; set; }
+    }
+    // Protected by _cacheGate. Entries exist only while requests are outstanding.
+    private readonly HashSet<PendingThumbnail> _pendingThumbnails = [];
+    private readonly Dictionary<string, RequestGate> _requestGates = [];
 
     public async Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
     {
@@ -34,6 +47,8 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         height = Math.Max(1, height);
         var key = CreateCacheKey(file, width, height);
         long revision;
+        PendingThumbnail pending;
+        RequestGate requestGate;
         await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -53,27 +68,42 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
                     if (ValidPng(bytes))
                     {
                         Record(key, bytes.LongLength, file.FullPath);
-                        Remember(key, bytes);
+                        Remember(key, bytes, file.FullPath);
                         return bytes;
                     }
                     RemoveOwned(key);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
+            pending = new PendingThumbnail(Path.GetFullPath(file.FullPath));
+            _pendingThumbnails.Add(pending);
+            if (!_requestGates.TryGetValue(key, out requestGate!)) _requestGates[key] = requestGate = new RequestGate();
+            requestGate.Users++;
         }
         finally { _cacheGate.Release(); }
 
-        await _workers.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var enteredKey = false;
+        var enteredWorker = false;
         try
         {
+            await requestGate.Mutex.WaitAsync(cancellationToken).ConfigureAwait(false); enteredKey = true;
+            await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (pending.Invalidated || revision != _revision) return null;
+                if (TryGetMemory(key, out var hit)) { Touch(key); return hit; }
+            }
+            finally { _cacheGate.Release(); }
+            await _workers.WaitAsync(cancellationToken).ConfigureAwait(false); enteredWorker = true;
+            cancellationToken.ThrowIfCancellationRequested();
             var bytes = await Task.Run(() => GenerateThumbnail(file, width, height, cancellationToken), cancellationToken).ConfigureAwait(false);
             await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // Invalidation/clear wins over a decoder that was already running.
-                if (revision != _revision) return null;
-                Remember(key, bytes);
+                if (pending.Invalidated || revision != _revision) return null;
+                Remember(key, bytes, file.FullPath);
                 if (bytes is not null && SafeCacheDirectory() && SafeEntry(key + ".png"))
                 {
                     if (await TryWriteDiskCacheAsync(Path.Combine(_diskCachePath, key + ".png"), bytes, cancellationToken).ConfigureAwait(false))
@@ -83,7 +113,18 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
             }
             finally { _cacheGate.Release(); }
         }
-        finally { _workers.Release(); }
+        finally
+        {
+            if (enteredWorker) _workers.Release();
+            if (enteredKey) requestGate.Mutex.Release();
+            await _cacheGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _pendingThumbnails.Remove(pending);
+                if (--requestGate.Users == 0) _requestGates.Remove(key);
+            }
+            finally { _cacheGate.Release(); }
+        }
     }
 
     private byte[]? GenerateThumbnail(FileEntry file, int width, int height, CancellationToken cancellationToken)
@@ -238,7 +279,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         }
     }
 
-    private void Remember(string key, byte[]? bytes)
+    private void Remember(string key, byte[]? bytes, string sourcePath)
     {
         lock (_memoryLock)
         {
@@ -248,7 +289,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
                 _memorySize -= existing.Value.Bytes?.LongLength ?? 0;
             }
 
-            var node = _memoryLru.AddFirst(new MemoryEntry(key, bytes));
+            var node = _memoryLru.AddFirst(new MemoryEntry(key, bytes, Path.GetFullPath(sourcePath)));
             _memoryEntries.Add(key, node);
             _memorySize += bytes?.LongLength ?? 0;
             while ((_memorySize > MemoryCacheLimit || _memoryEntries.Count > MemoryEntryLimit) && _memoryLru.Last is { } last)
@@ -267,7 +308,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial)));
     }
 
-    private sealed record MemoryEntry(string Key, byte[]? Bytes);
+    private sealed record MemoryEntry(string Key, byte[]? Bytes, string SourcePath);
 
     [StructLayout(LayoutKind.Sequential)]
     private readonly struct NativeSize(int width, int height)

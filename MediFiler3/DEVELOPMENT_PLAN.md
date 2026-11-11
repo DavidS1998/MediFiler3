@@ -1,5 +1,37 @@
 # Development plan
 
+## Center framing/memory retention refinement complete (2026-11-11)
+
+Gallery matches carousel-style center-square framing and clips to rectangular tile bounds, retaining the same original-aspect bitmap for hover. Idle disk maintenance no longer blanket-flushes encoded memory; native decoded retention now permits 512 entries/128 MiB while explicit clearing and targeted stale-data safeguards remain. Current thumbnail provider remains WIC + Shell; StorageItemThumbnail/GetThumbnailAsync was researched as a benchmark candidate rather than assumed faster. Build clean; 299 unit/filesystem tests and 160 native checks pass, zero failures/skips. The local fixed 150-pixel slider-width change is preserved; physical input/performance/DPI review and 5.3/5.4 remain pending.
+
+## Shared-thumbnail and hover refinement complete (2026-11-11)
+
+Width/Height sliders now expand to 110 pixels (responsive minimum 55). The sidebar is the sole normal-mode unpinned-tree opening trigger. Carousel and Gallery share a 400-by-400 PNG cache source, with per-key concurrent generation deduplication and targeted memory/in-flight/carousel invalidation. Cancellation, same-metadata refresh and cache ownership safeguards remain verified. Clean build; 297 unit/filesystem tests and 160 native checks pass without failures/skips. Physical performance/hover/DPI review remains open; 5.3/5.4 scope is unchanged.
+
+## Gallery navigation/retention refinement complete (2026-11-11)
+
+Compact Width/Height sliders, centered Gallery rows, selected borders, carousel double-click handoff and whole-sidebar unpinned-tree hover are implemented. Reload regressions now preserve incremental native listings and decoded previews during recycling, with bounded native retention and unchanged watcher/F5 invalidation safety. Build clean; 292 unit/filesystem tests and 160 native checks pass without failures/skips. Physical input/hover/DPI review remains open; 5.3/5.4 scope remains pending.
+
+## Gallery UX refinement complete (2026-11-11)
+
+Gallery now retains its grid/realized previews across tabs, reveals the shared current file, uses tightly spaced fill-cropped tiles with gradient filename overlays and hover-to-fit/caption-hide behavior, and reflows beside a pinned tree. Both sliders persist 100–400 in steps of 50; legacy continuous values normalize without losing unrelated settings or writing merely on read. Retained previews preserve watcher/F5 same-metadata invalidation. Build clean; 292 unit/filesystem tests and 156 native checks pass with zero failures/skips. Physical input/hover/DPI review remains open. This supersedes the earlier 64–384/dispose-on-deactivation description; the remaining 5.3/5.4 scope is unchanged.
+
+## Phase 5.2 implemented (2026-11-11)
+
+Gallery is now a separate sidebar tab alongside Browse, using a native virtualized GridView and independent persisted right-toolbar X/Y sliders (64–384, default 150). Shared collection/watcher context stays current; inactive Browse rendering and Gallery realization are deferred until requested. Native tiles own cancellable bounded thumbnail work, recycled images release, F5/live reconciliation reuse existing services, and native clipping preserves tree/fullscreen reachability. Single selection and double-click/Enter handoff are available; 5.3 multi-selection/input and 5.4 grouped commands remain next. Earlier 5.2-next/no-Gallery-UI entries below describe the previous checkpoint.
+
+Verification: clean solution build; 289 unit/filesystem tests and 151 native checks, zero failures/skips; diff formatting clean. Physical Gallery input/DPI/slider/hover review remains open, alongside all recorded Phase 4 limits.
+
+## Phase 5 approved slices (2026-11-11)
+
+- **5.1 complete:** Application viewing-mode/session and Gallery selection foundations, validated Browse handoff, refresh reconciliation and eight business-logic regressions. Build clean; 284 unit/filesystem tests and 144 native checks pass without failures/skips. Gallery is not yet visible in the UI.
+- **5.2 next:** Virtualized Gallery UI, bounded thumbnail work, shared collection/watcher lifecycle and two independent right-toolbar sliders for thumbnail width/X and height/Y (user-requested replacement for size presets). Prove native grid/folder-overlay/focus/fullscreen interoperability.
+- **5.3:** Mouse/keyboard/accessibility and command scope wiring.
+- **5.4:** Safe grouped operations, existing grouped moves and journal-backed grouped Recycle Bin support, partial-result/collision/Undo checks.
+- **5.5:** Full reconciliation/performance/regression and targeted physical acceptance.
+
+Retain shared natural filename ordering for the MVP; further sort options, drag/drop and continuous reader follow separately. Earlier Phase 5-not-started notes below describe the handover baseline and are superseded by this entry.
+
 This plan tracks the agreed implementation sequence. Product requirements and full acceptance criteria are in [SPECIFICATION.md](SPECIFICATION.md); architecture decisions are in [ARCHITECTURE.md](ARCHITECTURE.md); the current implementation snapshot is in [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
 ## Phase 1 — Foundation and core browsing (complete)
@@ -64,7 +96,7 @@ Playback backend/initial format decisions are settled as above. Broader codec su
 
 Persist recent, frequent, and favorite folders, settings (including restoring/saving shared media volume and mute across application sessions), window/panel layout, and thumbnail cache metadata. Reconcile filesystem changes and identify missing or inaccessible folders.
 
-**Steps 4.1 through 4.6 implemented; 4.7 automated acceptance complete, physical acceptance open.** New Home visual/input/DPI/picker acceptance remains open. Phase 3 features, automated checks and user manual acceptance are complete. See [PHASE3_INTEGRATION.md](PHASE3_INTEGRATION.md). See [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md) for code entry points, current database details, proposed policies and acceptance requirements.
+**Phase 4 implemented and tentatively accepted by the user; 4.7 automated acceptance complete, untested physical cases retained as limits.** New Home visual/input/DPI/picker acceptance remains open. Phase 3 features, automated checks and user manual acceptance are complete. See [PHASE3_INTEGRATION.md](PHASE3_INTEGRATION.md). See [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md) for code entry points, current database details, proposed policies and acceptance requirements.
 
 Recommended implementation sequence:
 
@@ -94,8 +126,8 @@ Add search/filtering, drag and drop, expanded metadata, duplicate detection, add
 
 ## Working rules
 
-- Keep WPF as the host. Use WinUI controls only where their built-in Windows behavior materially helps; the navigation rail is hosted in an XAML Island.
-- Keep the app navigation rail permanently compact and icon-only. Full hiding remains programmatically available for future fullscreen mode.
+- Keep WPF as the host. Prefer suitable WinUI controls over WPF equivalents for native behavior and consistent styling; the navigation rail is hosted in an XAML Island.
+- Keep the app navigation rail permanently compact and icon-only. Fullscreen is implemented with coordinated edge reveals; retain the compact rail in normal mode.
 - Build after changes. Maintain automated coverage for business logic and filesystem operations in `MediFiler3.Infrastructure.Tests` as features are implemented.
 - Update [PROJECT_STATUS.md](PROJECT_STATUS.md) when a step changes status, and keep architecture/specification decisions synchronized.
 
@@ -103,7 +135,7 @@ Add search/filtering, drag and drop, expanded metadata, duplicate detection, add
 
 The counts below describe individual milestones. Current verification is 276 unit/filesystem tests and 144 native checks; consult PROJECT_STATUS.md for the final snapshot and physical acceptance limits.
 
-Home follow-up: compact relative-time captions (seconds/minutes/hours/days/30-day months/365-day years), exact time/full path on hover, no Ignore, and unified Remove entry across all lists. Viewport-bound left-aligned content fixes wide-window card positioning; native containment checked through 3000 px. Latest verification: 188 unit/filesystem tests and 99 native checks, zero skips; build clean.
+Home follow-up: compact relative-time captions (seconds/minutes/hours/days/30-day months/365-day years), exact time/full path on hover, no Ignore, and unified Remove entry across all lists. At this earlier milestone, viewport-bound left-aligned content fixed wide-window card positioning (superseded by the later user-requested centered layout); native containment checked through 3000 px. Latest verification: 188 unit/filesystem tests and 99 native checks, zero skips; build clean.
 
 Root-history follow-up: independent Undo/Redo scopes keyed by root filesystem identity; source-root ownership for cross-root file moves, target-root ownership for folder-menu actions, scoped redo invalidation/batches/compensation and stale-context cancellation. Schema 5 migration preserves legacy history as unscoped; active-root UI excludes legacy entries instead of inferring ownership. Verified 195 unit/filesystem tests and 101 native checks, zero skips; clean build in temporary output while the user app runs.
 
@@ -117,9 +149,11 @@ Step 4.5 implemented: logical normal bounds, monitor metadata/offsets and last n
 
 ## Immediate continuation
 
-Step 4.6 is implemented following explicit user agreement. Loaded-root watching, bounded reconciliation, source-aware cache invalidation/index metadata and 1 GiB/90-day idle retention are integrated. Current verification: 276 unit/filesystem tests and 144 native checks; clean build. Step 4.7 automated restart/integration acceptance is complete; physical acceptance remains open (see PHASE4_ACCEPTANCE.md). Preserve every recorded Phase 3/4 behavior; see ARCHITECTURE.md and PHASE4_HANDOVER.md for policy and remaining checks.
+Implementation baseline is `aa68870` (`Fullscreen support`), committed on master; the final handover changes documentation only. The user tentatively accepted Phase 4 and confirmed dialog appearance/root-flicker correction. Retain the untested physical scenarios in PHASE4_ACCEPTANCE.md without requiring exhaustive testing before all future work. Current fresh verification: 276 unit/filesystem tests and 144 native checks, zero failures/skips, clean build.
 
-Step 4.7 evidence: three fresh-process restart checks are included in the native runner. See [PHASE4_ACCEPTANCE.md](PHASE4_ACCEPTANCE.md) for process boundaries, results, limits and the remaining physical checklist. No production behavior or schema changed during step 4.7.
+Phase 5 is not started. Next conversation: read the current status/handover and inspect Git, then propose Gallery MVP scope and slices before implementation. Reuse navigation, sorting, watchers, thumbnails and root-scoped safe operations. Settle Gallery grid/tile sizing, keyboard/range-selection details, selected-item command scope and Browse handoff. Implement/review Gallery first; continuous reader follows with bounded lazy loading/preload and resource release. No new mode was authorized or implemented during this documentation request.
+
+The earlier recommendation to checkpoint the source is now satisfied by aa68870; do not treat it as an unfulfilled instruction to commit or push. Final handover Markdown may still be uncommitted.
 
 ## UX refinement follow-up
 
@@ -136,3 +170,5 @@ The user tentatively accepted Phase 4 while acknowledging that not every physica
 Verification includes native Settings controls/cleanup, carousel-off persistence through fresh processes, Home centering through 3000 px, 100,000-file navigation indexing, rapid carousel navigation/cancellation, tile identity/fades, F11 from WPF/native islands, native video continuity, edge chrome exclusion and restored/closing-fullscreen layout. Physical edge-hover/DPI/taskbar behavior and animation feel remain review items.
 
 Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.
+
+Final UI detail: enabled favorite stars are filled solid white, with inactive gray outlines. See PROJECT_STATUS.md for the consolidated completed behavior and PHASE4_HANDOVER.md for the next-conversation prompt.

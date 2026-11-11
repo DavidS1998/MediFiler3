@@ -55,7 +55,7 @@ The frequency counter and last-visited timestamp persist between sessions. Every
 
 Display folders explicitly marked as favorites by the user.
 
-Favorites apply only to saved root folders and are added/removed from Home, not the folder tree or its menus. A star next to an entry in Recents or Frequently opened toggles the shared favorite state. Favorites are ordered alphabetically by folder name (path breaks ties). The same root shows the same filled/unfilled star in all two or three Home sections where it appears.
+Favorites apply only to saved root folders and are added/removed from Home, not the folder tree or its menus. A star next to an entry in Recents or Frequently opened toggles the shared favorite state. Favorites are ordered alphabetically by folder name (path breaks ties). The same root shows the same filled/unfilled star in all two or three Home sections where it appears. Enabled stars are filled solid white; disabled stars use the gray outline.
 
 ### Home layout
 
@@ -99,7 +99,7 @@ Files should be indexed sufficiently to support fast navigation, sorting, thumbn
 - The application should handle inaccessible directories and files gracefully.
 - Symbolic links and directory junctions should be handled safely, avoiding infinite traversal loops.
 - The user should be able to refresh or rescan a collection.
-- Filesystem changes made outside the application should eventually be reflected in the interface. While Browse is active, watch all loaded-root hierarchies with duplicate/nested coverage reduced. Coalesce events with 500 ms quiet debounce/2 s maximum batching delay and a 1,024-path bound; overflow/error triggers rescan. Stop watchers outside Browse and on root replacement/shutdown. Reconcile on return/reconnection, defer during commands/dialogs, preserve selection/expansion and unaffected presentation, reopen affected media paused, and never count automatic work as root visits. Unavailable coverage reports degraded status, retries up to 60 s and polls the active folder; F5 remains available.
+- Filesystem changes made outside the application should eventually be reflected in the interface. While Browse or Gallery is active, watch all loaded-root hierarchies with duplicate/nested coverage reduced. Coalesce events with 500 ms quiet debounce/2 s maximum batching delay and a 1,024-path bound; overflow/error triggers rescan. Stop watchers outside Browse/Gallery and on root replacement/shutdown. Reconcile on return/reconnection, defer during commands/dialogs, preserve selection/expansion and unaffected presentation, reopen affected media paused, and never count automatic work as root visits. Unavailable coverage reports degraded status, retries up to 60 s and polls the active folder; F5 remains available.
 
 # 3. Main viewer
 
@@ -339,6 +339,8 @@ Drag and drop should complement, rather than replace, the primary interaction mo
 
 # 6. Alternative viewing modes
 
+Browse and Gallery appear as separate tabs/destinations in the compact sidebar. They share folder/file context, but apply changes to the other view's expensive presentation when that view is requested. Switching tabs must not rescan the collection or load inactive viewer content/thumbnails.
+
 The application should support multiple viewing modes that share the same underlying file collection and organization functionality. Switching viewing modes is a context change: preserve the loaded roots and folder context, but clear mode-specific file selections.
 
 Switching between viewing modes should not require rescanning or reloading the collection.
@@ -350,6 +352,16 @@ The gallery view provides an overview of a folder's contents through a grid of t
 ### Requirements
 
 - Display a configurable number of columns or thumbnail sizes.
+- Gallery thumbnail width (X) and height (Y) are independently adjustable through two sliders in the right toolbar. Column count responds to the available width and chosen thumbnail width; do not replace these with a single size preset.
+- Each slider spans 100–400 logical pixels in steps of 50 (default 150); persist width and height independently. Older continuous sizes snap to the nearest valid step without discarding other settings.
+- Retain the Gallery grid and previews across tab switches; avoid replacing unchanged listings, and try to keep the shared current file visible when Gallery is requested.
+- Keep tile gaps minimal (two pixels). Crop thumbnails to cover each tile; on hover, fit the whole thumbnail at its original aspect ratio and hide the bottom filename/transparent-gradient overlay. Restore the crop and caption on exit.
+- Gallery crop framing matches the carousel's centered square, then fills the chosen tile rectangle. Hover still reveals the full uncropped image. Retain decoded previews more conservatively within a 512-entry/128 MiB limit; idle disk housekeeping must not blanket-flush encoded thumbnails from memory. Explicit clearing and changed-source invalidation remain effective.
+- Reflow Gallery tiles beside a pinned folder tree; an unpinned tree retains its overlay/reveal behavior.
+- Center Gallery rows in the available space. Selected/current tiles use a distinct visible border. Right-toolbar slider labels read Width and Height; the current locally adjusted slider width is 150 logical pixels.
+- Double-clicking a Browse carousel tile opens Gallery at that file and highlights it; single-click behavior remains Browse selection.
+- In normal mode, sidebar hover is the sole trigger to open the unpinned folder tree. Hovering the tree retains it once open; hide after leaving that combined area. The old content-edge hitbox must not open it. Preserve pinned-tree behavior and fullscreen's coordinated reveals.
+- Carousel and Gallery reuse the same 400-by-400 cached PNG thumbnail source, with mode-specific rendering. File-specific change hints must retain unaffected thumbnails and decoder work; explicit folder/root refreshes still invalidate their scope.
 - Generate thumbnails asynchronously.
 - Virtualize the interface so only visible items and a reasonable surrounding buffer need to be rendered.
 - Support alphabetical sorting and other sorting options.
@@ -805,7 +817,7 @@ Do not attempt to implement all features simultaneously.
 
 **Goal:** Make the application convenient for repeated daily use.
 
-Phase 4 steps 4.1 through 4.6 are implemented: typed storage, current schema-7 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; step 4.5 implements monitor-aware window layout persistence; step 4.6 implements loaded-root reconciliation and agreed thumbnail-cache maintenance; 4.7 automated acceptance is complete, with physical review still open in PHASE4_ACCEPTANCE.md. Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
+Phase 4 steps 4.1 through 4.6 are implemented: typed storage, current schema-7 SQLite persistence, settings restoration/saving, root-only usage/favorites service and root-load counting. Step 4.4 implements Home cards, synchronized stars, root opening and missing-root choices; step 4.5 implements monitor-aware window layout persistence; step 4.6 implements loaded-root reconciliation and agreed thumbnail-cache maintenance; 4.7 automated acceptance is complete. The user tentatively accepted Phase 4; PHASE4_ACCEPTANCE.md retains untested physical cases as verification limits. Follow the step sequence in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) and the current code/storage/policy handover in [PHASE4_HANDOVER.md](PHASE4_HANDOVER.md). Those documents distinguish existing behavior, proposed implementation defaults and remaining decisions; Phase 3 interactive checks were accepted by the user on 2026-11-10.
 
 ## Phase 5 – Alternative viewing modes
 

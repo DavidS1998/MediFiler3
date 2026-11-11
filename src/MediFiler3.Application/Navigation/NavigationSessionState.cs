@@ -12,10 +12,23 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
     private FileEntry? _currentFile;
     private readonly Dictionary<FileEntry, int> _fileIndices = [];
     private bool _replacingFiles;
+    public GallerySelectionState GallerySelection { get; } = new();
+    public ViewingMode ViewingMode { get; private set; } = ViewingMode.Browse;
+
+    public bool SwitchViewingMode(ViewingMode mode)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        if (ViewingMode == mode) return false;
+        GallerySelection.Clear();
+        ViewingMode = mode;
+        OnPropertyChanged(nameof(ViewingMode));
+        return true;
+    }
     public NavigationSessionState() => Files.CollectionChanged += (_, _) =>
     {
         if (_replacingFiles) return;
         ReindexFiles();
+        GallerySelection.Reconcile(Files);
         OnPropertyChanged(nameof(CurrentFilePosition));
     };
     private void ReindexFiles()
@@ -65,6 +78,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public void ReplaceRoots(IEnumerable<FolderTreeEntry> roots, bool preserveActiveContext = false)
     {
+        if (!preserveActiveContext) GallerySelection.Clear();
         Roots.Clear();
         foreach (var root in roots)
         {
@@ -92,6 +106,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
         }
 
         ActiveFolder = folder;
+        GallerySelection.Clear();
         if (folder is not null)
         {
             folder.IsSelected = true;
@@ -110,6 +125,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
         }
         finally { _replacingFiles = false; ReindexFiles(); }
 
+        GallerySelection.Reconcile(Files);
         OnPropertyChanged(nameof(Files));
         SetCurrentFile(Files.FirstOrDefault());
         OnPropertyChanged(nameof(CurrentFilePosition));

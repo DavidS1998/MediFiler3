@@ -15,6 +15,24 @@ public sealed class NavigationController(NavigationSessionState navigationState,
     public event Action<FileEntry>? FileSelected;
     public event Action<string>? StatusChanged;
 
+    public void SwitchViewingMode(ViewingMode mode)
+    {
+        if (_navigationState.ViewingMode == mode) return;
+        CancelPendingNavigation();
+        _navigationState.SwitchViewingMode(mode);
+    }
+
+    public bool OpenGalleryFileInBrowse(FileEntry file)
+    {
+        if (_navigationState.ViewingMode != ViewingMode.Gallery) return false;
+        var current = _navigationState.Files.FirstOrDefault(candidate =>
+            StringComparer.OrdinalIgnoreCase.Equals(candidate.FullPath, file.FullPath));
+        if (current is null) return false;
+        SwitchViewingMode(ViewingMode.Browse);
+        SelectFile(current);
+        return true;
+    }
+
     public void SelectFile(FileEntry file)
     {
         if (!_navigationState.ContainsFile(file)) return;

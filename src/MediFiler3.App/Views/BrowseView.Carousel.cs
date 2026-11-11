@@ -8,6 +8,29 @@ namespace MediFiler3.Views;
 
 public partial class BrowseView
 {
+    public Func<bool>? SidebarHoverProbe { get; set; }
+    private bool _sidebarFolderReveal;
+
+    public void UpdateShellFolderHover(bool sidebar, Point point)
+    {
+        if (_fullscreenCarousel) return; // Fullscreen retains its coordinated shell/tree reveal.
+        _sidebarFolderReveal = sidebar;
+        var inside = point.X >= 0 && point.Y >= 0 && point.Y < ActualHeight;
+        SetFolderOverlayVisible(sidebar || _folderOverlayPinned || inside &&
+            _folderOverlayVisible && point.X <= FolderOverlay.Width);
+    }
+    private void OpenCarouselFileInGallery(MediFiler3.Domain.Files.FileEntry file)
+    {
+        if (!_viewerActive || IsGallery || !_navigationState.ContainsFile(file)) return;
+        _navigationState.SetCurrentFile(file);
+        GalleryRequested?.Invoke();
+    }
+
+    private void HandleCarouselTileClick(MediFiler3.Domain.Files.FileEntry file, int clickCount)
+    {
+        if (clickCount == 2) OpenCarouselFileInGallery(file);
+        else if (!ReferenceEquals(file, _navigationState.CurrentFile)) SelectFile(file);
+    }
     private bool _carouselEnabled = true;
     private bool _fullscreenCarousel;
     private bool _fullscreenFolderReveal;
@@ -17,6 +40,7 @@ public partial class BrowseView
         _fullscreenFolderReveal = reveal;
         var margin = FolderOverlay.Margin;
         FolderOverlay.Margin = new Thickness(reveal ? sidebarWidth : 0, margin.Top, margin.Right, margin.Bottom);
+        UpdateGalleryTreeInset();
         SetFolderOverlayVisible(reveal || _folderOverlayPinned);
     }
     private bool _carouselRefreshQueued;
@@ -28,7 +52,7 @@ public partial class BrowseView
         _carouselEnabled = enabled;
         _carouselRefreshVersion++;
         _carouselLoadCancellation?.Cancel();
-        CarouselOverlay.Visibility = enabled ? Visibility.Visible : Visibility.Collapsed;
+        CarouselOverlay.Visibility = enabled && !IsGallery ? Visibility.Visible : Visibility.Collapsed;
         CarouselGhosts.Children.Clear();
         if (!enabled) { _carouselScrollTimer.Stop(); CancelCarouselItemLoads(); CarouselItems.Clear(); }
         SetFullscreenCarousel(_fullscreenCarousel);

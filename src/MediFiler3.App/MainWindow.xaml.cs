@@ -54,6 +54,7 @@ public partial class MainWindow : Window
     private long _historyRequest;
     private CancellationTokenSource? _historyAvailabilityCancellation;
     private readonly WindowLayoutController _windowLayout;
+    private double _galleryWidth = 150, _galleryHeight = 150;
 
     public Brush TitleBarBackground
     {
@@ -112,6 +113,18 @@ public partial class MainWindow : Window
             settings.Update(s => s with { CarouselEnabled = enabled });
         };
         InitializeComponent();
+        _galleryWidth = settings.Current.GalleryThumbnailWidth;
+        _galleryHeight = settings.Current.GalleryThumbnailHeight;
+        _browseView.SetGalleryTileSize(_galleryWidth, _galleryHeight);
+        ToolbarIsland.SetGalleryControls(false, _galleryWidth, _galleryHeight);
+        ToolbarIsland.GallerySizeChanged += (width, height) =>
+        {
+            _galleryWidth = width; _galleryHeight = height;
+            _browseView.SetGalleryTileSize(width, height);
+            settings.Update(s => s with { GalleryThumbnailWidth = (int)width, GalleryThumbnailHeight = (int)height });
+        };
+        _browseView.BrowseRequested += () => NavigationIsland.SelectDestination("Browse");
+        _browseView.GalleryRequested += () => NavigationIsland.SelectDestination("Gallery");
         ToolbarIsland.FullscreenRequested += ToggleFullscreen;
         if (thumbnailService is IThumbnailCacheMaintenance thumbnailCache)
         {
@@ -187,6 +200,7 @@ public partial class MainWindow : Window
         _windowLayout = new WindowLayoutController(this, windowLayout, windowPlacement);
         _windowLayout.PlacementFailed += exception => _logger.LogWarning(exception, "Could not capture or reconcile window placement.");
         InitializeFullscreen();
+        InitializeFolderHover();
         logger.LogInformation("Main window initialized.");
     }
 
@@ -254,13 +268,16 @@ public partial class MainWindow : Window
 
     private void OnNavigationSelectionChanged(string destination)
     {
+        if (destination is "Browse" or "Gallery")
+            _browseView.SetViewingMode(destination == "Gallery" ? ViewingMode.Gallery : ViewingMode.Browse);
         PageContent.Content = destination switch
         {
             "Browse" => _browseView,
+            "Gallery" => _browseView,
             "Settings" => _settingsView,
             _ => _homeView
         };
-        _browseView.SetViewerActive(destination == "Browse");
+        _browseView.SetViewerActive(destination is "Browse" or "Gallery");
         UpdateViewerControls();
         UpdateFileActionAvailability();
         UpdateToolbarContext();
@@ -296,13 +313,13 @@ public partial class MainWindow : Window
         var token = _historyAvailabilityCancellation.Token;
         var root = _navigationState.ActiveRoot;
         ToolbarIsland.SetHistoryAvailability(false, false);
-        if (root is null || PageContent.Content != _browseView) return;
+        if (root is null || PageContent.Content != _browseView || _browseView.IsGallery) return;
         try
         {
             var operations = await _fileOrganizationService.ForRootAsync(root.Path, token);
             var undo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo, token);
             var redo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo, token);
-            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView) return;
+            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView || _browseView.IsGallery) return;
             ToolbarIsland.SetHistoryAvailability(undo is not null, redo is not null, undo, redo);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -316,7 +333,7 @@ public partial class MainWindow : Window
 
     private void UpdateFileActionAvailability()
     {
-        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && _navigationState.CurrentFile is not null);
+        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && !_browseView.IsGallery && _navigationState.CurrentFile is not null);
         ToolbarIsland.SetRefreshEnabled(PageContent.Content == _browseView && _navigationState.Roots.Count > 0);
     }
 
@@ -339,7 +356,7 @@ public partial class MainWindow : Window
             await RefreshBrowseAsync();
             return;
         }
-        if (PageContent.Content != _browseView || Keyboard.FocusedElement is TextBox or MenuItem)
+        if (PageContent.Content != _browseView || _browseView.IsGallery || Keyboard.FocusedElement is TextBox or MenuItem)
             return;
 
         if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
@@ -373,18 +390,19 @@ public partial class MainWindow : Window
     {
         var folder = _navigationState.ActiveFolder;
         ToolbarIsland.SetFolderContext(folder?.Name ?? "MediFiler3", folder?.Path ?? "No folder loaded");
-        var metadata = PageContent.Content == _browseView && _navigationState.CurrentFile is { } file
+        var metadata = PageContent.Content == _browseView && !_browseView.IsGallery && _navigationState.CurrentFile is { } file
             ? _browseView.GetViewerMetadata(file) : null;
         ToolbarIsland.SetFileMetadata(ViewerMetadataFormatter.Format(metadata));
     }
 
     private void UpdateViewerControls()
     {
+        ToolbarIsland.SetGalleryControls(PageContent.Content == _browseView && _browseView.IsGallery, _galleryWidth, _galleryHeight);
         ToolbarIsland.SetViewerCapabilities(
-        PageContent.Content == _browseView && _navigationState.CurrentFile is not null
+        PageContent.Content == _browseView && !_browseView.IsGallery && _navigationState.CurrentFile is not null
             ? _browseView.ViewerCapabilities : MediFiler3.Application.Viewing.ViewerCapabilities.None, _browseView.CanZoom);
         var external = _browseView.ExternalOpenState;
-        ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView ? external : external with { Visible = false });
+        ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView && !_browseView.IsGallery ? external : external with { Visible = false });
         ToolbarIsland.SetTextViewerState(_browseView.IsTextInteraction,
             _browseView.CanReadPreviousTextWindow, _browseView.CanReadNextTextWindow);
         ToolbarIsland.SetMediaPlaybackState(_browseView.PlaybackState);
@@ -438,6 +456,7 @@ public partial class MainWindow : Window
 
     private async Task LoadFolderPathsAsync(IEnumerable<string> folderPaths)
     {
+        _browseView.SetViewingMode(ViewingMode.Browse);
         PageContent.Content = _browseView;
         _browseView.SetViewerActive(true);
         NavigationIsland.SelectDestination("Browse");

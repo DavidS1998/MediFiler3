@@ -8,6 +8,59 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class ApplicationPersistenceTests
 {
     [Fact]
+    public async Task GalleryDimensionsPersistIndependentlyAndOldSettingsUseDefaults()
+    {
+        using var temp = new TemporaryDatabase();
+        var store = new SqliteApplicationStateStore(temp.Database);
+        await store.SaveAsync(new ApplicationSettings(GalleryThumbnailWidth: 250, GalleryThumbnailHeight: 100));
+        var service = new ApplicationSettingsService(new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath)));
+        await service.InitializeAsync();
+        Assert.Equal(250, service.Current.GalleryThumbnailWidth);
+        Assert.Equal(100, service.Current.GalleryThumbnailHeight);
+        await ExecuteAsync(temp.DatabasePath, "UPDATE ApplicationSettings SET PayloadJson = '{\"Muted\":true,\"Volume\":0.73,\"CarouselEnabled\":false}'");
+        var old = await ((IApplicationSettingsStore)store).LoadAsync();
+        Assert.Equal(150, old.GalleryThumbnailWidth);
+        Assert.Equal(150, old.GalleryThumbnailHeight);
+        Assert.True(old.Muted);
+        Assert.False(old.CarouselEnabled);
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+    }
+
+    [Theory]
+    [InlineData(63, 150)]
+    [InlineData(401, 150)]
+    [InlineData(150, 63)]
+    [InlineData(150, 401)]
+    [InlineData(125, 150)]
+    [InlineData(150, 175)]
+    public void InvalidGalleryDimensionsAreRejected(int width, int height) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ApplicationSettings(GalleryThumbnailWidth: width, GalleryThumbnailHeight: height).Validate());
+
+    [Fact]
+    public async Task LegacyGalleryDimensionsSnapWithoutLosingOtherSettingsOrOverwritingOnRead()
+    {
+        using var temp = new TemporaryDatabase();
+        var store = new SqliteApplicationStateStore(temp.Database);
+        await store.SaveAsync(new ApplicationSettings());
+        await ExecuteAsync(temp.DatabasePath, "UPDATE ApplicationSettings SET PayloadJson = '{\"Muted\":true,\"Volume\":0.73,\"CarouselEnabled\":false,\"GalleryThumbnailWidth\":384,\"GalleryThumbnailHeight\":96}'");
+        var settings = new ApplicationSettingsService(store);
+        await settings.InitializeAsync();
+        Assert.Equal(400, settings.Current.GalleryThumbnailWidth);
+        Assert.Equal(100, settings.Current.GalleryThumbnailHeight);
+        Assert.True(settings.Current.Muted);
+        Assert.Equal(0.73, settings.Current.Volume);
+        Assert.False(settings.Current.CarouselEnabled);
+        await settings.FlushAsync();
+        Assert.Contains("384", (string)(await ScalarAsync(temp.DatabasePath, "SELECT PayloadJson FROM ApplicationSettings;"))!);
+        settings.Update(s => s with { GalleryThumbnailHeight = 350 });
+        await settings.FlushAsync();
+        var reopened = await ((IApplicationSettingsStore)new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath))).LoadAsync();
+        Assert.Equal(400, reopened.GalleryThumbnailWidth);
+        Assert.Equal(350, reopened.GalleryThumbnailHeight);
+        Assert.True(reopened.Muted);
+    }
+
+    [Fact]
     public async Task CarouselVisibilityPersistsAndOldSettingsDefaultToVisible()
     {
         using var temp = new TemporaryDatabase();

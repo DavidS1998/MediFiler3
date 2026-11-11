@@ -122,6 +122,12 @@ public sealed class WinUiNavigationIsland : HwndHost
             Icon = new SymbolIcon(Symbol.Folder),
             Tag = "Browse"
         });
+        navigationView.MenuItems.Add(new NavigationViewItem
+        {
+            Content = "Gallery",
+            Icon = new SymbolIcon(Symbol.Pictures),
+            Tag = "Gallery"
+        });
         navigationView.FooterMenuItems.Add(new NavigationViewItem
         {
             Content = "Settings",

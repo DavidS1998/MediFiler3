@@ -53,6 +53,11 @@ internal static partial class Program
             {
                 if (args.Length == 3 && args[0] == "--phase4-restart-worker")
                     await RunPhase4RestartWorkerAsync(args[1], args[2]);
+                else if (args.Length == 1 && args[0] == "--gallery-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures();
+                    await RunUiRefinementChecksAsync();
+                }
                 else await RunAsync(args.FirstOrDefault());
             }
             catch (Exception error) { _failed++; Console.WriteLine("FATAL " + error); }

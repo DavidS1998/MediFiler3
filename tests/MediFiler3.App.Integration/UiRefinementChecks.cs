@@ -37,6 +37,7 @@ internal static partial class Program
             new RootFolderHistoryService(store, availability), availability, new FileSystemCollisionPreviewService(thumbnails), backups, layout, new WindowsWindowPlacement())
         { Opacity = 0, ShowInTaskbar = false, ShowActivated = false };
         window.Show();
+        ((System.Windows.Threading.DispatcherTimer)Field(window, "_folderHoverTimer")!).Stop();
         var browse = (BrowseView)Field(window, "_browseView")!;
         var settingsView = (SettingsView)Field(window, "_settingsView")!;
         var toolbar = (WinUiToolbarIsland)window.FindName("ToolbarIsland");
@@ -158,6 +159,7 @@ internal static partial class Program
                     Require(ReferenceEquals(session, Field(host, "_media")) && browse.PlaybackState.Playing, "Leaving fullscreen interrupted video");
                     browse.StopPlayback();
                 });
+            await RunGalleryChecksAsync(window, state, browse, toolbar, settings, thumbnails, directory);
             await Check("native-island F11 shortcut works and closing fullscreen retains normal restart layout", async () =>
             {
                 Destination("Settings");
@@ -181,7 +183,8 @@ internal static partial class Program
     private sealed class CountingThumbnails : IThumbnailService
     {
         public int Calls;
+        public readonly System.Collections.Concurrent.ConcurrentBag<(string Path, int Width, int Height)> Requests = [];
         public Task<byte[]?> GetThumbnailPngAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
-        { Interlocked.Increment(ref Calls); return NativeThumbnails.GetThumbnailPngAsync(file, width, height, cancellationToken); }
+        { Requests.Add((file.FullPath, width, height)); Interlocked.Increment(ref Calls); return NativeThumbnails.GetThumbnailPngAsync(file, width, height, cancellationToken); }
     }
 }

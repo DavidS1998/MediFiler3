@@ -31,6 +31,115 @@ public sealed class ThumbnailMaintenanceTests : IDisposable
     }
 
     [Fact]
+    public async Task MatchingCarouselAndGalleryRequestsReuseTheSameCachedPng()
+    {
+        var source = Path.Combine(_root, "shared.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var file = Entry(source);
+        var carousel = await cache.GetThumbnailPngAsync(file, 400, 400, default);
+        var gallery = await cache.GetThumbnailPngAsync(file, 400, 400, default);
+        Assert.NotNull(carousel); Assert.Same(carousel, gallery);
+        Assert.Single(Directory.GetFiles(Cache, "*.png"));
+    }
+
+    [Fact]
+    public async Task TargetedInvalidationRetainsUnrelatedPositiveAndNegativeMemoryEntries()
+    {
+        var first = Path.Combine(_root, "first.png"); var second = Path.Combine(_root, "second.png");
+        File.WriteAllBytes(first, Png(10)); File.WriteAllBytes(second, Png(20));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var a = Entry(first); var b = Entry(second);
+        var before = await cache.GetThumbnailPngAsync(b, 400, 400, default);
+        var missing = new FileEntry(Path.Combine(_root, "missing.png"), "missing.png", 0, DateTime.UnixEpoch);
+        Assert.Null(await cache.GetThumbnailPngAsync(missing, 400, 400, default));
+        // No hint for this path: its cached negative result must survive an unrelated event.
+        File.WriteAllBytes(missing.FullPath, Png(30));
+        await cache.InvalidateAsync(a.FullPath, false);
+        Assert.Same(before, await cache.GetThumbnailPngAsync(b, 400, 400, default));
+        Assert.Null(await cache.GetThumbnailPngAsync(missing, 400, 400, default));
+        await cache.InvalidateAsync(missing.FullPath, false);
+        Assert.NotNull(await cache.GetThumbnailPngAsync(missing, 400, 400, default));
+    }
+
+    [Fact]
+    public async Task ConcurrentMatchingRequestsGenerateOneSharedResult()
+    {
+        var source = Path.Combine(_root, "shared.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var workers = (SemaphoreSlim)typeof(FileSystemThumbnailService).GetField("_workers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        for (var i = 0; i < 3; i++) await workers.WaitAsync();
+        var file = Entry(source);
+        var requests = Enumerable.Range(0, 5).Select(_ => cache.GetThumbnailPngAsync(file, 400, 400, default)).ToArray();
+        workers.Release(3);
+        var results = await Task.WhenAll(requests);
+        Assert.NotNull(results[0]);
+        Assert.All(results, result => Assert.Same(results[0], result));
+        var gates = (System.Collections.IDictionary)typeof(FileSystemThumbnailService).GetField("_requestGates", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        Assert.Empty(gates);
+    }
+
+    [Fact]
+    public async Task UnrelatedInvalidationDoesNotDiscardQueuedDecoder()
+    {
+        var source = Path.Combine(_root, "source.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var workers = (SemaphoreSlim)typeof(FileSystemThumbnailService).GetField("_workers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        for (var i = 0; i < 3; i++) await workers.WaitAsync();
+        var request = cache.GetThumbnailPngAsync(Entry(source), 400, 400, default);
+        try { await cache.InvalidateAsync(Path.Combine(_root, "unrelated.png"), false); }
+        finally { workers.Release(3); }
+        Assert.NotNull(await request);
+    }
+
+    [Fact]
+    public async Task CancellingOneMatchingRequestDoesNotCancelAnotherOrLeakItsGate()
+    {
+        var source = Path.Combine(_root, "shared.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var workers = (SemaphoreSlim)typeof(FileSystemThumbnailService).GetField("_workers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        for (var i = 0; i < 3; i++) await workers.WaitAsync();
+        using var stop = new CancellationTokenSource();
+        var file = Entry(source);
+        var first = cache.GetThumbnailPngAsync(file, 400, 400, stop.Token);
+        var second = cache.GetThumbnailPngAsync(file, 400, 400, default);
+        try
+        {
+            stop.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        }
+        finally { workers.Release(3); }
+        Assert.NotNull(await second);
+        var gates = (System.Collections.IDictionary)typeof(FileSystemThumbnailService).GetField("_requestGates", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        Assert.Empty(gates);
+    }
+
+    [Fact]
+    public async Task IdleHousekeepingRetainsWarmMemoryButExplicitClearEvictsIt()
+    {
+        var source = Path.Combine(_root, "warm.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var file = Entry(source);
+        var before = await cache.GetThumbnailPngAsync(file, 400, 400, default);
+        await cache.MaintainAsync();
+        Assert.Same(before, await cache.GetThumbnailPngAsync(file, 400, 400, default));
+        await cache.MaintainAsync(clear: true);
+        Assert.NotSame(before, await cache.GetThumbnailPngAsync(file, 400, 400, default));
+    }
+
+    [Fact]
+    public async Task IdleHousekeepingDoesNotDiscardUnrelatedQueuedDecoder()
+    {
+        var source = Path.Combine(_root, "warm.png"); File.WriteAllBytes(source, Png(10));
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var workers = (SemaphoreSlim)typeof(FileSystemThumbnailService).GetField("_workers", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(cache)!;
+        for (var i = 0; i < 3; i++) await workers.WaitAsync();
+        var request = cache.GetThumbnailPngAsync(Entry(source), 400, 400, default);
+        try { await cache.MaintainAsync(); }
+        finally { workers.Release(3); }
+        Assert.NotNull(await request);
+    }
+
+    [Fact]
     public async Task ExpiryAndClearPreserveSourcesUnknownFilesAndHistory()
     {
         var store = new Store();

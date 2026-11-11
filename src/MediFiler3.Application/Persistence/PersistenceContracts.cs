@@ -1,14 +1,29 @@
 namespace MediFiler3.Application.Persistence;
 
 public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5,
-    int CarouselIconCount = 11, bool FolderTreePinned = false, bool CarouselEnabled = true)
+    int CarouselIconCount = 11, bool FolderTreePinned = false, bool CarouselEnabled = true,
+    int GalleryThumbnailWidth = 150, int GalleryThumbnailHeight = 150)
 {
+    public static int SnapGalleryDimension(double value) =>
+        (int)(Math.Round(Math.Clamp(value, 100, 400) / 50, MidpointRounding.AwayFromZero) * 50);
+
+    // Accept the previous slider's valid values without discarding unrelated settings.
+    // Normalization is in-memory until the user makes a real settings change.
+    public ApplicationSettings NormalizeGalleryDimensions() => this with
+    {
+        GalleryThumbnailWidth = GalleryThumbnailWidth is >= 64 and <= 400 ? SnapGalleryDimension(GalleryThumbnailWidth) : GalleryThumbnailWidth,
+        GalleryThumbnailHeight = GalleryThumbnailHeight is >= 64 and <= 400 ? SnapGalleryDimension(GalleryThumbnailHeight) : GalleryThumbnailHeight
+    };
+
     public void Validate()
     {
         if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(Volume));
         if (CarouselIconCount is < 1 or > 25 || CarouselIconCount % 2 == 0)
             throw new ArgumentOutOfRangeException(nameof(CarouselIconCount));
+        if (GalleryThumbnailWidth is < 100 or > 400 || GalleryThumbnailHeight is < 100 or > 400 ||
+            GalleryThumbnailWidth % 50 != 0 || GalleryThumbnailHeight % 50 != 0)
+            throw new ArgumentOutOfRangeException(nameof(GalleryThumbnailWidth));
     }
 }
 

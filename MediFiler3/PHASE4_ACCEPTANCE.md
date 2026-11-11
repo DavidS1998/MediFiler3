@@ -7,7 +7,7 @@ Updated 2026-11-10. Automated step 4.7 is complete. The user tentatively accepte
 - Solution build: zero warnings/errors, using the temporary continuation output so the running user app remains untouched.
 - Unit/filesystem suite: **276 passed, zero failures/skips**.
 - Explicit WPF/WinUI runner: **144 passed, zero failures/skips**, with supplied codec fixtures. This includes the existing Phase 3 viewer/input/media/resource/operation regressions and all Phase 4 checks.
-- Git diff formatting check passes. Changes remain uncommitted on top of the existing documentation and step-4.6 work.
+- Git diff formatting check passes. Implementation is committed at aa68870 (Fullscreen support); Git was clean before this final documentation-only handover. The new handover Markdown remains uncommitted unless subsequently committed by the user.
 
 ## Fresh-process restart acceptance
 
@@ -52,3 +52,7 @@ Two 2,000-subfolder regressions verify that unchanged rescans and incomplete pro
 User stated that Phase 4 tentatively looks good but not all use cases can be definitively tested. This is recorded as tentative overall acceptance, not proof that unchecked physical cases passed. The subsequent requested Settings/Home/fullscreen/carousel changes are implemented and require visual/physical review on the updated build. See ARCHITECTURE.md for their policy and UiRefinementChecks.cs for automated evidence.
 
 Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.
+
+## Final handover verification
+
+The final documentation-only handover freshly reran the build and both complete runners on the committed aa68870 implementation (including solid-white enabled favorite stars): build zero warnings/errors; 276 unit/filesystem tests and 144 native checks passed, zero failures/skips. Native evidence was retained at `%TEMP%\MediFiler3Integration-0884efcd9571494897107055cab6f5ab`; the supplied `%TEMP%\MediFiler3Phase3Fixtures` existed. The star-color change has build/source review and general Home regressions, not a separate pixel-color/subjective appearance acceptance. No user-specific physical checks were performed or newly marked passed. No production code/test/fixture changes were made in this handover; no commit/push was made.

@@ -15,7 +15,7 @@ public sealed class SqliteApplicationStateStore(SqliteDatabase database) :
     async Task<ApplicationSettings> IApplicationSettingsStore.LoadAsync(CancellationToken cancellationToken)
     {
         var values = await ReadAsync<ApplicationSettings>("ApplicationSettings", cancellationToken).ConfigureAwait(false);
-        var settings = values.SingleOrDefault() ?? new ApplicationSettings();
+        var settings = (values.SingleOrDefault() ?? new ApplicationSettings()).NormalizeGalleryDimensions();
         settings.Validate();
         return settings;
     }

@@ -131,15 +131,26 @@ public sealed partial class FileSystemThumbnailService
         try
         {
             await InitializeIndexAsync(token).ConfigureAwait(false);
-            ClearMemory();
             _legacyInvalidated = true;
             var normalized = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            bool Affected(string source) => string.Equals(source, normalized, StringComparison.OrdinalIgnoreCase) ||
+                descendants && source.StartsWith(Path.EndsInDirectorySeparator(normalized) ? normalized : normalized + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+            lock (_memoryLock)
+            {
+                foreach (var entry in _memoryEntries.Values.ToArray())
+                {
+                    if (!Affected(entry.Value.SourcePath)) continue;
+                    _memoryEntries.Remove(entry.Value.Key); _memoryLru.Remove(entry);
+                    _memorySize -= entry.Value.Bytes?.LongLength ?? 0;
+                }
+            }
+            foreach (var request in _pendingThumbnails)
+                if (Affected(request.Path)) request.Invalidated = true;
             foreach (var entry in _index.Values.ToArray())
             {
                 token.ThrowIfCancellationRequested();
                 // Legacy entries have no source mapping; conservatively invalidate them.
-                if (entry.SourcePath is null || string.Equals(entry.SourcePath, normalized, StringComparison.OrdinalIgnoreCase) ||
-                    descendants && entry.SourcePath.StartsWith(Path.EndsInDirectorySeparator(normalized) ? normalized : normalized + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                if (entry.SourcePath is null || Affected(entry.SourcePath))
                     RemoveOwned(entry.Key);
             }
         }
@@ -161,7 +172,7 @@ public sealed partial class FileSystemThumbnailService
         {
             await InitializeIndexAsync(token).ConfigureAwait(false);
             if (!SafeCacheDirectory()) return Usage(1);
-            ClearMemory();
+            if (clear) ClearMemory(); // Idle disk housekeeping must not flush unrelated warm previews.
             var batchSize = 0;
             async Task YieldBatchAsync()
             {
