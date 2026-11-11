@@ -31,9 +31,16 @@ public partial class MainWindow
 
     private void OnFullscreenMessage(ref MSG message, ref bool handled)
     {
-        if (handled || message.message != 0x0100) return;
+        if (handled) return;
         var handle = new WindowInteropHelper(this).Handle;
         if (message.hwnd != handle && GetAncestor(message.hwnd, 2) != handle) return;
+        if (message.message == 0x020A)
+        {
+            var screen = new Point((short)(message.lParam.ToInt64() & 0xffff), (short)((message.lParam.ToInt64() >> 16) & 0xffff));
+            handled = _browseView.ScrollGalleryDragTreeWheel((short)((message.wParam.ToInt64() >> 16) & 0xffff), screen);
+            return;
+        }
+        if (message.message != 0x0100) return;
         var key = System.Windows.Input.KeyInterop.KeyFromVirtualKey(message.wParam.ToInt32());
         var repeat = (message.lParam.ToInt64() & (1L << 30)) != 0;
         handled = TryHandleViewShortcut(key, System.Windows.Input.Keyboard.Modifiers, repeat);

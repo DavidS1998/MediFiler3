@@ -28,6 +28,7 @@ public partial class BrowseView
         _galleryMoveDrag = new(token, root, folder, _commandRevision, files.ToArray(), deferral);
         SetFolderOverlayVisible(true);
         ShowOperationNotice($"Dragging {files.Count} {(files.Count == 1 ? "file" : "files")}. Drop on a folder to move; Escape cancels.");
+        StartGalleryDragWheelHook();
         return token;
     }
 
@@ -53,14 +54,21 @@ public partial class BrowseView
         if (_galleryMoveDrag is null) return;
         args.Handled = true; args.Effects = DragDropEffects.None;
         var item = FindAncestor<TreeViewItem>(args.OriginalSource as DependencyObject);
-        var valid = AcceptGalleryDragData(args.Data) && args.AllowedEffects.HasFlag(DragDropEffects.Move) &&
+        var authorized = AcceptGalleryDragData(args.Data) && args.AllowedEffects.HasFlag(DragDropEffects.Move);
+        UpdateGalleryTreeDragNavigation(authorized, args.GetPosition(FolderTree));
+        var valid = authorized &&
             item?.DataContext is FolderTreeEntry folder && _navigationState.GetRootForFolder(folder) is not null &&
             !PathsEqual(folder.Path, _galleryMoveDrag.Folder.Path);
         HighlightGalleryDropTarget(valid ? item : null);
         if (valid) args.Effects = DragDropEffects.Move;
     }
 
-    private void OnGalleryTreeDragLeave(object sender, DragEventArgs args) => HighlightGalleryDropTarget(null);
+    private void OnGalleryTreeDragLeave(object sender, DragEventArgs args)
+    {
+        HighlightGalleryDropTarget(null);
+        // OLE DragLeave can carry the last in-tree position. A subsequent enter/over restarts navigation.
+        StopGalleryTreeDragNavigation();
+    }
 
     private async void OnGalleryTreeDrop(object sender, DragEventArgs args)
     {
@@ -75,6 +83,8 @@ public partial class BrowseView
 
     private void EndGalleryMoveDrag()
     {
+        StopGalleryDragWheelHook();
+        StopGalleryTreeDragNavigation();
         HighlightGalleryDropTarget(null);
         var drag = _galleryMoveDrag; _galleryMoveDrag = null;
         drag?.Deferral.Dispose();

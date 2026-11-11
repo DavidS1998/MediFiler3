@@ -185,7 +185,7 @@
                         </ToggleButton.Style>
                     </ToggleButton>
                 </Grid>
-                <TreeView AllowDrop="True" PreviewDragEnter="OnGalleryTreeDragOver" PreviewDragOver="OnGalleryTreeDragOver"
+                <TreeView PreviewMouseWheel="OnGalleryTreeDragMouseWheel" AllowDrop="True" PreviewDragEnter="OnGalleryTreeDragOver" PreviewDragOver="OnGalleryTreeDragOver"
                           PreviewDragLeave="OnGalleryTreeDragLeave" PreviewDrop="OnGalleryTreeDrop" x:Name="FolderTree" Grid.Row="1" ItemsSource="{Binding Roots}" Background="Transparent" BorderThickness="0"
                           Foreground="#E7E8EA" SelectedItemChanged="OnFolderSelectionChanged"
                           PreviewMouseRightButtonDown="OnFolderTreePreviewMouseRightButtonDown"

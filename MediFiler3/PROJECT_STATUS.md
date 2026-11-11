@@ -1,5 +1,27 @@
 # Project status
 
+## Native drag-loop wheel routing fix (2026-11-11)
+
+User physical review found that WPF wheel handlers/window message preprocessing did not receive wheel input during the native drag loop. BrowseView.GalleryDragWheel.cs now installs a WH_MOUSE_LL hook only while an authorized Gallery move drag exists. It handles wheel packets only for the active foreground owner and a currently validated pointer over the tree, coalesces bounded deltas, and dispatches scrolling outside the input callback. Consumed packets are not also delivered to the focused Gallery control. Other input continues through the hook chain; existing WPF wheel handlers remain fallback paths.
+
+End/drop/cancel/context cleanup removes the hook and invalidates queued batches. Queued work retains the exact gesture identity, so an old drag cannot scroll a later context. Windows line/page settings, high-resolution deltas, hover expansion and edge scrolling retain their prior behavior. No filesystem work is performed by the hook.
+
+Verification: clean solution build (zero warnings/errors), **327 unit/filesystem tests and 192 full native checks passed, zero failures/skips**; `git diff --check` passes. Regression coverage now checks real hook installation/removal and native MSLLHOOKSTRUCT packet decoding/routing in both directions, outside-tree rejection and queued-wheel cancellation, instead of testing only the scrolling helper. Transparent native runner windows do not consume physical input intended for another foreground app. Actual OS wheel delivery during a physical drag still requires user interactive review; tests dispatch captured-format native packets without injecting global pointer input.
+
+Evidence: `%TEMP%\MediFiler3Integration-ce5e3b2a195344088da38a163a9773c3`; log `%TEMP%\MediFiler3DragWheelFix-final.log`. Earlier uncommitted hover/scroll changes are preserved; no commit/push was performed. Temporary build output preserves the running app.
+
+
+## Drag-hover folder expansion and tree scrolling (2026-11-11)
+
+During an authorized Gallery drag, hovering a collapsed folder header for 600ms expands it without selecting it or navigating away from the source. This includes the source folder itself even though a same-folder drop remains rejected, allowing access to its descendants. A single 50ms Input-priority DispatcherTimer performs hit-testing against the current tree layout and scrolls in 32px top/bottom viewport bands. Edge scrolling resets hover dwell and target highlighting so a stationary pointer cannot expand a stale row after scrolling.
+
+Mouse-wheel scrolling during the drag honors the Windows line/page setting. WPF preview-wheel handling and the existing window/native message preprocessing route wheel input only for the active validated Gallery drag while its pointer is over the tree. Normal wheel behavior outside a drag is unchanged. DragLeave unconditionally stops navigation because OLE leave events can retain cached in-tree coordinates; reenter/over restarts it. Drop, cancellation, deactivation/context invalidation and shutdown stop timer/candidate work through existing gesture cleanup. Expansion remains UI-only; no filesystem work occurs on hover/scroll ticks.
+
+Implementation: BrowseView.GalleryDragNavigation.cs, existing Gallery drag routing, tree XAML wheel handler and MainWindow.Fullscreen.cs message preprocessing. Existing move snapshot, click/drag separation, translucent cropped preview, collisions, root history, counters and thumbnail safeguards remain intact.
+
+Verification: clean solution build (zero warnings/errors), **327 unit/filesystem tests and 192 full native checks passed, zero failures/skips**; `git diff --check` passes. The new native check uses a real overflowing tree and verifies delayed expansion, unchanged active folder/current file, both edge/wheel directions, stale-coordinate leave, reentry and cancellation cleanup. Evidence: `%TEMP%\MediFiler3Integration-e0339f28f2ae44f68f8b3988c7fcbf04`; log `%TEMP%\MediFiler3DragTreeNavigation-verified.log`. Physical OS drag-loop pointer/wheel feel and DPI/fullscreen review remain interactive acceptance. Baseline was clean user commit `bcdfece`; these changes remain uncommitted. The running app output was preserved.
+
+
 ## Click/drag separation and cropped preview fix (2026-11-11)
 
 Automatic `UIElement.CanDrag` on tile content intercepted ordinary GridView clicks. It is now intentionally false (as is CanDragItems). Pointer press records drag scope without handling/capturing the press; native GridView retains click/Ctrl/Shift selection. GalleryDragGesture starts only once after movement reaches the Windows horizontal/vertical drag threshold. Grid-level handled-events-too movement/release/cancellation handlers track the gesture even when the item owns pointer routing. Explicit StartDragAsync then raises the tile drag-start event for the existing custom preview/payload. Release without threshold movement never begins a drag. Stale/recycled source tiles are rejected.

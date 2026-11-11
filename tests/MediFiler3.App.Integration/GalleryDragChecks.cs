@@ -9,6 +9,14 @@ using MediFiler3.Views;
 
 internal static partial class Program
 {
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct GalleryWheelHookData
+    {
+        public int X, Y;
+        public uint MouseData, Flags, Time;
+        public nuint ExtraInfo;
+    }
+
     private static async Task RunGalleryDragChecksAsync(MediFiler3.MainWindow window, NavigationSessionState state, BrowseView browse)
     {
         var directory = Directory.CreateDirectory(Path.Combine(Root, "gallery-drag")).FullName;
@@ -38,11 +46,11 @@ internal static partial class Program
             var root = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(state.Roots[0]); root.UpdateLayout();
             return (TreeViewItem)root.ItemContainerGenerator.ContainerFromItem(state.Roots[0].Children[0]);
         }
-        DragEventArgs Drag(string token, RoutedEvent routedEvent, UIElement targetElement)
+        DragEventArgs Drag(string token, RoutedEvent routedEvent, UIElement targetElement, Point? position = null)
         {
             var data = new DataObject(); data.SetText(token, TextDataFormat.UnicodeText);
             var args = (DragEventArgs)Activator.CreateInstance(typeof(DragEventArgs), BindingFlags.Instance | BindingFlags.NonPublic,
-                null, [data, DragDropKeyStates.LeftMouseButton, DragDropEffects.Move, targetElement, new Point()], null)!;
+                null, [data, DragDropKeyStates.LeftMouseButton, DragDropEffects.Move, targetElement, position ?? new Point()], null)!;
             args.RoutedEvent = routedEvent;
             targetElement.RaiseEvent(args); return args;
         }
@@ -113,6 +121,80 @@ internal static partial class Program
             navigation.SelectDestination("Browse");
             Require(!browse.IsGalleryMoveDragActive && (int)Field(browse, "_reconciliationDeferrals")! == 0, "Mode change retained drag deferral");
             Require(files.All(file => File.Exists(file.FullPath)), "Mode change mutated drag files");
+        });
+        await Check("Gallery drag hover expands folders and scrolls tree edges and wheel without navigating", async () =>
+        {
+            for (var i = 0; i < 80; i++) Directory.CreateDirectory(Path.Combine(directory, $"row{i:D3}", "child"));
+            await browse.RefreshAsync();
+            navigation.SelectDestination("Gallery");
+            state.Roots[0].IsExpanded = true; tree.UpdateLayout();
+            var root = state.Roots[0]; var activeFolder = state.ActiveFolder; var currentFile = state.CurrentFile;
+            var token = await Begin(state.GallerySelection.GetDraggedFiles(state.Files, state.Files[0]));
+            await Task.Delay(220); tree.UpdateLayout();
+            var visual = typeof(BrowseView).GetMethod("FindVisualChild", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var scroll = (ScrollViewer)visual.MakeGenericMethod(typeof(ScrollViewer)).Invoke(null, [tree])!;
+            var viewport = (System.Windows.Controls.ScrollContentPresenter)visual.MakeGenericMethod(typeof(System.Windows.Controls.ScrollContentPresenter)).Invoke(null, [scroll])!;
+            Require(scroll.ScrollableHeight > 0, "Drag scrolling fixture does not overflow");
+            scroll.ScrollToTop(); tree.UpdateLayout();
+            var rootItem = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(root); rootItem.UpdateLayout();
+            var folder = root.Children.Single(item => item.Name == "row000"); folder.IsExpanded = false;
+            var folderItem = (TreeViewItem)rootItem.ItemContainerGenerator.ContainerFromItem(folder);
+            Drag(token, DragDrop.PreviewDragOverEvent, folderItem, new Point(80, 14));
+            await Task.Delay(250);
+            Require(!folder.IsExpanded, "Hover expanded immediately instead of waiting");
+            await WaitUntil(() => folder.IsExpanded);
+            Require(ReferenceEquals(activeFolder, state.ActiveFolder) && ReferenceEquals(currentFile, state.CurrentFile), "Drag expansion navigated away from the source");
+            var bottom = viewport.TranslatePoint(new Point(viewport.ActualWidth / 2, viewport.ActualHeight - 4), tree);
+            Drag(token, DragDrop.PreviewDragOverEvent, tree, bottom);
+            await WaitUntil(() => scroll.VerticalOffset > 20);
+            scroll.ScrollToVerticalOffset(Math.Min(300, scroll.ScrollableHeight)); tree.UpdateLayout();
+            var beforeUp = scroll.VerticalOffset;
+            var top = viewport.TranslatePoint(new Point(viewport.ActualWidth / 2, 4), tree);
+            Drag(token, DragDrop.PreviewDragOverEvent, tree, top);
+            await WaitUntil(() => scroll.VerticalOffset < beforeUp);
+            var center = viewport.TranslatePoint(new Point(viewport.ActualWidth / 2, viewport.ActualHeight / 2), tree);
+            Drag(token, DragDrop.PreviewDragOverEvent, tree, center);
+            var hook = typeof(BrowseView).GetMethod("RouteGalleryDragWheelPacket", flags)!;
+            Require((nint)Field(browse, "_galleryDragWheelHook")! != 0, "Native drag wheel hook was not installed");
+            void Wheel(int delta, Point? screenPoint = null, bool accepted = true)
+            {
+                var point = screenPoint ?? tree.PointToScreen(center);
+                var data = new GalleryWheelHookData { X = (int)point.X, Y = (int)point.Y, MouseData = unchecked((uint)(delta << 16)) };
+                var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.InteropServices.Marshal.SizeOf<GalleryWheelHookData>());
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.StructureToPtr(data, buffer, false);
+                    Require((bool)hook.Invoke(browse, [buffer])! == accepted, "Native wheel packet routing accepted the wrong scope");
+                }
+                finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(buffer); }
+            }
+            var beforeWheel = scroll.VerticalOffset;
+            Wheel(-120, tree.PointToScreen(new Point(-20, -20)), accepted: false);
+            await Task.Delay(100);
+            Require(Math.Abs(scroll.VerticalOffset - beforeWheel) < 0.1, "Wheel outside the tree scrolled the drag target");
+            Wheel(-120);
+            await WaitUntil(() => scroll.VerticalOffset > beforeWheel);
+            beforeWheel = scroll.VerticalOffset;
+            Wheel(120);
+            await WaitUntil(() => scroll.VerticalOffset < beforeWheel);
+            // Queued input from a completed drag must not scroll a later context.
+            var beforeCancel = scroll.VerticalOffset;
+            Wheel(-120); End();
+            await Task.Delay(100);
+            Require(Math.Abs(scroll.VerticalOffset - beforeCancel) < 0.1 && (nint)Field(browse, "_galleryDragWheelHook")! == 0,
+                "Cancel retained the native hook or applied pending wheel input");
+            Wheel(-120, accepted: false);
+            token = await Begin(state.GallerySelection.GetDraggedFiles(state.Files, state.Files[0]));
+            Drag(token, DragDrop.PreviewDragOverEvent, tree, center);
+            Drag(token, DragDrop.PreviewDragLeaveEvent, tree, center);
+            var timer = (System.Windows.Threading.DispatcherTimer)Field(browse, "_galleryTreeDragTimer")!;
+            Require(!timer.IsEnabled && !(bool)Field(browse, "_galleryTreeDragInside")!, "DragLeave with cached coordinates retained navigation work");
+            Drag(token, DragDrop.PreviewDragOverEvent, tree, center);
+            Require(timer.IsEnabled, "Reentering tree did not resume drag navigation");
+            End();
+            Require(!timer.IsEnabled && !(bool)Field(browse, "_galleryTreeDragInside")!, "Cancel retained hover/scroll work");
+            var stopped = scroll.VerticalOffset; await Task.Delay(700);
+            Require(Math.Abs(scroll.VerticalOffset - stopped) < 0.1 && ReferenceEquals(activeFolder, state.ActiveFolder), "Cancelled drag kept scrolling or navigated");
         });
         End();
     }
