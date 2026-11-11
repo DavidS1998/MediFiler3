@@ -86,6 +86,7 @@ public partial class BrowseView
         var selected = _navigationState.CurrentFile;
         var position = Math.Max(0, _navigationState.CurrentFilePosition - 1);
         var roots = _navigationState.Roots.ToArray();
+        var reconcileRoots = batch.ReconcileRoots ?? [];
         if (_thumbnailService is IThumbnailCacheMaintenance cache)
         {
             foreach (var path in batch.RescanRoots) await cache.InvalidateAsync(path, true, token);
@@ -95,7 +96,7 @@ public partial class BrowseView
         _gallery?.InvalidateThumbnails(batch.Paths.Concat(batch.RescanRoots));
         if (batch.Status is not null) StatusChanged?.Invoke(batch.Status);
 
-        if (batch.HierarchyChanged || batch.RescanRoots.Count > 0)
+        if (batch.HierarchyChanged || batch.RescanRoots.Count > 0 || reconcileRoots.Count > 0)
         {
             // Scan temporary nodes, merge by path, and keep existing node identity/expansion.
             var loaded = await _folderTreeService.LoadRootsAsync(roots.Select(r => r.Path), token);
@@ -135,11 +136,26 @@ public partial class BrowseView
                 }
             }
         }
-        var affectsFolder = folder is not null && (batch.RescanRoots.Any(root => IsPathWithin(folder.Path, root)) ||
+        var affectsFolder = folder is not null && (batch.RescanRoots.Concat(reconcileRoots).Any(root => IsPathWithin(folder.Path, root)) ||
             batch.Paths.Any(path => PathsEqual(path, folder.Path) || PathsEqual(Path.GetDirectoryName(path) ?? "", folder.Path)));
         if (!affectsFolder || folder is null) return true;
         var listing = await _fileListingService.GetFilesAsync(folder.Path, token);
         if (!Current() || !ReferenceEquals(folder, _navigationState.ActiveFolder) || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
+        if (reconcileRoots.Any(root => IsPathWithin(folder.Path, root)))
+        {
+            var currentFiles = listing.Files.ToDictionary(f => f.FullPath, StringComparer.OrdinalIgnoreCase);
+            var changed = _navigationState.Files.Where(old => !currentFiles.TryGetValue(old.FullPath, out var file) || file != old)
+                .Select(old => old.FullPath).ToArray();
+            if (_thumbnailService is IThumbnailCacheMaintenance maintenance)
+                foreach (var path in changed) await maintenance.InvalidateAsync(path, false, token);
+            if (!Current() || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
+            _gallery?.InvalidateThumbnails(changed);
+            foreach (var item in CarouselItems.OfType<CarouselThumbnailItem>().Where(i => changed.Contains(i.File.FullPath, StringComparer.OrdinalIgnoreCase)))
+            {
+                item.ThumbnailCancellation?.Cancel();
+                item.Thumbnail = null; item.UncroppedThumbnail = null; item.ThumbnailTask = null;
+            }
+        }
         var replacement = listing.Files.FirstOrDefault(f => selected is not null && PathsEqual(f.FullPath, selected.FullPath));
         var selectedChanged = selected is null && listing.Files.Count > 0 || selected != replacement || selected is not null &&
             (batch.RescanRoots.Any(root => IsPathWithin(selected.FullPath, root)) || batch.Paths.Any(p => PathsEqual(p, selected.FullPath)));

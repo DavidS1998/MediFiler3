@@ -3,9 +3,10 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using System.Windows;
-using System.Windows.Interop;
-using System.Windows.Media.Imaging;
+using Windows.Storage;
+using Windows.Storage.FileProperties;
+using Windows.Storage.Streams;
+using Windows.Graphics.Imaging;
 using MediFiler3.Application.Files;
 using MediFiler3.Domain.Files;
 
@@ -15,11 +16,6 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
 {
     private const long MemoryCacheLimit = 32 * 1024 * 1024;
     private const int MemoryEntryLimit = 512;
-    private const uint ThumbnailOnly = 0x00000008;
-    private static readonly HashSet<string> WicExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp"
-    };
 
     private readonly SemaphoreSlim _workers = new(3, 3);
     private readonly object _memoryLock = new();
@@ -27,6 +23,9 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
     private readonly LinkedList<MemoryEntry> _memoryLru = [];
     private long _memorySize;
     private readonly string _diskCachePath;
+    private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        { ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" };
+    private readonly HashSet<string> _freshSources = new(StringComparer.OrdinalIgnoreCase);
     private sealed class PendingThumbnail(string path)
     {
         public string Path { get; } = path;
@@ -49,6 +48,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         long revision;
         PendingThumbnail pending;
         RequestGate requestGate;
+        bool freshSource;
         await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -79,6 +79,9 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
             _pendingThumbnails.Add(pending);
             if (!_requestGates.TryGetValue(key, out requestGate!)) _requestGates[key] = requestGate = new RequestGate();
             requestGate.Users++;
+            freshSource = _freshSources.Contains(pending.Path) ||
+                _index.TryGetValue(key, out var previousSource) && (previousSource.Invalidated || previousSource.RequiresFreshSource);
+            if (freshSource && ImageExtensions.Contains(file.Extension)) _freshSources.Add(pending.Path);
         }
         finally { _cacheGate.Release(); }
 
@@ -96,7 +99,7 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
             finally { _cacheGate.Release(); }
             await _workers.WaitAsync(cancellationToken).ConfigureAwait(false); enteredWorker = true;
             cancellationToken.ThrowIfCancellationRequested();
-            var bytes = await Task.Run(() => GenerateThumbnail(file, width, height, cancellationToken), cancellationToken).ConfigureAwait(false);
+            var bytes = await Task.Run(() => GenerateThumbnailAsync(file, width, height, freshSource, cancellationToken), cancellationToken).ConfigureAwait(false);
             await _cacheGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
@@ -127,108 +130,60 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         }
     }
 
-    private byte[]? GenerateThumbnail(FileEntry file, int width, int height, CancellationToken cancellationToken)
+    private static async Task<byte[]?> GenerateThumbnailAsync(FileEntry file, int width, int height, bool freshSource, CancellationToken token)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (WicExtensions.Contains(file.Extension))
-        {
-            try
-            {
-                var bitmap = DecodeWic(file.FullPath, width, height);
-                cancellationToken.ThrowIfCancellationRequested();
-                return EncodePng(bitmap);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
-                                               InvalidDataException or FormatException or NotSupportedException or COMException or
-                                               System.Security.SecurityException)
-            {
-                // The Shell may still be able to provide a thumbnail for this file.
-            }
-        }
-
         try
         {
-            return TryCreateShellThumbnail(file.FullPath, width, height);
+            token.ThrowIfCancellationRequested();
+            var item = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(file.FullPath)).AsTask(token).ConfigureAwait(false);
+            if (freshSource && ImageExtensions.Contains(file.Extension))
+            {
+                // Windows can retain a stale system thumbnail after same-size/timestamp edits.
+                using var source = await item.OpenAsync(FileAccessMode.Read).AsTask(token).ConfigureAwait(false);
+                return await EncodeThumbnailPngAsync(source, width, height, token).ConfigureAwait(false);
+            }
+            using var thumbnail = await item.GetThumbnailAsync(ThumbnailMode.SingleItem,
+                (uint)Math.Max(width, height), ThumbnailOptions.ResizeThumbnail).AsTask(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            // Preserve the existing thumbnail-only contract: file icons are placeholders, not previews.
+            if (thumbnail is null || thumbnail.Type != ThumbnailType.Image || thumbnail.Size == 0)
+            {
+                if (!ImageExtensions.Contains(file.Extension)) return null;
+                // Keep supported image previews available if Windows supplies only an icon.
+                using var source = await item.OpenAsync(FileAccessMode.Read).AsTask(token).ConfigureAwait(false);
+                return await EncodeThumbnailPngAsync(source, width, height, token).ConfigureAwait(false);
+            }
+            return await EncodeThumbnailPngAsync(thumbnail, width, height, token).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or COMException or
-                                           System.Security.SecurityException or InvalidOperationException)
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or COMException or
+            ArgumentException or InvalidOperationException or NotSupportedException or System.Security.SecurityException)
         {
-            // The caller will display a placeholder when no thumbnail is available.
             return null;
         }
     }
 
-    private static BitmapSource DecodeWic(string filePath, int maxWidth, int maxHeight)
+    private static async Task<byte[]> EncodeThumbnailPngAsync(IRandomAccessStream source, int width, int height, CancellationToken token)
     {
-        int sourceWidth;
-        int sourceHeight;
-        using (var stream = File.OpenRead(filePath))
+        var decoder = await BitmapDecoder.CreateAsync(source).AsTask(token).ConfigureAwait(false);
+        var scale = Math.Min(1d, Math.Min((double)width / decoder.OrientedPixelWidth, (double)height / decoder.OrientedPixelHeight));
+        var transform = new BitmapTransform
         {
-            var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
-            if (decoder.Frames.Count == 0)
-            {
-                throw new InvalidDataException("The image contains no frames.");
-            }
-
-            sourceWidth = decoder.Frames[0].PixelWidth;
-            sourceHeight = decoder.Frames[0].PixelHeight;
-        }
-
-        var scale = Math.Min(1d, Math.Min((double)maxWidth / sourceWidth, (double)maxHeight / sourceHeight));
-        var decodeWidth = Math.Max(1, (int)Math.Floor(sourceWidth * scale));
-        using var imageStream = File.OpenRead(filePath);
-        var bitmap = new BitmapImage();
-        bitmap.BeginInit();
-        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-        bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
-        bitmap.DecodePixelWidth = decodeWidth;
-        bitmap.StreamSource = imageStream;
-        bitmap.EndInit();
-        bitmap.Freeze();
-        return bitmap;
-    }
-
-    private static byte[]? TryCreateShellThumbnail(string filePath, int width, int height)
-    {
-        var interfaceId = typeof(IShellItemImageFactory).GUID;
-        var result = SHCreateItemFromParsingName(filePath, IntPtr.Zero, ref interfaceId, out var imageFactory);
-        if (result < 0 || imageFactory is null)
-        {
-            return null;
-        }
-
-        IntPtr bitmapHandle = IntPtr.Zero;
-        try
-        {
-            var size = new NativeSize(width, height);
-            result = imageFactory.GetImage(size, ThumbnailOnly, out bitmapHandle);
-            if (result < 0 || bitmapHandle == IntPtr.Zero)
-            {
-                return null;
-            }
-
-            var bitmap = Imaging.CreateBitmapSourceFromHBitmap(bitmapHandle, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
-            bitmap.Freeze();
-            return EncodePng(bitmap);
-        }
-        finally
-        {
-            if (bitmapHandle != IntPtr.Zero)
-            {
-                DeleteObject(bitmapHandle);
-            }
-
-            Marshal.ReleaseComObject(imageFactory);
-        }
-    }
-
-    private static byte[] EncodePng(BitmapSource bitmap)
-    {
-        var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var output = new MemoryStream();
-        encoder.Save(output);
-        return output.ToArray();
+            ScaledWidth = (uint)Math.Max(1, Math.Floor(decoder.PixelWidth * scale)),
+            ScaledHeight = (uint)Math.Max(1, Math.Floor(decoder.PixelHeight * scale))
+        };
+        using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+            transform, ExifOrientationMode.RespectExifOrientation, ColorManagementMode.ColorManageToSRgb).AsTask(token).ConfigureAwait(false);
+        using var output = new InMemoryRandomAccessStream();
+        var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output).AsTask(token).ConfigureAwait(false);
+        encoder.SetSoftwareBitmap(bitmap);
+        await encoder.FlushAsync().AsTask(token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        output.Seek(0);
+        using var input = output.AsStreamForRead();
+        using var bytes = new MemoryStream();
+        await input.CopyToAsync(bytes, token).ConfigureAwait(false);
+        return bytes.ToArray();
     }
 
     private async Task<bool> TryWriteDiskCacheAsync(string cacheFile, byte[] bytes, CancellationToken cancellationToken)
@@ -310,27 +265,4 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
 
     private sealed record MemoryEntry(string Key, byte[]? Bytes, string SourcePath);
 
-    [StructLayout(LayoutKind.Sequential)]
-    private readonly struct NativeSize(int width, int height)
-    {
-        public readonly int Width = width;
-        public readonly int Height = height;
-    }
-
-    [ComImport]
-    [Guid("BCC18B79-BA16-442F-80C4-8A59C30C463B")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IShellItemImageFactory
-    {
-        [PreserveSig]
-        int GetImage(NativeSize size, uint flags, out IntPtr bitmap);
-    }
-
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
-    private static extern int SHCreateItemFromParsingName(string path, IntPtr bindContext, ref Guid interfaceId,
-        [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory imageFactory);
-
-    [DllImport("gdi32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeleteObject(IntPtr handle);
 }

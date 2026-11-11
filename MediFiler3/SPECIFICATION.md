@@ -339,6 +339,12 @@ Drag and drop should complement, rather than replace, the primary interaction mo
 
 # 6. Alternative viewing modes
 
+When Gallery is requested after Home or Settings, reveal the shared Browse current file after the native viewport is loaded/measured. Preserve the selection and decoded thumbnails; deferred positioning must yield to newer navigation or user interaction rather than overriding it later.
+
+Returning to Browse/Gallery from Home or Settings must reconcile the filesystem without invalidating unchanged thumbnails merely because watcher coverage restarted. Healthy startup compares metadata; actual change hints, F5, overflow and failed-coverage recovery retain explicit invalidation. Changes made while coverage was stopped with unchanged size/timestamp require F5.
+
+Thumbnail generation on application-cache misses uses StorageFile.GetThumbnailAsync/StorageItemThumbnail in SingleItem mode, normalized into shared aspect-correct PNGs. Keep existing cached PNGs usable. Known invalidated images must bypass stale Windows system thumbnails using a fresh WinRT image decode, preserving same-size/timestamp refresh and restart handling. Main viewer image decoding remains unchanged.
+
 Browse and Gallery appear as separate tabs/destinations in the compact sidebar. They share folder/file context, but apply changes to the other view's expensive presentation when that view is requested. Switching tabs must not rescan the collection or load inactive viewer content/thumbnails.
 
 The application should support multiple viewing modes that share the same underlying file collection and organization functionality. Switching viewing modes is a context change: preserve the loaded roots and folder context, but clear mode-specific file selections.
@@ -358,6 +364,7 @@ The gallery view provides an overview of a folder's contents through a grid of t
 - Keep tile gaps minimal (two pixels). Crop thumbnails to cover each tile; on hover, fit the whole thumbnail at its original aspect ratio and hide the bottom filename/transparent-gradient overlay. Restore the crop and caption on exit.
 - Gallery crop framing matches the carousel's centered square, then fills the chosen tile rectangle. Hover still reveals the full uncropped image. Retain decoded previews more conservatively within a 512-entry/128 MiB limit; idle disk housekeeping must not blanket-flush encoded thumbnails from memory. Explicit clearing and changed-source invalidation remain effective.
 - Reflow Gallery tiles beside a pinned folder tree; an unpinned tree retains its overlay/reveal behavior.
+- Returning to Gallery through Home or Settings must keep a pinned folder tree visible and reachable, with the native Gallery surface clipped around it; no pin toggle is required.
 - Center Gallery rows in the available space. Selected/current tiles use a distinct visible border. Right-toolbar slider labels read Width and Height; the current locally adjusted slider width is 150 logical pixels.
 - Double-clicking a Browse carousel tile opens Gallery at that file and highlights it; single-click behavior remains Browse selection.
 - In normal mode, sidebar hover is the sole trigger to open the unpinned folder tree. Hovering the tree retains it once open; hide after leaving that combined area. The old content-edge hitbox must not open it. Preserve pinned-tree behavior and fullscreen's coordinated reveals.

@@ -51,7 +51,7 @@ public sealed record RootFolderHistory(string Path, long OpenCount, DateTimeOffs
 
 // CacheFileName is a leaf name inside the existing owned thumbnail directory, never a source path.
 public sealed record ThumbnailCacheEntry(string Key, string CacheFileName, long SizeBytes,
-    DateTimeOffset LastAccessUtc, string? SourcePath = null, bool Invalidated = false);
+    DateTimeOffset LastAccessUtc, string? SourcePath = null, bool Invalidated = false, bool RequiresFreshSource = false);
 
 public interface IApplicationSettingsStore
 {

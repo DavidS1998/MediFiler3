@@ -61,14 +61,18 @@ public sealed class FileSystemFolderChangeMonitor : IFolderChangeMonitor
                         watcher.Renamed += (_, e) => { Queue(e.OldFullPath, state, true); Queue(e.FullPath, state, true); };
                         watcher.Error += (_, _) => { state.RetryAt = DateTimeOffset.MinValue; state.Failed = true; Queue(state.Path, state, true, true); };
                         watcher.EnableRaisingEvents = true;
+                        var recovering = state.Failed || state.HasConnected;
                         state.Failed = false;
+                        state.HasConnected = true;
                         state.Delay = 1;
                         state.RetryAt = DateTimeOffset.UtcNow.AddSeconds(5);
-                        Queue(state.Path, state, true, true);
+                        if (recovering) Queue(state.Path, state, true, true);
+                        else buffer.ReconcileRoot(state.Path, DateTimeOffset.UtcNow);
                     }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.Security.SecurityException)
                     {
                         state.Watcher?.Dispose(); state.Watcher = null;
+                        state.Failed = true;
                         state.RetryAt = DateTimeOffset.UtcNow.AddSeconds(state.Delay);
                         state.Delay = Math.Min(60, state.Delay * 2);
                         buffer.Add(state.Path, false, DateTimeOffset.UtcNow, status:
@@ -91,6 +95,7 @@ public sealed class FileSystemFolderChangeMonitor : IFolderChangeMonitor
         public string Path { get; } = path;
         public FileSystemWatcher? Watcher;
         public volatile bool Failed;
+        public bool HasConnected;
         public int Delay = 1;
         public DateTimeOffset RetryAt;
     }

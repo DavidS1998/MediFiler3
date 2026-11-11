@@ -1,5 +1,21 @@
 # Development plan
 
+## Pinned tree on Gallery return fixed (2026-11-11)
+
+Gallery reapplies its native clipping region after reattachment/layout so Home/Settings returns cannot cover the pinned WPF tree. Both return paths now check the actual HWND region as well as pin presentation and tile inset. Build clean; 306 unit/filesystem tests and 169 native checks passed, zero failures/skips. Existing retention, selection, watcher and operation behavior is preserved; remaining 5.3/5.4 scope and physical review limits are unchanged.
+
+## Gallery selection positioning on return fixed (2026-11-11)
+
+Gallery now defers the shared current-file reveal until native loading/layout is ready, retaining a guarded pending request until the target is visible and yielding to newer navigation. Both Home/Settings return paths were reproduced with a distant selection in 150 files. First entry, both return paths, user override and thumbnail preservation pass. Clean build; 306 unit/filesystem tests and 167 native checks, zero failures/skips. No cache/provider/operation-policy changes were introduced by this fix; remaining 5.3/5.4 scope and physical review limits are unchanged.
+
+## Gallery watcher-resume regression fixed (2026-11-11)
+
+Healthy coverage startup now reconciles metadata without treating the entire root as changed. Home/Settings returns preserve unchanged native thumbnail objects; offline metadata edits/additions/removals reconcile selectively. Strong event/F5/overflow/reconnection invalidation remains. Build clean; 306 unit/filesystem tests and 163 native checks pass without failures/skips, including real-watcher view-return regressions and unavailable-root recovery. Same-size/timestamp edits without a delivered hint still require F5. Existing uncommitted provider changes remain preserved; 5.3/5.4 scope is unchanged.
+
+## StorageItemThumbnail backend implemented (2026-11-11)
+
+Normal cache misses now use StorageFile.GetThumbnailAsync/StorageItemThumbnail, with WinRT PNG normalization and fresh-source image fallback for invalidated/system-icon-only cases. Existing cache keys, memory retention, shared views and file-operation safety remain. Optional freshness metadata preserves known invalidation through restart and explicit image-cache clear without a schema change. SDK targets align to Windows 10.0.19041. Build clean; 303 unit/filesystem tests and 160 native checks pass, zero failures/skips. No performance improvement or physical acceptance is inferred; remaining Gallery 5.3/5.4 scope is unchanged.
+
 ## Center framing/memory retention refinement complete (2026-11-11)
 
 Gallery matches carousel-style center-square framing and clips to rectangular tile bounds, retaining the same original-aspect bitmap for hover. Idle disk maintenance no longer blanket-flushes encoded memory; native decoded retention now permits 512 entries/128 MiB while explicit clearing and targeted stale-data safeguards remain. Current thumbnail provider remains WIC + Shell; StorageItemThumbnail/GetThumbnailAsync was researched as a benchmark candidate rather than assumed faster. Build clean; 299 unit/filesystem tests and 160 native checks pass, zero failures/skips. The local fixed 150-pixel slider-width change is preserved; physical input/performance/DPI review and 5.3/5.4 remain pending.

@@ -58,6 +58,11 @@ internal static partial class Program
                     Directory.CreateDirectory(Root); MakeFixtures();
                     await RunUiRefinementChecksAsync();
                 }
+                else if (args.Length == 1 && args[0] == "--gallery-resume-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures();
+                    await RunGalleryResumeChecksAsync();
+                }
                 else await RunAsync(args.FirstOrDefault());
             }
             catch (Exception error) { _failed++; Console.WriteLine("FATAL " + error); }
@@ -372,6 +377,7 @@ internal static partial class Program
         await RunSettingsAndRefreshChecksAsync();
         await RunWatcherChecksAsync();
         await RunUiRefinementChecksAsync();
+        await RunGalleryResumeChecksAsync();
         await RunPhase4RestartChecksAsync();
         await RunHomeChecksAsync();
         await RunRootHistoryChecksAsync();

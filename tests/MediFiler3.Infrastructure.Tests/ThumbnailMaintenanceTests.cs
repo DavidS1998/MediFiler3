@@ -203,7 +203,68 @@ public sealed class ThumbnailMaintenanceTests : IDisposable
             Assert.True(Assert.Single(store.Entries.Values).Invalidated);
         }
         using var reopened = new FileSystemThumbnailService(store, Cache);
-        await reopened.MaintainAsync(); Assert.Empty(store.Entries);
+        await reopened.MaintainAsync();
+        Assert.Empty(Directory.GetFiles(Cache, "*.png"));
+        Assert.Equal(0, (await reopened.GetUsageAsync()).EntryCount);
+        Assert.True(Assert.Single(store.Entries.Values).RequiresFreshSource);
+    }
+
+    [Fact]
+    public async Task InvalidatedImageBypassesStaleWindowsThumbnailAfterRestartAndHousekeeping()
+    {
+        var source = Path.Combine(_root, "fresh.png"); File.WriteAllBytes(source, Png(10));
+        var file = Entry(source); var store = new Store(); byte[]? before;
+        using (var cache = new FileSystemThumbnailService(store, Cache))
+        {
+            before = await cache.GetThumbnailPngAsync(file, 40, 40, default);
+            File.WriteAllBytes(source, Png(200)); File.SetLastWriteTimeUtc(source, file.LastModifiedUtc);
+            await cache.InvalidateAsync(source, false); await cache.FlushAsync();
+        }
+        using var reopened = new FileSystemThumbnailService(store, Cache);
+        await reopened.MaintainAsync();
+        var current = await reopened.GetThumbnailPngAsync(file, 40, 40, default);
+        Assert.NotNull(before); Assert.NotNull(current); Assert.NotEqual(before, current);
+        await reopened.FlushAsync();
+        Assert.False(Assert.Single(store.Entries.Values).Invalidated);
+        Assert.True(Assert.Single(store.Entries.Values).RequiresFreshSource);
+        using var exclusive = File.Open(source, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    [Fact]
+    public async Task StorageThumbnailProducesBoundedUncroppedPngAndReleasesSource()
+    {
+        var source = Path.Combine(_root, "wide.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(BitmapSource.Create(300, 100, 96, 96, PixelFormats.Gray8, null,
+            Enumerable.Repeat((byte)120, 300 * 100).ToArray(), 300)));
+        using (var output = File.Create(source)) encoder.Save(output);
+        using var cache = new FileSystemThumbnailService(new Store(), Cache);
+        var png = await cache.GetThumbnailPngAsync(Entry(source), 120, 60, default);
+        Assert.NotNull(png);
+        using var input = new MemoryStream(png);
+        var frame = new PngBitmapDecoder(input, BitmapCreateOptions.None, BitmapCacheOption.OnLoad).Frames[0];
+        Assert.InRange(frame.PixelWidth, 1, 120); Assert.InRange(frame.PixelHeight, 1, 60);
+        Assert.InRange((double)frame.PixelWidth / frame.PixelHeight, 2.9, 3.1);
+        using var exclusive = File.Open(source, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    }
+
+    [Fact]
+    public async Task ClearingAppThumbnailsDoesNotReintroduceStaleSystemImageAfterRestart()
+    {
+        var source = Path.Combine(_root, "clear-fresh.png"); File.WriteAllBytes(source, Png(10));
+        var file = Entry(source); var store = new Store(); byte[]? fresh;
+        using (var cache = new FileSystemThumbnailService(store, Cache))
+        {
+            await cache.GetThumbnailPngAsync(file, 40, 40, default);
+            File.WriteAllBytes(source, Png(200)); File.SetLastWriteTimeUtc(source, file.LastModifiedUtc);
+            await cache.InvalidateAsync(source, false);
+            fresh = await cache.GetThumbnailPngAsync(file, 40, 40, default);
+            var cleared = await cache.MaintainAsync(clear: true);
+            Assert.Equal(0, cleared.EntryCount); Assert.Equal(0, cleared.SizeBytes);
+            Assert.Empty(Directory.GetFiles(Cache, "*.png"));
+        }
+        using var reopened = new FileSystemThumbnailService(store, Cache);
+        Assert.Equal(fresh, await reopened.GetThumbnailPngAsync(file, 40, 40, default));
     }
 
     [Fact]

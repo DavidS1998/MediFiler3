@@ -19,8 +19,17 @@ using Xaml = Microsoft.UI.Xaml;
 namespace MediFiler3.Interop;
 
 /// <summary>Native virtualized grid. Only realized containers own images or thumbnail requests.</summary>
-public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
+public sealed class WinUiGalleryIsland : HwndHost
 {
+    private readonly IThumbnailService _thumbnails;
+    private bool _regionRefreshQueued;
+
+    public WinUiGalleryIsland(IThumbnailService thumbnails)
+    {
+        _thumbnails = thumbnails;
+        Loaded += (_, _) => QueueRegionRefresh();
+        IsVisibleChanged += (_, _) => { if (IsVisible) QueueRegionRefresh(); };
+    }
     private const int DecodedEntryLimit = 512;
     private const long DecodedByteLimit = 128L * 1024 * 1024;
     private DesktopWindowXamlSource? _source;
@@ -38,6 +47,8 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
     private bool _updating;
     private bool _active = true;
     private long _activityVersion;
+    private long _revealVersion;
+    private bool _revealPending, _revealQueued;
     private Grid? _hoveredRoot;
     private double _treeInset = 26;
     private nint _handle;
@@ -94,7 +105,9 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
         try
         {
             _grid.SelectedItem = _files.FirstOrDefault(f => string.Equals(f.FullPath, file?.FullPath, StringComparison.OrdinalIgnoreCase));
-            if (_grid.SelectedItem is { } selected) _grid.ScrollIntoView(selected);
+            _revealVersion++;
+            _revealPending = _grid.SelectedItem is not null;
+            QueuePendingReveal();
         }
         finally { _updating = false; }
     }
@@ -103,6 +116,8 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
     {
         if (_active == active) return;
         _active = active; _activityVersion++;
+        if (!active) CancelPendingReveal();
+        else QueueRegionRefresh();
         if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
         _hoveredRoot = null;
         foreach (var (container, tile) in _tiles.ToArray())
@@ -197,13 +212,26 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
         ScrollViewer.SetVerticalScrollBarVisibility(_grid, ScrollBarVisibility.Auto);
         Xaml.Automation.AutomationProperties.SetName(_grid, "Gallery files");
         _grid.ContainerContentChanging += OnContainerChanging;
-        _grid.Loaded += (_, _) => SetTileSize(_tileWidth, _tileHeight);
+        _grid.Loaded += (_, _) =>
+        {
+            SetTileSize(_tileWidth, _tileHeight);
+            RevealCurrentFile(_current);
+            QueueRegionRefresh();
+        };
+        _grid.LayoutUpdated += (_, _) => QueuePendingReveal();
         _grid.SelectionChanged += (_, _) =>
         {
             UpdateSelectionBorders();
-            if (!_updating && _grid.SelectedItem is FileEntry file) Forward(() => FileSelected?.Invoke(file));
+            if (!_updating && _grid.SelectedItem is FileEntry file)
+            {
+                CancelPendingReveal();
+                _current = file;
+                Forward(() => FileSelected?.Invoke(file));
+            }
         };
-        _grid.SizeChanged += (_, _) => CenterTiles();
+        _grid.SizeChanged += (_, _) => { CenterTiles(); QueuePendingReveal(); };
+        _grid.AddHandler(Xaml.UIElement.PointerWheelChangedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
+        _grid.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
         _grid.DoubleTapped += (_, args) =>
         {
             var source = args.OriginalSource as Xaml.DependencyObject;
@@ -215,6 +243,7 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
         };
         _grid.KeyDown += (_, args) =>
         {
+            CancelPendingReveal();
             if (args.Key == Windows.System.VirtualKey.Enter && _grid.SelectedItem is FileEntry file)
             { args.Handled = true; RequestOpen(file); }
             else if (args.Key == Windows.System.VirtualKey.F5)
@@ -238,6 +267,36 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
         Dispatcher.BeginInvoke(new Action(() => { if (_source is not null && _active && version == _activityVersion) action(); }));
     }
     private void RequestOpen(FileEntry file) => Forward(() => OpenRequested?.Invoke(file));
+
+    private void CancelPendingReveal() { _revealPending = false; _revealVersion++; }
+
+    private void QueuePendingReveal()
+    {
+        if (!_revealPending || _revealQueued || !_active || _grid is null) return;
+        _revealQueued = true;
+        var grid = _grid; var activity = _activityVersion; var version = _revealVersion;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            _revealQueued = false;
+            if (grid != _grid || activity != _activityVersion || version != _revealVersion)
+            { QueuePendingReveal(); return; }
+            if (!_revealPending || !_active || !IsLoaded || !IsVisible || !_grid.IsLoaded ||
+                ActualWidth <= 0 || ActualHeight <= 0 || _grid.ActualWidth <= 0 || _grid.ActualHeight <= 0 || _grid.ItemsPanelRoot is null) return;
+            if (_grid.SelectedItem is not FileEntry selected) { CancelPendingReveal(); return; }
+            if (_grid.ContainerFromItem(selected) is GridViewItem item && item.IsLoaded && item.ActualWidth > 0 && item.ActualHeight > 0)
+            {
+                var point = item.TransformToVisual(_grid).TransformPoint(new Windows.Foundation.Point());
+                var width = Math.Max(1, _grid.ActualWidth - _grid.Padding.Left - _grid.Padding.Right);
+                var height = Math.Max(1, _grid.ActualHeight - _grid.Padding.Top - _grid.Padding.Bottom);
+                var visibleWidth = Math.Min(point.X + item.ActualWidth, _grid.ActualWidth - _grid.Padding.Right) - Math.Max(point.X, _grid.Padding.Left);
+                var visibleHeight = Math.Min(point.Y + item.ActualHeight, _grid.ActualHeight - _grid.Padding.Bottom) - Math.Max(point.Y, _grid.Padding.Top);
+                if (visibleWidth >= Math.Min(width, item.ActualWidth) - 2 && visibleHeight >= Math.Min(height, item.ActualHeight) - 2)
+                { _revealPending = false; return; }
+            }
+            // Keep pending until the ensuing native layout actually realizes/reveals the item.
+            _grid.ScrollIntoView(selected);
+        }));
+    }
 
     private void OnContainerChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
@@ -332,7 +391,7 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
             }
             await _workers.WaitAsync(token); entered = true;
             token.ThrowIfCancellationRequested();
-            var png = await thumbnails.GetThumbnailPngAsync(tile.File, 400, 400, token);
+            var png = await _thumbnails.GetThumbnailPngAsync(tile.File, 400, 400, token);
             token.ThrowIfCancellationRequested();
             if (png is null) return;
             using var stream = new InMemoryRandomAccessStream();
@@ -391,12 +450,30 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
             var dpi = VisualTreeHelper.GetDpi(this);
             _source.SiteBridge.MoveAndResize(new RectInt32(0, 0, Math.Max(0, (int)Math.Round(result.Width * dpi.DpiScaleX)),
                 Math.Max(0, (int)Math.Round(result.Height * dpi.DpiScaleY))));
+            _regionKey = null;
             UpdateRegion();
+            QueueRegionRefresh();
+            QueuePendingReveal();
         }
         return result;
     }
 
     public void SetExclusions(IEnumerable<Rect> exclusions) { _exclusions = exclusions.ToArray(); UpdateRegion(); }
+    private void QueueRegionRefresh()
+    {
+        if (_regionRefreshQueued) return;
+        _regionRefreshQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            _regionRefreshQueued = false;
+            if (!_active || !IsVisible || _handle == 0) return;
+            // WPF/XAML-island reattachment may replace the HWND region even when our
+            // exclusion rectangles are unchanged. Reapply after host layout finishes.
+            _regionKey = null;
+            UpdateRegion();
+        }));
+    }
+
     private void UpdateRegion()
     {
         if (_handle == 0) return;
@@ -424,6 +501,7 @@ public sealed class WinUiGalleryIsland(IThumbnailService thumbnails) : HwndHost
     }
     protected override void DestroyWindowCore(HandleRef handle)
     {
+        CancelPendingReveal();
         CancelTiles();
         if (_grid is not null) _grid.ContainerContentChanging -= OnContainerChanging;
         if (_source is not null) { _source.Content = null; _source.Dispose(); _source = null; }

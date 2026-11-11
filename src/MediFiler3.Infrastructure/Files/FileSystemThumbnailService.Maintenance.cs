@@ -78,7 +78,11 @@ public sealed partial class FileSystemThumbnailService
         {
             if (_indexStore is not null)
                 foreach (var entry in await _indexStore.LoadAsync(token).ConfigureAwait(false))
-                    if (OwnedName(entry.CacheFileName) && entry.CacheFileName == entry.Key + ".png") _index[entry.Key] = entry;
+                    if (OwnedName(entry.CacheFileName) && entry.CacheFileName == entry.Key + ".png")
+                    {
+                        _index[entry.Key] = entry;
+                        if ((entry.RequiresFreshSource || entry.Invalidated) && entry.SourcePath is { } source) _freshSources.Add(source);
+                    }
             _initialized = true;
         }
         catch (OperationCanceledException) { throw; }
@@ -87,7 +91,13 @@ public sealed partial class FileSystemThumbnailService
 
     private void Record(string key, long size, string? source)
     {
-        _index[key] = new ThumbnailCacheEntry(key, key + ".png", size, DateTimeOffset.UtcNow, source);
+        var fresh = source is not null && _freshSources.Contains(source);
+        // A fresh valid PNG carries the source marker; redundant empty markers can retire.
+        if (fresh)
+            foreach (var old in _index.Values.Where(e => e.Key != key && e.Invalidated && e.SizeBytes == 0 &&
+                string.Equals(e.SourcePath, source, StringComparison.OrdinalIgnoreCase)).ToArray())
+            { _index.Remove(old.Key); _dirty.Remove(old.Key); _removed.Add(old.Key); }
+        _index[key] = new ThumbnailCacheEntry(key, key + ".png", size, DateTimeOffset.UtcNow, source, RequiresFreshSource: fresh);
         _dirty.Add(key);
         _removed.Remove(key);
     }
@@ -122,6 +132,18 @@ public sealed partial class FileSystemThumbnailService
         _revision++;
     }
 
+    private void PreserveFreshHint(ThumbnailCacheEntry entry, bool removed, bool touch = false)
+    {
+        if (entry.SourcePath is { } source)
+        {
+            if (!ImageExtensions.Contains(Path.GetExtension(source))) return;
+            _freshSources.Add(source);
+        }
+        _index[entry.Key] = entry with { Invalidated = true, RequiresFreshSource = true,
+            SizeBytes = removed ? 0 : entry.SizeBytes, LastAccessUtc = touch ? DateTimeOffset.UtcNow : entry.LastAccessUtc };
+        _dirty.Add(entry.Key); _removed.Remove(entry.Key);
+    }
+
     public Task InvalidateAsync(string path, bool descendants, CancellationToken token = default) =>
         Task.Run(() => InvalidateCoreAsync(path, descendants, token), token);
 
@@ -140,18 +162,26 @@ public sealed partial class FileSystemThumbnailService
                 foreach (var entry in _memoryEntries.Values.ToArray())
                 {
                     if (!Affected(entry.Value.SourcePath)) continue;
+                    if (ImageExtensions.Contains(Path.GetExtension(entry.Value.SourcePath))) _freshSources.Add(entry.Value.SourcePath);
                     _memoryEntries.Remove(entry.Value.Key); _memoryLru.Remove(entry);
                     _memorySize -= entry.Value.Bytes?.LongLength ?? 0;
                 }
             }
             foreach (var request in _pendingThumbnails)
-                if (Affected(request.Path)) request.Invalidated = true;
+                if (Affected(request.Path))
+                {
+                    request.Invalidated = true;
+                    if (ImageExtensions.Contains(Path.GetExtension(request.Path))) _freshSources.Add(request.Path);
+                }
             foreach (var entry in _index.Values.ToArray())
             {
                 token.ThrowIfCancellationRequested();
                 // Legacy entries have no source mapping; conservatively invalidate them.
                 if (entry.SourcePath is null || Affected(entry.SourcePath))
-                    RemoveOwned(entry.Key);
+                {
+                    var removed = RemoveOwned(entry.Key);
+                    PreserveFreshHint(entry, removed, touch: true);
+                }
             }
         }
         finally { _cacheGate.Release(); }
@@ -217,7 +247,10 @@ public sealed partial class FileSystemThumbnailService
                 if (!_index.TryGetValue(snapshot.Key, out var entry)) continue;
                 if (!SafeCacheDirectory()) return Usage(1);
                 var path = Path.Combine(_diskCachePath, entry.CacheFileName);
-                if (!File.Exists(path) && SafeEntry(entry.CacheFileName)) RemoveOwned(entry.Key);
+                if (!File.Exists(path) && SafeEntry(entry.CacheFileName))
+                {
+                    if (!entry.Invalidated || !entry.RequiresFreshSource) RemoveOwned(entry.Key);
+                }
                 else if (SafeEntry(entry.CacheFileName))
                 {
                     var length = new FileInfo(path).Length;
@@ -230,7 +263,12 @@ public sealed partial class FileSystemThumbnailService
                 await YieldBatchAsync().ConfigureAwait(false);
                 if (!_index.TryGetValue(snapshot.Key, out var entry)) continue;
                 if (clear || entry.Invalidated || DateTimeOffset.UtcNow - entry.LastAccessUtc > MaximumAge)
-                    if (!RemoveOwned(entry.Key)) retained++;
+                {
+                    var removed = RemoveOwned(entry.Key);
+                    if (!removed) retained++;
+                    if (entry.RequiresFreshSource && DateTimeOffset.UtcNow - entry.LastAccessUtc <= MaximumAge)
+                        PreserveFreshHint(entry, removed);
+                }
             }
             var total = Usage().SizeBytes;
             if (!clear && total > DiskLimit)
@@ -243,12 +281,17 @@ public sealed partial class FileSystemThumbnailService
                     else retained++;
                 }
             await FlushCoreAsync(token).ConfigureAwait(false);
+            var liveFreshSources = _index.Values.Where(e => e.RequiresFreshSource && e.SourcePath is not null)
+                .Select(e => e.SourcePath!).Concat(_pendingThumbnails.Select(p => p.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            lock (_memoryLock)
+                foreach (var entry in _memoryEntries.Values) liveFreshSources.Add(entry.Value.SourcePath);
+            _freshSources.IntersectWith(liveFreshSources);
             return Usage(retained);
         }
         finally { _cacheGate.Release(); }
     }
 
-    private ThumbnailCacheUsage Usage(int retained = 0) => new(_index.Values.Sum(e => e.SizeBytes), _index.Count, retained);
+    private ThumbnailCacheUsage Usage(int retained = 0) => new(_index.Values.Sum(e => e.SizeBytes), _index.Values.Count(e => e.SizeBytes > 0), retained);
 
     public async Task<ThumbnailCacheUsage> GetUsageAsync(CancellationToken token = default)
     {

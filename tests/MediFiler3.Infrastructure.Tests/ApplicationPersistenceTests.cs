@@ -8,6 +8,19 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class ApplicationPersistenceTests
 {
     [Fact]
+    public async Task FreshThumbnailSourceMarkerRoundTripsWithoutSchemaOrPayloadVersionChange()
+    {
+        using var temp = new TemporaryDatabase();
+        var marker = new ThumbnailCacheEntry("fresh-key", "fresh-key.png", 0, DateTimeOffset.UtcNow,
+            @"C:\library\photo.png", Invalidated: true, RequiresFreshSource: true);
+        await new SqliteApplicationStateStore(temp.Database).SaveAsync(marker);
+        var reopened = new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
+        Assert.Equal(marker, Assert.Single(await ((IThumbnailCacheIndexStore)reopened).LoadAsync()));
+        Assert.Equal(7L, await ScalarAsync(temp.DatabasePath, "PRAGMA user_version;"));
+        Assert.Equal(1L, await ScalarAsync(temp.DatabasePath, "SELECT PayloadVersion FROM ThumbnailCacheIndex;"));
+    }
+
+    [Fact]
     public async Task GalleryDimensionsPersistIndependentlyAndOldSettingsUseDefaults()
     {
         using var temp = new TemporaryDatabase();

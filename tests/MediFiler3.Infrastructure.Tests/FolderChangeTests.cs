@@ -7,6 +7,32 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class FolderChangeTests
 {
     [Fact]
+    public void StartupReconciliationDoesNotHideConcurrentRealChangeHints()
+    {
+        var buffer = new FolderChangeBuffer(["root"]); var now = DateTimeOffset.UtcNow;
+        buffer.ReconcileRoot("root", now);
+        buffer.Add("root/changed.png", false, now.AddMilliseconds(100));
+        var batch = buffer.Take(now.AddSeconds(1))!;
+        Assert.Equal(new[] { "root" }, batch.ReconcileRoots);
+        Assert.Equal(new[] { "root/changed.png" }, batch.Paths);
+        Assert.Empty(batch.RescanRoots); Assert.True(batch.HierarchyChanged);
+    }
+
+    [Fact]
+    public void OverflowSupersedesMetadataOnlyStartupWithInvalidatingRecovery()
+    {
+        var buffer = new FolderChangeBuffer(["root"]); var now = DateTimeOffset.UtcNow;
+        buffer.ReconcileRoot("root", now);
+        buffer.Add("root", true, now, overflow: true);
+        var batch = buffer.Take(now.AddSeconds(1))!;
+        Assert.Equal(new[] { "root" }, batch.RescanRoots);
+        Assert.Empty(batch.ReconcileRoots!);
+        buffer.ReconcileRoot("root", now.AddSeconds(2));
+        batch = buffer.Take(now.AddSeconds(3))!;
+        Assert.Empty(batch.RescanRoots); Assert.Single(batch.ReconcileRoots!);
+    }
+
+    [Fact]
     public async Task UnchangedLargeHierarchyRescanDoesNotFlickerKnownRootLabel()
     {
         var children = Enumerable.Range(0, 2000).Select(i => new FolderTreeEntry(i.ToString(), $"root/{i}", directFileCount: 1)).ToArray();
@@ -84,26 +110,52 @@ public sealed class FolderChangeTests
     }
 
     [Fact]
+    public async Task WatcherRecoveryAfterUnavailableRootStillRequestsInvalidatingRescan()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "MediFiler3WatchRecovery-" + Guid.NewGuid().ToString("N"));
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var unavailable = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovered = new TaskCompletionSource<FolderChangeBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var task = new FileSystemFolderChangeMonitor().RunAsync([root], () => root, (batch, _) =>
+        {
+            if (batch.Status?.Contains("unavailable") == true) unavailable.TrySetResult();
+            if (batch.RescanRoots.Count > 0) recovered.TrySetResult(batch);
+            return Task.CompletedTask;
+        }, stop.Token);
+        try
+        {
+            await unavailable.Task.WaitAsync(stop.Token);
+            Directory.CreateDirectory(root);
+            var recovery = await recovered.Task.WaitAsync(stop.Token);
+            Assert.Contains(root, recovery.RescanRoots);
+            Assert.Empty(recovery.ReconcileRoots ?? []);
+        }
+        finally { stop.Cancel(); await task; if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task RealWatcherReportsNestedAndInactiveRootChangesAndStopsOnCancellation()
     {
         var root = Path.Combine(Path.GetTempPath(), "MediFiler3WatchTests-" + Guid.NewGuid().ToString("N"));
         var first = Path.Combine(root, "first"); var second = Path.Combine(root, "second");
         Directory.CreateDirectory(Path.Combine(first, "nested")); Directory.CreateDirectory(second);
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ready = new TaskCompletionSource<FolderChangeBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
         var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var nestedPath = Path.Combine(first, "nested", "test.txt"); var inactivePath = Path.Combine(second, "test.txt");
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var task = new FileSystemFolderChangeMonitor().RunAsync([first, second], () => first, (batch, _) =>
         {
-            if (batch.RescanRoots.Count > 0) ready.TrySetResult();
+            if (batch.ReconcileRoots is { Count: > 0 }) ready.TrySetResult(batch);
             foreach (var path in batch.Paths) paths.Add(path);
             if (paths.Contains(nestedPath) && paths.Contains(inactivePath)) observed.TrySetResult();
             return Task.CompletedTask;
         }, stop.Token);
         try
         {
-            await ready.Task.WaitAsync(stop.Token);
+            var initial = await ready.Task.WaitAsync(stop.Token);
+            Assert.Empty(initial.RescanRoots);
+            Assert.Equal(2, initial.ReconcileRoots!.Count);
             File.WriteAllText(nestedPath, "a"); File.WriteAllText(inactivePath, "b");
             await observed.Task.WaitAsync(stop.Token);
             stop.Cancel(); await task.WaitAsync(TimeSpan.FromSeconds(2));

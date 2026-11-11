@@ -1,5 +1,39 @@
 # Architecture and decisions
 
+## Gallery clipping after reattachment (2026-11-11)
+
+Native host reattachment can replace the Gallery HWND region even when its dimensions and exclusion rectangles match the cached region key. This covered a pinned WPF tree after Home/Settings return despite correct pin state, transform and Gallery inset. Invalidate/reapply the region after native MoveAndResize and coalesce another application at Loaded priority after activation, WPF visibility/loading and native grid loading. The callback uses current exclusions and checks activity, visibility and handle availability. Ordinary unchanged rendering still uses the region-key cache; no periodic refresh, pin toggle or thumbnail reload is introduced.
+
+Native resume regressions query GetWindowRgn/PtInRegion, alongside WPF tree visibility/hit testing and grid inset, for both Home and Settings paths. They verify the tree cutout and the remaining Gallery surface rather than relying on cached bookkeeping.
+
+## Deferred Gallery selection reveal (2026-11-11)
+
+Home/Settings return could retain the right selected file but lose ScrollIntoView while the island was detached, hidden or not yet measured, leaving the viewport at the top. Gallery now stores a versioned pending reveal, coalesces work at WPF Loaded priority and retries on native Loaded/LayoutUpdated/size and HWND arrangement until the selected container is actually visible. Native loading reapplies tile dimensions and the latest current-file reveal. Oversized tiles use the available viewport as the visibility target rather than retrying forever.
+
+Deactivation, source destruction, newer reveal requests and user pointer/wheel/key/selection interaction invalidate obsolete work. Queued callbacks check grid identity, activity revision and reveal revision. This changes only presentation timing: shared roots/current file, selection borders, thumbnail retention, watcher startup reconciliation and safe file operations are unchanged. There is no new periodic reveal timer or listing reload.
+
+Regression fixtures now contain 150 files so a distant Browse selection cannot accidentally pass because everything fits onscreen. Tests reproduce both retained Home/Settings return paths, first Gallery entry via Home, and a newer selection overriding a pending reveal. The focused native runner accepts --gallery-resume-only with generated fixtures.
+
+## Gallery resume watcher invalidation fix (2026-11-11)
+
+Returning from Home/Settings restarts collection coverage. Previously every first successful watcher setup queued an overflow-style root rescan, which invalidated all root thumbnails roughly 600 ms later. Healthy initial setup now queues metadata-only ReconcileRoots, separate from invalidating RescanRoots and delivered Paths. FolderChangeBuffer coalesces these with real events without dropping their stronger hints; overflow supersedes metadata-only reconciliation. Setup failure/reconnection and watcher errors still request full invalidating recovery.
+
+Browse/Gallery reconciliation continues rescanning hierarchy and the active direct-file listing on return. Equal listings retain decoded thumbnails, file-source identity and presentation. Changed/removed old file records invalidate only those paths; additions appear through the normal listing update. Actual event hints still force same-metadata invalidation, and F5/overflow/reconnection remain authoritative refreshes. Edits made while watchers were stopped that preserve both length and timestamp are unobservable to a metadata-only comparison and require F5, matching the existing missed-notification limit. No root visits are counted by return/reconciliation.
+
+GalleryResumeChecks uses a real MainWindow, native Gallery, isolated cache/database and FileSystemFolderChangeMonitor. It waits for the startup batch to complete after both Home and Settings and asserts the very same native image sources remain. A separate check edits/adds/removes files while Home is active and verifies convergence while an unchanged survivor keeps its decoded source. Buffer/real-watcher unit checks distinguish healthy startup from overflow and unavailable-root recovery.
+
+## StorageItemThumbnail provider switch (2026-11-11)
+
+At the user's request, cache-miss thumbnail generation now uses StorageFile.GetThumbnailAsync(ThumbnailMode.SingleItem, requested longest edge, ThumbnailOptions.ResizeThumbnail), returning StorageItemThumbnail. File icons/null results retain placeholders. Windows.Graphics.Imaging decodes/scales the returned image within requested width/height, respects EXIF orientation and normalizes it to the existing PNG contract. Thumbnail generation no longer uses the handwritten IShellItemImageFactory/GDI path or WPF/WIC source decoder. The main viewer's WIC/GIF behavior is unchanged.
+
+Infrastructure and its unit/filesystem test project now target net10.0-windows10.0.19041.0, matching App/native runner SDK access. There is no new third-party dependency, schema migration or forced cache purge. Existing valid PNGs/keys remain usable, so provider changes apply on cache misses. Shared 400-pixel sources, three decoder permits, key coalescing, independent cancellation, source-handle disposal, targeted invalidation and conservative cache limits remain intact.
+
+Testing found that Windows' thumbnail cache can return an old image after a same-size/timestamp content edit. Known invalidated image sources therefore use StorageFile.OpenAsync plus Windows.Graphics.Imaging.BitmapDecoder to read fresh pixels, bypassing the stale system thumbnail while staying in the WinRT imaging stack. This is an image-only freshness fallback; ordinary misses still use StorageItemThumbnail. Supported images also decode through WinRT if Windows returns only an icon or no thumbnail. Windows controls media/document thumbnail availability and cache behavior.
+
+An additive optional ThumbnailCacheEntry.RequiresFreshSource flag (version-1 JSON, schema 7) carries this freshness requirement. Invalidated/deleted image-cache leaves may retain zero-byte index markers until regenerated/expired/explicitly cleared; they do not count as cached image files in usage. A fresh PNG carries the source flag and retires redundant empty dimension markers. Missing-leaf maintenance retains live markers without renewing their expiry. Explicit Clear removes thumbnail images but preserves unexpired freshness markers, so clearing the app cache cannot resurrect a known stale Windows image; markers expire under the existing retention policy. Source hints prune with cache bookkeeping rather than growing without cache ownership. Locked invalidated data remains invalid across reopen. No Windows-wide thumbnail cache is deleted or modified by the app.
+
+Verification includes bounded uncropped PNG output and exclusive source reopening, stale-system-thumbnail bypass after service restart/housekeeping, SQLite freshness-marker roundtrip with unchanged payload/schema versions, and existing routed-image/native integration. No general speedup or subjective quality acceptance is inferred. API reference: https://learn.microsoft.com/en-us/uwp/api/windows.storage.storagefile.getthumbnailasync.
+
 ## Center framing and conservative retention follow-up (2026-11-11)
 
 Gallery now explicitly matches the carousel's center-square framing before filling rectangular tiles. The same uncropped bitmap is centered at a scale based on its shorter source dimension and the tile's longer dimension, then clipped to the tile rectangle. This avoids a second bitmap/crop allocation. Hover returns to a tile-sized Uniform viewport showing the complete original-aspect image, with the caption hidden; resize/cache-hit/new-load paths reapply the same geometry. Selection borders remain inside the tile clip.
