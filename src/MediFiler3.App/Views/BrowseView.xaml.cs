@@ -573,6 +573,7 @@ public partial class BrowseView : UserControl
         using var reconciliationDeferral = DeferReconciliation();
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
+        var previousFileIndex = Math.Max(0, _navigationState.CurrentFilePosition - 1);
         var historyMode = _navigationState.ViewingMode;
         var root = _navigationState.ActiveRoot;
         if (root is null || !_viewerActive) return;
@@ -608,7 +609,7 @@ public partial class BrowseView : UserControl
             }
             while (!string.IsNullOrWhiteSpace(preferredPath) && !Directory.Exists(preferredPath))
                 preferredPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(preferredPath));
-            var preferredFilePath = result.Results.Select(item => item.AffectedPath)
+            var preferredFilePath = result.Results.Where(item => item.Succeeded).Select(item => item.AffectedPath)
                 .FirstOrDefault(path => path is not null && File.Exists(path) &&
                     PathsEqual(Path.GetDirectoryName(path) ?? string.Empty, preferredPath ?? string.Empty));
             RememberKnownFileMoves(result.Results);
@@ -617,9 +618,12 @@ public partial class BrowseView : UserControl
                 .SelectMany(item => new[] { item.PreviousPath, item.AffectedPath }).Where(path => path is not null)
                 .All(path => FindFolder(_navigationState.Roots, path) is null && !Directory.Exists(path)))
             {
-                await ReloadFilesInActiveFolderAsync(_navigationState.CurrentFile?.FullPath ?? preferredFilePath,
+                await ReloadFilesInActiveFolderAsync(IsGallery
+                        ? _navigationState.CurrentFile?.FullPath ?? preferredFilePath
+                        : preferredFilePath ?? _navigationState.CurrentFile?.FullPath,
                     () => _viewerActive && historyMode == _navigationState.ViewingMode && ReferenceEquals(root, _navigationState.ActiveRoot) &&
-                        PathsEqual(activePath ?? "", _navigationState.ActiveFolder?.Path ?? ""));
+                        PathsEqual(activePath ?? "", _navigationState.ActiveFolder?.Path ?? ""),
+                    preferredFileIndex: IsGallery ? 0 : previousFileIndex);
                 return;
             }
             await RefreshFolderTreeAsync(preferredPath, pathMappings: pathMappings, preferredFilePath: preferredFilePath,

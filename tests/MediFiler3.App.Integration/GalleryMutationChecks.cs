@@ -64,6 +64,36 @@ internal static partial class Program
                 navigation.SelectDestination("Gallery");
                 state.GallerySelection.ReplaceSelection(state.Files, state.Files.Take(2), state.Files[0]);
             });
+            await Check("Browse Undo selects restored files and Redo advances in natural order", async () =>
+            {
+                navigation.SelectDestination("Browse");
+                var controller = (NavigationController)Field(browse, "_navigationController")!;
+                var move = typeof(BrowseView).GetMethod("MoveCurrentFileToFolderAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var destination = state.Roots[0].Children.Single(folder => folder.Path == target);
+                foreach (var recycle in new[] { false, true })
+                {
+                    var selected = state.Files.Single(file => file.Name == "c.txt");
+                    controller.SelectFile(selected);
+                    if (recycle) await browse.SendCurrentFileToRecycleBinAsync();
+                    else await (Task)move.Invoke(browse, [destination])!;
+                    Require(state.CurrentFile?.Name == "d.txt", "Initial removal did not select the next file");
+                    await browse.UndoLastOperationAsync();
+                    Require(state.CurrentFile?.Name == "c.txt", "Undo did not select the restored file");
+                    await browse.RedoLastOperationAsync();
+                    Require(state.CurrentFile?.Name == "d.txt", "Redo selected the first file instead of the next file");
+                    await browse.UndoLastOperationAsync();
+                    Require(state.CurrentFile?.Name == "c.txt", "Second Undo did not restore current file");
+                }
+                controller.SelectFile(state.Files.Single(file => file.Name == "d.txt"));
+                await (Task)move.Invoke(browse, [destination])!;
+                await browse.UndoLastOperationAsync();
+                Require(state.CurrentFile?.Name == "d.txt", "Undo last file did not select it");
+                await browse.RedoLastOperationAsync();
+                Require(state.CurrentFile?.Name == "c.txt", "Redo last file did not select its previous neighbor");
+                await browse.UndoLastOperationAsync();
+                navigation.SelectDestination("Gallery");
+                state.GallerySelection.ReplaceSelection(state.Files, state.Files.Take(2), state.Files[0]);
+            });
             await Check("Gallery recycle confirmation cancellation and stale mode reject mutations", async () =>
             {
                 var before = state.Files.ToArray();

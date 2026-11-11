@@ -1,5 +1,12 @@
 # Phase 5 continuation handover
 
+## Browse history current-file selection (2026-11-11)
+
+Browse file-only Undo now prefers the successfully restored/renamed file in the active folder. When Redo removes the current file, reload retains its prior natural-order index, selecting the next surviving file or the previous file at the end instead of jumping to the first file. Gallery keeps its existing current-file/selection policy. Tree identity, counts, watcher echo filtering and paused-media handling are unchanged.
+
+Verification: clean solution build (zero warnings/errors), **325 unit/filesystem tests and 189 full native checks passed, zero failures/skips**; `git diff --check` passes. The new native regression exercises immediate move/delete Undo, Redo and the last-file neighbor fallback. Evidence: `%TEMP%\MediFiler3Integration-af2774dc67374ae88119faf7a325f106`; log `%TEMP%\MediFiler3BrowseHistorySelection.log`. Changes remain uncommitted; temporary build output preserves the running app. Existing physical/native stability limits remain open.
+
+
 ## Incremental operation reconciliation (2026-11-11)
 
 Move Undo/Redo now updates both source and destination direct-file counts before completing in Gallery and Browse. File-only history reconciles the active listing without rebuilding roots. Folder commands/history and explicit refresh merge scanned roots/children into retained collections: unchanged nodes keep identity and expansion, renamed/replaced subtrees inherit mapped expansion, and removed active folders fall back to a surviving ancestor. Refresh still updates history availability even when the active root object is retained. No root visit is counted.
