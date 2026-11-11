@@ -1,5 +1,9 @@
 # Development plan
 
+## Phase 5.3 implemented (2026-11-11)
+
+Native Gallery Extended selection now wires Ctrl/Shift pointer and native keyboard behavior to session selection, current-file focus and accessible borders/count/file information. Ctrl+A, Escape, focused Enter and a keyboard/mouse context menu provide validated selection/open commands. Reconciliation preserves current selected records and prunes stale old-grid input; Home/Settings preserve selection while Browse clears it. Select All remains virtualized for 10,000 files, with bulk clearing. Existing Gallery mutation/history guards remain until 5.4, which is the next implementation slice. No storage/provider/watcher/operation-policy changes were made. Build clean; 308 unit/filesystem tests and 176 native checks passed without failures/skips. Physical input, Narrator and mixed-DPI acceptance remains open; see PROJECT_STATUS.md for evidence and runner limits.
+
 ## Pinned tree on Gallery return fixed (2026-11-11)
 
 Gallery reapplies its native clipping region after reattachment/layout so Home/Settings returns cannot cover the pinned WPF tree. Both return paths now check the actual HWND region as well as pin presentation and tile inset. Build clean; 306 unit/filesystem tests and 169 native checks passed, zero failures/skips. Existing retention, selection, watcher and operation behavior is preserved; remaining 5.3/5.4 scope and physical review limits are unchanged.
@@ -41,9 +45,9 @@ Verification: clean solution build; 289 unit/filesystem tests and 151 native che
 ## Phase 5 approved slices (2026-11-11)
 
 - **5.1 complete:** Application viewing-mode/session and Gallery selection foundations, validated Browse handoff, refresh reconciliation and eight business-logic regressions. Build clean; 284 unit/filesystem tests and 144 native checks pass without failures/skips. Gallery is not yet visible in the UI.
-- **5.2 next:** Virtualized Gallery UI, bounded thumbnail work, shared collection/watcher lifecycle and two independent right-toolbar sliders for thumbnail width/X and height/Y (user-requested replacement for size presets). Prove native grid/folder-overlay/focus/fullscreen interoperability.
-- **5.3:** Mouse/keyboard/accessibility and command scope wiring.
-- **5.4:** Safe grouped operations, existing grouped moves and journal-backed grouped Recycle Bin support, partial-result/collision/Undo checks.
+- **5.2 complete:** Virtualized Gallery UI, retained bounded thumbnail work, shared collection/watcher lifecycle and two persisted independent right-toolbar width/height sliders (100–400, step 50), including the subsequent documented UX/resume fixes.
+- **5.3 complete:** Mouse/keyboard/accessibility and command scope wiring; Gallery mutations remain guarded pending 5.4.
+- **5.4 next:** Safe grouped operations, existing grouped moves and journal-backed grouped Recycle Bin support, partial-result/collision/Undo checks.
 - **5.5:** Full reconciliation/performance/regression and targeted physical acceptance.
 
 Retain shared natural filename ordering for the MVP; further sort options, drag/drop and continuous reader follow separately. Earlier Phase 5-not-started notes below describe the handover baseline and are superseded by this entry.

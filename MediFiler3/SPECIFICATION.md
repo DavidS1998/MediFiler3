@@ -375,6 +375,11 @@ The gallery view provides an overview of a folder's contents through a grid of t
 - Support selecting individual files.
 - Support CTRL+click for selecting multiple files.
 - Support SHIFT+click for selecting a range of files.
+- Use native extended selection and keyboard navigation, including modifier ranges/focus-only movement, Home/End, PageUp/Down and Space. Ctrl+A selects all; Escape clears selection; Enter opens the focused file in Browse. Keep native focus visuals and accessibility selection patterns.
+- Display an accessible selected-file count and filename/path/basic size information. Keep a distinct border on every selected tile.
+- Home/Settings visits retain Gallery selection; switching to Browse clears mode-local selection. A new Gallery mode entry selects the shared current file once. Refresh/reveal must preserve surviving selections and an explicitly cleared selection.
+- A mouse/keyboard context menu offers Open in Browse, Select all and Clear selection. A selected target retains the set; an unselected target replaces it. Blank-space Open is disabled. Reject stale commands after listing/activity changes.
+- Until Phase 5.4 grouped-operation integration, keep Gallery file mutation/history commands guarded. Never apply a single-current-file mutation implicitly to a multi-selection.
 - Provide a clear visual indication of selected files.
 - Allow selected files to be moved to a destination folder in the folder tree.
 - Support keyboard navigation.

@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using MediFiler3.Application.Files;
+using MediFiler3.Application.Navigation;
 using MediFiler3.Domain.Files;
 using MediFiler3.Application.Persistence;
 using Microsoft.UI;
@@ -19,14 +20,18 @@ using Xaml = Microsoft.UI.Xaml;
 namespace MediFiler3.Interop;
 
 /// <summary>Native virtualized grid. Only realized containers own images or thumbnail requests.</summary>
-public sealed class WinUiGalleryIsland : HwndHost
+public sealed partial class WinUiGalleryIsland : HwndHost
 {
     private readonly IThumbnailService _thumbnails;
+    private readonly GallerySelectionState _selection;
+    private TextBlock? _selectionStatus;
+    private FileEntry? _revealTarget;
     private bool _regionRefreshQueued;
 
-    public WinUiGalleryIsland(IThumbnailService thumbnails)
+    public WinUiGalleryIsland(IThumbnailService thumbnails, GallerySelectionState? selection = null)
     {
         _thumbnails = thumbnails;
+        _selection = selection ?? new GallerySelectionState();
         Loaded += (_, _) => QueueRegionRefresh();
         IsVisibleChanged += (_, _) => { if (IsVisible) QueueRegionRefresh(); };
     }
@@ -64,7 +69,9 @@ public sealed class WinUiGalleryIsland : HwndHost
     public void SetFiles(IEnumerable<FileEntry> files, FileEntry? current)
     {
         var next = files.ToArray();
-        if (_grid?.ItemsSource is not null && _files.SequenceEqual(next)) { RevealCurrentFile(current); return; }
+        if (_grid?.ItemsSource is not null && _files.SequenceEqual(next)) { RevealCurrentFile(current, preserveSelection: true); return; }
+        _selectionMenu?.Hide();
+        _selectionContextVersion++;
         _current = current;
         _updating = true;
         try
@@ -89,33 +96,42 @@ public sealed class WinUiGalleryIsland : HwndHost
                 if (existing >= 0) { _files.Move(existing, i); if (_files[i] != next[i]) _files[i] = next[i]; }
                 else _files.Insert(i, next[i]);
             }
+            // Input can arrive between session publication and this deferred native diff.
+            // Prune any old-list selection accepted during that interval as well.
+            _selection.Reconcile(_files);
             if (_grid is null) return;
             _grid.ItemsSource ??= _files;
-            RevealCurrentFile(current);
+            RevealCurrentFile(current, preserveSelection: true);
             if (_empty is not null) _empty.Visibility = _files.Count == 0 ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
         }
         finally { _updating = false; }
     }
 
-    public void RevealCurrentFile(FileEntry? file)
+    public void RevealCurrentFile(FileEntry? file, bool preserveSelection = false)
     {
         _current = file;
         if (_grid is null) return;
+        var wasUpdating = _updating;
         _updating = true;
         try
         {
-            _grid.SelectedItem = _files.FirstOrDefault(f => string.Equals(f.FullPath, file?.FullPath, StringComparison.OrdinalIgnoreCase));
+            var target = _files.FirstOrDefault(f => string.Equals(f.FullPath, file?.FullPath, StringComparison.OrdinalIgnoreCase));
+            if (target is not null && !preserveSelection)
+                _selection.Select(_files, target);
+            ApplySelection();
+            _revealTarget = target;
             _revealVersion++;
-            _revealPending = _grid.SelectedItem is not null;
+            _revealPending = target is not null;
             QueuePendingReveal();
         }
-        finally { _updating = false; }
+        finally { _updating = wasUpdating; }
     }
 
     public void SetActive(bool active)
     {
         if (_active == active) return;
         _active = active; _activityVersion++;
+        if (!active) _selectionMenu?.Hide();
         if (!active) CancelPendingReveal();
         else QueueRegionRefresh();
         if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
@@ -200,7 +216,7 @@ public sealed class WinUiGalleryIsland : HwndHost
         _source.ShouldConstrainPopupsToWorkArea = true;
         var root = new Grid { RequestedTheme = Xaml.ElementTheme.Dark,
             Background = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black) };
-        _grid = new GridView { SelectionMode = ListViewSelectionMode.Single,
+        _grid = new GridView { SelectionMode = ListViewSelectionMode.Extended,
             Padding = new Xaml.Thickness(_treeInset + 2, 2, 2, 2), IsItemClickEnabled = false };
         _grid.ItemContainerStyle = (Xaml.Style)Xaml.Markup.XamlReader.Load(
             "<Style xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' TargetType='GridViewItem'><Setter Property='Padding' Value='0'/><Setter Property='Margin' Value='1'/><Setter Property='MinWidth' Value='0'/><Setter Property='MinHeight' Value='0'/><Setter Property='HorizontalContentAlignment' Value='Stretch'/><Setter Property='VerticalContentAlignment' Value='Stretch'/></Style>");
@@ -215,20 +231,26 @@ public sealed class WinUiGalleryIsland : HwndHost
         _grid.Loaded += (_, _) =>
         {
             SetTileSize(_tileWidth, _tileHeight);
-            RevealCurrentFile(_current);
+            RevealCurrentFile(_current, preserveSelection: true);
             QueueRegionRefresh();
         };
         _grid.LayoutUpdated += (_, _) => QueuePendingReveal();
-        _grid.SelectionChanged += (_, _) =>
+        _grid.SelectionChanged += (_, args) =>
         {
             UpdateSelectionBorders();
-            if (!_updating && _grid.SelectedItem is FileEntry file)
+            if (!_updating && _active)
             {
                 CancelPendingReveal();
-                _current = file;
-                Forward(() => FileSelected?.Invoke(file));
+                var focused = FocusedFile() ?? args.AddedItems.OfType<FileEntry>().LastOrDefault() ?? args.RemovedItems.OfType<FileEntry>().LastOrDefault();
+                var shift = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+                _selection.ReplaceSelection(_files, _grid.SelectedItems.OfType<FileEntry>(), focused, preserveAnchor: shift);
             }
         };
+        _grid.GotFocus += (_, _) =>
+        {
+            if (!_updating && _active && FocusedFile() is { } file) _selection.Focus(_files, file);
+        };
+        _grid.ContextRequested += OnGalleryContextRequested;
         _grid.SizeChanged += (_, _) => { CenterTiles(); QueuePendingReveal(); };
         _grid.AddHandler(Xaml.UIElement.PointerWheelChangedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
         _grid.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
@@ -241,22 +263,26 @@ public sealed class WinUiGalleryIsland : HwndHost
             args.Handled = true;
             RequestOpen(tile.File);
         };
-        _grid.KeyDown += (_, args) =>
+        _grid.AddHandler(Xaml.UIElement.KeyDownEvent, new Xaml.Input.KeyEventHandler((_, args) =>
         {
             CancelPendingReveal();
-            if (args.Key == Windows.System.VirtualKey.Enter && _grid.SelectedItem is FileEntry file)
-            { args.Handled = true; RequestOpen(file); }
-            else if (args.Key == Windows.System.VirtualKey.F5)
-            { args.Handled = true; Forward(() => RefreshRequested?.Invoke()); }
-        };
+            var control = (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control) & Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;
+            if (HandleSelectionKey(args.Key, control)) args.Handled = true;
+        }), true);
         _empty = new TextBlock { Text = "No files in this folder. Select a folder or add folders to begin.",
             HorizontalAlignment = Xaml.HorizontalAlignment.Center, VerticalAlignment = Xaml.VerticalAlignment.Center,
             IsHitTestVisible = false };
         root.Children.Add(_grid); root.Children.Add(_empty);
+        _selectionStatus = new TextBlock { HorizontalAlignment = Xaml.HorizontalAlignment.Right,
+            VerticalAlignment = Xaml.VerticalAlignment.Bottom, Margin = new Xaml.Thickness(8),
+            IsHitTestVisible = false };
+        Xaml.Automation.AutomationProperties.SetLiveSetting(_selectionStatus, Xaml.Automation.Peers.AutomationLiveSetting.Polite);
+        root.Children.Add(_selectionStatus);
         _source.Content = root;
         _handle = Win32Interop.GetWindowFromWindowId(_source.SiteBridge.WindowId);
         _grid.ItemsSource = _files;
-        RevealCurrentFile(_current);
+        _selection.Changed += OnSelectionChanged;
+        RevealCurrentFile(_current, preserveSelection: true);
         _empty.Visibility = _files.Count == 0 ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
         return new HandleRef(this, _handle);
     }
@@ -266,7 +292,11 @@ public sealed class WinUiGalleryIsland : HwndHost
         var version = _activityVersion;
         Dispatcher.BeginInvoke(new Action(() => { if (_source is not null && _active && version == _activityVersion) action(); }));
     }
-    private void RequestOpen(FileEntry file) => Forward(() => OpenRequested?.Invoke(file));
+    private void RequestOpen(FileEntry file) => Forward(() =>
+    {
+        var current = _files.FirstOrDefault(candidate => StringComparer.OrdinalIgnoreCase.Equals(candidate.FullPath, file.FullPath));
+        if (current is not null) OpenRequested?.Invoke(current);
+    });
 
     private void CancelPendingReveal() { _revealPending = false; _revealVersion++; }
 
@@ -282,7 +312,7 @@ public sealed class WinUiGalleryIsland : HwndHost
             { QueuePendingReveal(); return; }
             if (!_revealPending || !_active || !IsLoaded || !IsVisible || !_grid.IsLoaded ||
                 ActualWidth <= 0 || ActualHeight <= 0 || _grid.ActualWidth <= 0 || _grid.ActualHeight <= 0 || _grid.ItemsPanelRoot is null) return;
-            if (_grid.SelectedItem is not FileEntry selected) { CancelPendingReveal(); return; }
+            if (_revealTarget is not { } selected || !_files.Contains(selected)) { CancelPendingReveal(); return; }
             if (_grid.ContainerFromItem(selected) is GridViewItem item && item.IsLoaded && item.ActualWidth > 0 && item.ActualHeight > 0)
             {
                 var point = item.TransformToVisual(_grid).TransformPoint(new Windows.Foundation.Point());
@@ -332,6 +362,7 @@ public sealed class WinUiGalleryIsland : HwndHost
         }
         ToolTipService.SetToolTip(root, file.FullPath);
         Xaml.Automation.AutomationProperties.SetName(container, file.Name);
+        Xaml.Automation.AutomationProperties.SetHelpText(container, $"{file.FullPath}\n{file.Size:N0} bytes");
         var tile = new Tile(file, root, picture, placeholder, new CancellationTokenSource());
         _tiles[container] = tile;
         SizeTile(tile);
@@ -501,6 +532,9 @@ public sealed class WinUiGalleryIsland : HwndHost
     }
     protected override void DestroyWindowCore(HandleRef handle)
     {
+        _selection.Changed -= OnSelectionChanged;
+        _selectionMenu?.Hide();
+        _selectionStatus = null;
         CancelPendingReveal();
         CancelTiles();
         if (_grid is not null) _grid.ContainerContentChanging -= OnContainerChanging;

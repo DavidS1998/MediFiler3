@@ -52,6 +52,8 @@ public partial class BrowseView
         if (_navigationState.ViewingMode == mode) return;
         _historyCancellation?.Cancel();
         _navigationController.SwitchViewingMode(mode);
+        if (mode == ViewingMode.Gallery && _navigationState.CurrentFile is { } current)
+            _navigationState.GallerySelection.Select(_navigationState.Files, current);
         _commandRevision++;
         ApplyViewingMode();
     }
@@ -73,11 +75,10 @@ public partial class BrowseView
         GalleryHost.Visibility = gallery ? Visibility.Visible : Visibility.Collapsed;
         if (gallery && _gallery is null)
         {
-            _gallery = new WinUiGalleryIsland(_thumbnailService);
+            _gallery = new WinUiGalleryIsland(_thumbnailService, _navigationState.GallerySelection);
             _gallery.FileSelected += file =>
             {
                 if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;
-                _navigationState.GallerySelection.Select(_navigationState.Files, file);
                 _navigationState.SetCurrentFile(file);
             };
             _gallery.OpenRequested += file =>
@@ -100,7 +101,7 @@ public partial class BrowseView
                 _galleryFilesDirty = false;
             }
             UpdateGalleryTreeInset();
-            _gallery.RevealCurrentFile(_navigationState.CurrentFile);
+            _gallery.RevealCurrentFile(_navigationState.CurrentFile, preserveSelection: true);
         }
         if (!IsGallery)
         {

@@ -115,8 +115,9 @@ internal static partial class Program
                 Require(window.IsFullscreen && window.WindowStyle == WindowStyle.None, "F11 did not enter borderless fullscreen");
                 Require(((FrameworkElement)window.FindName("ToolbarFrame")).Visibility == Visibility.Collapsed && ((FrameworkElement)window.FindName("Sidebar")).Visibility == Visibility.Collapsed,
                     "Fullscreen chrome remains visible");
-                Require(((System.Windows.Media.TranslateTransform)browse.FindName("CarouselOverlayTransform")).Y == 175 && ((FrameworkElement)browse.FindName("CarouselOverlay")).Opacity == 0,
-                    "Fullscreen carousel still peeks");
+                // A pre-existing hover animation can still be settling after the 50 ms shell check.
+                await WaitUntil(() => ((System.Windows.Media.TranslateTransform)browse.FindName("CarouselOverlayTransform")).Y == 175 &&
+                    ((FrameworkElement)browse.FindName("CarouselOverlay")).Opacity == 0);
                 Require(layout.Current == saved, "Fullscreen overwrote persisted normal layout");
                 var button = (Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_fullscreenButton")!;
                 var root = (Microsoft.UI.Xaml.Controls.Grid)Field(toolbar, "_rootElement")!;

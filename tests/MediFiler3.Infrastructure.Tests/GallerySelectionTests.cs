@@ -10,6 +10,40 @@ public sealed class GallerySelectionTests
     private static readonly FileEntry[] Files = [File("a"), File("b"), File("c"), File("d")];
 
     [Fact]
+    public void NativeSnapshotsValidatePathsResolveCurrentRecordsAndPreserveRangeAnchor()
+    {
+        var selection = new GallerySelectionState();
+        var current = new[] { File("a", 100), File("b", 200), File("c", 300) };
+        selection.ReplaceSelection(current, [File("B"), File("missing"), File("a"), File("A")], File("B"));
+        Assert.Equal(current.Take(2), selection.GetSelectedFiles(current));
+        Assert.Equal("B", selection.FocusedPath);
+        Assert.Equal("B", selection.AnchorPath);
+        selection.ReplaceSelection(current, current, current[2], preserveAnchor: true);
+        Assert.Equal("B", selection.AnchorPath);
+        Assert.Equal("c", selection.FocusedPath);
+        selection.ReplaceSelection(current, [current[2]], current[2]);
+        Assert.Equal("c", selection.AnchorPath);
+        var snapshot = selection.GetSelectedFiles(current);
+        selection.Clear();
+        Assert.Same(current[2], Assert.Single(snapshot));
+    }
+
+    [Fact]
+    public void NativeEmptySelectionCanKeepFocusWithoutSelectingOrAcceptingForeignFiles()
+    {
+        var selection = new GallerySelectionState();
+        selection.ReplaceSelection(Files, [], Files[2]);
+        Assert.Equal(0, selection.Count);
+        Assert.Equal("c", selection.FocusedPath);
+        selection.ReplaceSelection(Files, [File("foreign")], File("foreign"));
+        Assert.Equal(0, selection.Count);
+        Assert.Equal("c", selection.FocusedPath);
+        selection.Reconcile([Files[0]]);
+        Assert.Null(selection.FocusedPath);
+        Assert.Null(selection.AnchorPath);
+    }
+
+    [Fact]
     public void ToggleAndRangeKeepFocusAndAnchorDistinctAndReturnSortedSnapshots()
     {
         var selection = new GallerySelectionState();

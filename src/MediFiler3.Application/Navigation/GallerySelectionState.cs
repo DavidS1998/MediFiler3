@@ -56,6 +56,23 @@ public sealed class GallerySelectionState
         Changed?.Invoke();
     }
 
+    /// <summary>Accept a native selection snapshot, validating every path against the current listing.</summary>
+    public void ReplaceSelection(IReadOnlyList<FileEntry> files, IEnumerable<FileEntry> selected, FileEntry? focused, bool preserveAnchor = false)
+    {
+        var paths = files.Select(file => file.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var next = selected.Select(file => file.FullPath).Where(paths.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var focus = focused is not null && paths.Contains(focused.FullPath) ? focused.FullPath : FocusedPath;
+        if (focus is not null && !paths.Contains(focus)) focus = null;
+        var anchor = preserveAnchor && AnchorPath is not null && paths.Contains(AnchorPath) ? AnchorPath : focus;
+        if (_selected.SetEquals(next) && StringComparer.OrdinalIgnoreCase.Equals(focus, FocusedPath) &&
+            StringComparer.OrdinalIgnoreCase.Equals(anchor, AnchorPath)) return;
+        _selected.Clear();
+        _selected.UnionWith(next);
+        FocusedPath = focus;
+        AnchorPath = anchor;
+        Changed?.Invoke();
+    }
+
     public void Clear()
     {
         if (Count == 0 && FocusedPath is null && AnchorPath is null) return;

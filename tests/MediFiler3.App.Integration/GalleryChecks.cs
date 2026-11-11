@@ -141,12 +141,17 @@ internal static partial class Program
             browse.SetFolderPinned(false);
             Require(Math.Abs(Grid().Padding.Left - Grid().Padding.Right - 26) < 1, "Unpin retained reserved tree space");
         });
+        await RunGalleryInputChecksAsync(state, browse, toolbar, navigation, Gallery);
         await Check("Gallery virtualizes a large file list and releases realized work on tab change", async () =>
         {
             var files = state.Files.ToArray();
             state.ReplaceFiles(Enumerable.Range(0, 10000).Select(i => new FileEntry(System.IO.Path.Combine(directory, $"large-{i}.unknown"), $"large-{i}.unknown", 1, DateTime.UnixEpoch)));
             await WaitUntil(() => Grid().Items.Count == 10000 && Gallery().RealizedCount > 0);
             Require(Gallery().RealizedCount < 1000, "Gallery realized the full collection");
+            typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.A, true]);
+            Require(state.GallerySelection.Count == 10000 && Grid().SelectedItems.Count == 10000 && Gallery().RealizedCount < 1000,
+                "Select All lost targets or realized the full collection");
+            typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.Escape, false]);
             var items = Grid().Items;
             Grid().ScrollIntoView(items[9000]);
             await Task.Delay(200);
