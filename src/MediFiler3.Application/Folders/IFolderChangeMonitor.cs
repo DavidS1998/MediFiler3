@@ -1,7 +1,7 @@
 namespace MediFiler3.Application.Folders;
 
 public sealed record FolderChangeBatch(IReadOnlyList<string> Paths, IReadOnlyList<string> RescanRoots,
-    bool HierarchyChanged, string? Status = null, IReadOnlyList<string>? ReconcileRoots = null);
+    bool HierarchyChanged, string? Status = null, IReadOnlyList<string>? ReconcileRoots = null, IReadOnlyList<string>? StructuralPaths = null);
 
 public interface IFolderChangeMonitor
 {

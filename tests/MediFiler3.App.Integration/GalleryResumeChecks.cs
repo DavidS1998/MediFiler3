@@ -40,7 +40,7 @@ internal static partial class Program
         Microsoft.UI.Xaml.Controls.GridView Grid() => (Microsoft.UI.Xaml.Controls.GridView)Field(Field(browse, "_gallery")!, "_grid")!;
         Microsoft.UI.Xaml.Media.ImageSource? Preview(string path)
         {
-            var file = state.Files.FirstOrDefault(f => f.FullPath == path);
+            var file = Grid().Items.OfType<MediFiler3.Domain.Files.FileEntry>().FirstOrDefault(f => f.FullPath == path);
             if (file is null || Grid().ContainerFromItem(file) is not Microsoft.UI.Xaml.Controls.GridViewItem item ||
                 item.ContentTemplateRoot is not Microsoft.UI.Xaml.Controls.Grid root) return null;
             return ((Microsoft.UI.Xaml.Controls.Image)root.Children[1]).Source;
@@ -135,6 +135,42 @@ internal static partial class Program
                     Require(GalleryNativeContains(gallery, 500, 100), "Native Gallery content is incorrectly hidden");
                     browse.SetFolderPinned(false);
                 });
+            await Check("Browse rename dialogs and Gallery moves preserve unaffected native previews", async () =>
+            {
+                navigation.SelectDestination("Browse");
+                state.SetCurrentFile(state.Files[0]);
+                navigation.SelectDestination("Gallery");
+                var path = state.Files[0].FullPath;
+                await WaitUntil(() => Preview(path) is not null);
+                var image = Preview(path);
+                navigation.SelectDestination("Browse");
+                foreach (var cancel in new[] { true, false })
+                {
+                    await DriveContentDialogAsync("Rename file", () => browse.PromptRenameCurrentFileAsync(), (dialogWindow, dialog) =>
+                    {
+                        var input = (Microsoft.UI.Xaml.Controls.TextBox)((Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content).Children[1];
+                        // A no-op submit exercises actual modal disable/enable without changing the image.
+                        InvokeNativeButton(NativeDialogButton(dialog, cancel ? "CloseButton" : "PrimaryButton")!);
+                    });
+                }
+                navigation.SelectDestination("Gallery");
+                await WaitUntil(() => Preview(path) is not null);
+                await Task.Delay(1000);
+                Require(ReferenceEquals(image, Preview(path)), "Dialog completion regenerated an unchanged Gallery thumbnail");
+                var target = Directory.CreateDirectory(Path.Combine(directory, "move-target")).FullName;
+                var destination = new MediFiler3.Application.Folders.FolderTreeEntry("move-target", target);
+                var movedPath = state.Files[1].FullPath;
+                await WaitUntil(() => Preview(movedPath) is not null);
+                var movedImage = Preview(movedPath);
+                state.GallerySelection.Select(state.Files, state.Files[1]);
+                await (Task)typeof(BrowseView).GetMethod("MoveCurrentFileToFolderAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(browse, [destination])!;
+                await Task.Delay(1500);
+                Require(ReferenceEquals(image, Preview(path)), "Move regenerated an unrelated thumbnail after watcher reconciliation");
+                await browse.UndoLastOperationAsync();
+                await WaitUntil(() => Preview(movedPath) is not null);
+                await Task.Delay(2000);
+                Require(ReferenceEquals(movedImage, Preview(movedPath)) && ReferenceEquals(image, Preview(path)), "Delayed move/undo echo regenerated restored or unrelated previews");
+            });
         }
         finally { window.Close(); }
     }

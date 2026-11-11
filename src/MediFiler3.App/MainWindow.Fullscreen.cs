@@ -31,12 +31,12 @@ public partial class MainWindow
 
     private void OnFullscreenMessage(ref MSG message, ref bool handled)
     {
-        if (handled || message.message != 0x0100 || message.wParam.ToInt32() != 0x7A) return;
+        if (handled || message.message != 0x0100) return;
         var handle = new WindowInteropHelper(this).Handle;
         if (message.hwnd != handle && GetAncestor(message.hwnd, 2) != handle) return;
-        handled = true;
-        if ((message.lParam.ToInt64() & (1L << 30)) == 0)
-            Dispatcher.BeginInvoke(new Action(ToggleFullscreen));
+        var key = System.Windows.Input.KeyInterop.KeyFromVirtualKey(message.wParam.ToInt32());
+        var repeat = (message.lParam.ToInt64() & (1L << 30)) != 0;
+        handled = TryHandleViewShortcut(key, System.Windows.Input.Keyboard.Modifiers, repeat);
     }
 
     public void ToggleFullscreen()

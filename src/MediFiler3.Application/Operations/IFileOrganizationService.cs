@@ -17,19 +17,23 @@ public sealed record FileOrganizationResult(
     string Message,
     Guid? OperationId = null,
     string? AffectedPath = null,
-    string? PreviousPath = null)
+    string? PreviousPath = null, string? VerifiedFileIdentity = null)
 {
     public bool Succeeded => Outcome == FileOrganizationOutcome.Succeeded;
 }
 
-public sealed record FileOrganizationBatchResult(Guid? BatchId, IReadOnlyList<FileOrganizationResult> Results)
+public sealed record FileOrganizationBatchResult(Guid? BatchId, IReadOnlyList<FileOrganizationResult> Results, int UnattemptedCount = 0, bool WasCancelled = false)
 {
     public int SucceededCount => Results.Count(result => result.Succeeded);
-    public bool Succeeded => Results.Count > 0 && SucceededCount == Results.Count;
-    public string Message => Results.Count == 0 ? "No file operations were performed."
+    public bool Succeeded => Results.Count > 0 && SucceededCount == Results.Count && UnattemptedCount == 0;
+    public string Message => (WasCancelled ? "Cancelled. " : "") +
+        (UnattemptedCount > 0 ? $"{SucceededCount} succeeded; {Results.Count - SucceededCount} failed or cancelled; {UnattemptedCount} not attempted. " +
+            string.Join(" ", Results.Where(result => !result.Succeeded).Select(result => result.Message))
+        : Results.Count == 0 ? "No file operations were performed."
         : Results.Count == 1 ? Results[0].Message
         : $"{SucceededCount} of {Results.Count} items succeeded. " +
-          string.Join(" ", Results.Where(result => !result.Succeeded).Select(result => result.Message));
+          string.Join(" ", Results.Where(result => !result.Succeeded).Select(result => result.Message)));
+
 }
 
 public enum FileOrganizationHistoryDirection
@@ -51,6 +55,7 @@ public sealed record FileOrganizationHistoryPreview(
 /// <summary>Application-owned use cases for journaled file and folder changes.</summary>
 public interface IFileOrganizationService
 {
+    Task<bool> MatchesFileVersionAsync(string path, string identity, long size, DateTime modifiedUtc, CancellationToken token = default);
     Task<IFileOrganizationService> ForRootAsync(string rootPath, CancellationToken cancellationToken = default);
     IFileOrganizationService WithCollisionResolver(IFileCollisionResolver resolver);
     Task<FileOrganizationResult> MoveFileAsync(string sourceFilePath, string destinationFolderPath, CancellationToken cancellationToken = default);
@@ -59,6 +64,7 @@ public interface IFileOrganizationService
     Task<FileOrganizationResult> RenameFolderAsync(string sourceFolderPath, string newName, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> MoveFolderAsync(string sourceFolderPath, string destinationParentPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationResult> SendToRecycleBinAsync(string path, bool isDirectory, bool confirmNonEmptyDirectory = false, CancellationToken cancellationToken = default);
+    Task<FileOrganizationBatchResult> SendFilesToRecycleBinAsync(IReadOnlyList<string> sourceFilePaths, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> MoveFilesAsync(IReadOnlyList<string> sourceFilePaths, string destinationFolderPath, CancellationToken cancellationToken = default);
     Task<FileOrganizationHistoryPreview?> GetHistoryPreviewAsync(FileOrganizationHistoryDirection direction, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> UndoAsync(CancellationToken cancellationToken = default);

@@ -124,6 +124,40 @@ public sealed partial class WinUiGalleryIsland
         return element is SelectorItem item && _tiles.TryGetValue(item, out var tile) ? tile.File : null;
     }
 
+    public bool HandleNavigationShortcut(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers)
+    {
+        if (!_active || _grid is null || modifiers.HasFlag(System.Windows.Input.ModifierKeys.Alt)) return false;
+        if (key is not (System.Windows.Input.Key.Left or System.Windows.Input.Key.Right or System.Windows.Input.Key.Up or
+            System.Windows.Input.Key.Down or System.Windows.Input.Key.Home or System.Windows.Input.Key.End or
+            System.Windows.Input.Key.PageUp or System.Windows.Input.Key.PageDown or System.Windows.Input.Key.Space)) return false;
+        var focus = GalleryGetFocus();
+        if (focus == Handle || GalleryIsChild(Handle, focus)) return false; // Retain native GridView modifier/navigation semantics.
+        if (_files.Count == 0) return true;
+        var index = Math.Max(0, _files.ToList().FindIndex(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, _selection.FocusedPath)));
+        var columns = Math.Max(1, (int)Math.Floor(Math.Max(0, _grid.ActualWidth - _treeInset - 4) / (_tileWidth + 2)));
+        var page = columns * Math.Max(1, (int)Math.Floor(_grid.ActualHeight / (_tileHeight + 2)));
+        var target = key switch
+        {
+            System.Windows.Input.Key.Left => index - 1, System.Windows.Input.Key.Right => index + 1,
+            System.Windows.Input.Key.Up => index - columns, System.Windows.Input.Key.Down => index + columns,
+            System.Windows.Input.Key.PageUp => index - page, System.Windows.Input.Key.PageDown => index + page,
+            System.Windows.Input.Key.Home => 0, System.Windows.Input.Key.End => _files.Count - 1, _ => index
+        };
+        var file = _files[Math.Clamp(target, 0, _files.Count - 1)];
+        var control = modifiers.HasFlag(System.Windows.Input.ModifierKeys.Control);
+        var shift = modifiers.HasFlag(System.Windows.Input.ModifierKeys.Shift);
+        if (control && !shift && key != System.Windows.Input.Key.Space) _selection.Focus(_files, file);
+        else _selection.Select(_files, file, toggle: control, range: shift);
+        RevealCurrentFile(file, preserveSelection: true);
+        return true;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetFocus")]
+    private static extern nint GalleryGetFocus();
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "IsChild")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GalleryIsChild(nint parent, nint child);
+
     private bool HandleSelectionKey(VirtualKey key, bool control)
     {
         if (!_active) return false;
@@ -135,6 +169,10 @@ public sealed partial class WinUiGalleryIsland
             if (target is not null) RequestOpen(target);
             return true;
         }
+        if (key == VirtualKey.F2) { Forward(() => RenameRequested?.Invoke()); return true; }
+        if (key == VirtualKey.Delete && !control) { Forward(() => DeleteRequested?.Invoke()); return true; }
+        if (key == VirtualKey.Z && control) { Forward(() => UndoRequested?.Invoke()); return true; }
+        if (key == VirtualKey.Y && control) { Forward(() => RedoRequested?.Invoke()); return true; }
         if (key == VirtualKey.F5) { Forward(() => RefreshRequested?.Invoke()); return true; }
         return false; // Keep native arrows, Home/End, PageUp/Down, Space and modifier behavior.
     }
@@ -167,6 +205,12 @@ public sealed partial class WinUiGalleryIsland
         var open = new MenuFlyoutItem { Text = "Open in Browse", IsEnabled = target is not null };
         open.Click += (_, _) => { if (Valid() && target is not null) RequestOpen(target); };
         menu.Items.Add(open);
+        var recycle = new MenuFlyoutItem { Text = "Send selected files to Recycle Bin", IsEnabled = _selection.Count > 0 };
+        recycle.Click += (_, _) => { if (Valid()) Forward(() => { if (Valid()) DeleteRequested?.Invoke(); }); };
+        menu.Items.Add(recycle);
+        var rename = new MenuFlyoutItem { Text = "Rename", IsEnabled = _selection.Count == 1 };
+        rename.Click += (_, _) => { if (Valid()) Forward(() => { if (Valid()) RenameRequested?.Invoke(); }); };
+        menu.Items.Add(rename);
         menu.Items.Add(new MenuFlyoutSeparator());
         var all = new MenuFlyoutItem { Text = "Select all", IsEnabled = _files.Count > 0 };
         var clear = new MenuFlyoutItem { Text = "Clear selection", IsEnabled = _selection.Count > 0 };

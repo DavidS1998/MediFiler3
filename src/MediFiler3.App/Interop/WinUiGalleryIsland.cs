@@ -67,6 +67,10 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     public int RealizedCount => _tiles.Count;
     public event Action<FileEntry>? FileSelected;
     public event Action<FileEntry>? OpenRequested;
+    public event Action? RenameRequested;
+    public event Action? DeleteRequested;
+    public event Action? UndoRequested;
+    public event Action? RedoRequested;
     public event Action? RefreshRequested;
 
     private sealed record Tile(FileEntry File, Grid Root, Image Image, TextBlock Placeholder, CancellationTokenSource Stop);

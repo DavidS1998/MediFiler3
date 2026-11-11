@@ -1,5 +1,40 @@
 # Project status
 
+## Incremental operation reconciliation (2026-11-11)
+
+Move Undo/Redo now updates both source and destination direct-file counts before completing in Gallery and Browse. File-only history reconciles the active listing without rebuilding roots. Folder commands/history and explicit refresh merge scanned roots/children into retained collections: unchanged nodes keep identity and expansion, renamed/replaced subtrees inherit mapped expansion, and removed active folders fall back to a surviving ancestor. Refresh still updates history availability even when the active root object is retained. No root visit is counted.
+
+Created/deleted/renamed watcher hints carry structural-path metadata. Changed/content hints dominate structural hints for the same path; overflow/recovery remain strong. A bounded 512-path/30-second record of verified same-volume file moves can retain an existing source preview through delayed move/Undo echoes, after checking file identity/size/timestamp (or verified absence) through Infrastructure. Unknown/new destinations, overwrite destinations, changed identities, changed metadata, strong content hints and expired records retain normal invalidation. Strong invalidation also retires echo records. No cache keys, persistence schema, thumbnail crop or default-source policy changes.
+
+Window shortcut commands are dispatched after native message processing with page/mode/root/folder/file/selection checks; modal input remains separate. An initial full native run stopped after the native-island F11 check: Windows logged Microsoft.UI.Xaml.dll `0xc000027b` (WER report `a6f5529d-57b1-4dc6-ad96-77d08cc3b42a`). Details are preserved in `%TEMP%\MediFiler3TreeFeedback-WER.txt`; log `%TEMP%\MediFiler3TreeFeedback.log`. Deferred dispatch addresses an identified lifetime risk, but the crash cause is not proven and native stability remains a verification limit. A subsequent history-availability timeout exposed a missing retained-root refresh notification and was fixed. Final working-tree verification: solution build zero warnings/errors; **325 unit/filesystem tests and 188 full native checks passed, zero failures/skips**; `git diff --check` passes. Final native evidence: `%TEMP%\MediFiler3Integration-c675e34e21194533b39e6cda12a7aa7e`, log `%TEMP%\MediFiler3TreeFeedback-complete.log`. Temporary output preserves the running app.
+
+Regressions cover immediate counters in both views, retained roots/children/collapse state through file history and folder rename/delete/restore, delayed restored/unaffected thumbnail object identity, structural/content hint precedence, and rejection of a replacement file with identical metadata. Existing uncommitted work and all operation/backup/freshness safeguards remain; no commit/push performed.
+
+
+## Phase 5.4 feedback update (2026-11-11)
+
+View shortcuts now share window-level WPF/native message routing, independent of tree/toolbar/viewer focus, while owned modal dialogs retain their own input. Gallery Ctrl+A/Escape/Enter and command shortcuts route to Gallery; native grid modifier navigation remains native, with navigation from other focused controls directed to Gallery. Browse navigation/media/text/image/external-open shortcuts use its active viewer policy regardless of control focus.
+
+Gallery single-file rename is available via F2, toolbar and context menu only when exactly one file is selected (the selected file is the target even if focus/current differs). Extension preservation, post-dialog context checks and collision safety remain. Bulk rename is not planned. Single-file recycle bypasses confirmation; multiple selected files require confirmation. This supersedes earlier rename-disabled/always-confirm-recycle statements below.
+
+Ordinary directory Changed hints now request metadata reconciliation instead of invalidating all descendant thumbnails. Exact file hints, F5, overflow/recovery and degraded-coverage safety retain freshness invalidation. Actual native tests preserve the same decoded preview through cancelled/submitted Browse rename dialogs and Gallery moves plus real watcher reconciliation; the test resolves native containers using retained source records, not equal replacement session records.
+
+Verification: clean solution build (zero warnings/errors), **322 unit/filesystem tests and 187 full native checks passed, zero failures/skips**; focused Gallery resume 10/10 passed. Full native evidence: `%TEMP%\MediFiler3Integration-b97188613bdd4df5b8b55c9f3dcd4373`; log `%TEMP%\MediFiler3Feedback-final.log`. Initial new-test failures were corrected in test container lookup and child-directory watcher setup. Physical input/Narrator/DPI/appearance/performance acceptance remains open. Work remains uncommitted; running app output was preserved.
+
+
+## Phase 5.4 implementation update (2026-11-11)
+
+This update supersedes the earlier 5.4-pending and uncommitted-baseline descriptions below. Work began from clean commit `f32617e` (`Better thumbnail generation`); Phase 5.4 changes are uncommitted. No commit/push was requested or performed.
+
+Gallery now moves the naturally ordered selected-file snapshot through tree-right-click using `MoveFilesAsync`, and recycles selected files through one confirmed, journal-backed `SendFilesToRecycleBinAsync` batch. Toolbar/context-menu/Delete recycling and native Ctrl+Z/Ctrl+Y/root-scoped toolbar history are wired. Gallery rename remains disabled; bulk rename is not planned. Existing Browse and folder-menu behavior remains.
+
+Commands capture root/folder/mode/revision and current file records, reject stale confirmations/collision choices, defer watcher reconciliation, release media and validate before publishing refreshed listings. Surviving selection is retained; removed paths are pruned without automatically selecting restored files. File history uses listing reconciliation where possible to retain the Gallery and previews.
+
+Batch results include accumulated per-item outcomes, `UnattemptedCount` and `WasCancelled`. Ordinary item failures continue; collision cancellation, token cancellation and recovery-required uncertainty stop remaining work. Completed members remain one Undo/Redo group. Started mutations finish verification/durable journal events before cancellation takes effect between items. Windows recycle cancellation is classified without permanent-delete fallback. Existing identity checks, root scopes, preserving collisions/backups, compensation and cleanup ownership remain.
+
+New regressions cover partial moves/cancellation, pre-cancelled batches, restart grouping, actual Windows grouped recycle/restore/redo, partial missing-item restore/retry, Gallery partial move/history, stale/cancelled confirmations and grouped recycle/history. Initial new native test setup failures were corrected (test placement and waiting for asynchronous folder discovery); production assertions were retained. Final verification on the completed working tree: solution build zero warnings/errors; **321 unit/filesystem tests and 184 full native checks passed, zero failures/skips**. Native evidence: `%TEMP%\MediFiler3Integration-4eaf6de6d2f54a4aab7c46f28ab3c252`; full log: `%TEMP%\MediFiler3Phase54-verified.log`. Build used temporary `MediFiler3ContinuationBuild` output to preserve the running app. `git diff --check` passes. Physical thumbnail/input/DPI/environment limits and Phase 5.5 acceptance remain open; thumbnail policy/crop/cache/native lifetime behavior is unchanged.
+
+
 Updated 2026-11-11 for continuation. **This handover changes documentation only.** Current implementation includes Phase 5.1-5.3 and subsequent Gallery/thumbnail refinements; Phase 5.4 is not implemented. Read [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for the code map and detailed caveats. The previous running status log is preserved in [PROJECT_STATUS_HISTORY.md](PROJECT_STATUS_HISTORY.md); its superseded experiments and next-step instructions are historical.
 
 ## Current implementation

@@ -51,6 +51,7 @@ public partial class BrowseView
     {
         if (_navigationState.ViewingMode == mode) return;
         _historyCancellation?.Cancel();
+        _galleryCommandCancellation?.Cancel();
         _navigationController.SwitchViewingMode(mode);
         if (mode == ViewingMode.Gallery && _navigationState.CurrentFile is { } current)
             _navigationState.GallerySelection.Select(_navigationState.Files, current);
@@ -87,6 +88,10 @@ public partial class BrowseView
                 _navigationState.SetCurrentFile(file);
                 BrowseRequested?.Invoke();
             };
+            _gallery.RenameRequested += async () => await PromptRenameCurrentFileAsync();
+            _gallery.DeleteRequested += async () => await SendCurrentFileToRecycleBinAsync();
+            _gallery.UndoRequested += async () => await UndoLastOperationAsync();
+            _gallery.RedoRequested += async () => await RedoLastOperationAsync();
             _gallery.RefreshRequested += () => RefreshRequested?.Invoke();
             _gallery.SetTileSize(_galleryWidth, _galleryHeight);
             _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);

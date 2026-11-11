@@ -87,13 +87,23 @@ public partial class BrowseView
         var position = Math.Max(0, _navigationState.CurrentFilePosition - 1);
         var roots = _navigationState.Roots.ToArray();
         var reconcileRoots = batch.ReconcileRoots ?? [];
+        var contentPaths = new List<string>();
+        foreach (var path in batch.Paths)
+        {
+            if (batch.RescanRoots.Count == 0 && batch.StructuralPaths?.Contains(path, StringComparer.OrdinalIgnoreCase) == true &&
+                _knownFileMoves.TryGetValue(path, out var known) && known.Expires >= DateTimeOffset.UtcNow &&
+                await _fileOrganizationService.MatchesFileVersionAsync(path, known.Identity, known.Size, known.ModifiedUtc, token)) continue;
+            _knownFileMoves.Remove(path);
+            contentPaths.Add(path);
+        }
+        var invalidatedPaths = contentPaths.ToArray();
         if (_thumbnailService is IThumbnailCacheMaintenance cache)
         {
             foreach (var path in batch.RescanRoots) await cache.InvalidateAsync(path, true, token);
-            foreach (var path in batch.Paths) await cache.InvalidateAsync(path, true, token);
+            foreach (var path in invalidatedPaths) await cache.InvalidateAsync(path, true, token);
         }
         if (!Current()) return false;
-        _gallery?.InvalidateThumbnails(batch.Paths.Concat(batch.RescanRoots));
+        _gallery?.InvalidateThumbnails(invalidatedPaths.Concat(batch.RescanRoots));
         if (batch.Status is not null) StatusChanged?.Invoke(batch.Status);
 
         if (batch.HierarchyChanged || batch.RescanRoots.Count > 0 || reconcileRoots.Count > 0)
@@ -158,7 +168,7 @@ public partial class BrowseView
         }
         var replacement = listing.Files.FirstOrDefault(f => selected is not null && PathsEqual(f.FullPath, selected.FullPath));
         var selectedChanged = selected is null && listing.Files.Count > 0 || selected != replacement || selected is not null &&
-            (batch.RescanRoots.Any(root => IsPathWithin(selected.FullPath, root)) || batch.Paths.Any(p => PathsEqual(p, selected.FullPath)));
+            (batch.RescanRoots.Any(root => IsPathWithin(selected.FullPath, root)) || invalidatedPaths.Any(p => PathsEqual(p, selected.FullPath)));
         var thumbnailsChanged = batch.Paths.Any(p => PathsEqual(Path.GetDirectoryName(p) ?? "", folder.Path));
         if (listing.Files.SequenceEqual(_navigationState.Files) && !selectedChanged && !thumbnailsChanged) return true;
         // Keep the selected record for unaffected media/text/image presentation.
@@ -172,7 +182,7 @@ public partial class BrowseView
         foreach (var item in CarouselItems.OfType<CarouselThumbnailItem>())
         {
             if (!batch.RescanRoots.Any(root => IsPathWithin(item.File.FullPath, root)) &&
-                !batch.Paths.Any(path => IsPathWithin(item.File.FullPath, path))) continue;
+                !invalidatedPaths.Any(path => IsPathWithin(item.File.FullPath, path))) continue;
             item.ThumbnailCancellation?.Cancel();
             item.Thumbnail = null; item.UncroppedThumbnail = null; item.ThumbnailTask = null;
         }

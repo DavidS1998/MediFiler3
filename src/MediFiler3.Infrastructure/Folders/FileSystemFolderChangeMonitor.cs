@@ -21,14 +21,14 @@ public sealed class FileSystemFolderChangeMonitor : IFolderChangeMonitor
     {
         var states = ReduceRoots(roots).Select(p => new WatchState(p)).ToArray();
         var buffer = new FolderChangeBuffer(states.Select(s => s.Path).ToArray());
-        void Queue(string path, WatchState state, bool tree, bool overflow = false)
+        void Queue(string path, WatchState state, bool tree, bool overflow = false, bool structural = false)
         {
             if (token.IsCancellationRequested) return;
             // Reconciliation retains hierarchy reparse/hidden-backup exclusions.
             var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediFiler3");
             if (Within(path, Path.Combine(appData, "ThumbnailCache")) || Within(path, Path.Combine(appData, "UndoBackups"))) return;
             buffer.Add(path, tree, DateTimeOffset.UtcNow, overflow,
-                overflow ? "Filesystem notifications interrupted; rescanning loaded folders." : null);
+                overflow ? "Filesystem notifications interrupted; rescanning loaded folders." : null, structural);
         }
         try
         {
@@ -55,10 +55,16 @@ public sealed class FileSystemFolderChangeMonitor : IFolderChangeMonitor
                             NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.Attributes
                         };
                         state.Watcher = watcher;
-                        watcher.Changed += (_, e) => Queue(e.FullPath, state, false);
-                        watcher.Created += (_, e) => Queue(e.FullPath, state, true);
-                        watcher.Deleted += (_, e) => Queue(e.FullPath, state, true);
-                        watcher.Renamed += (_, e) => { Queue(e.OldFullPath, state, true); Queue(e.FullPath, state, true); };
+                        watcher.Changed += (_, e) =>
+                        {
+                            // Directory timestamp/attribute hints do not imply changed pixels in every descendant.
+                            // Exact file hints and overflow/recovery retain strong freshness invalidation.
+                            if (Directory.Exists(e.FullPath)) buffer.ReconcileRoot(state.Path, DateTimeOffset.UtcNow);
+                            else Queue(e.FullPath, state, false);
+                        };
+                        watcher.Created += (_, e) => Queue(e.FullPath, state, true, structural: true);
+                        watcher.Deleted += (_, e) => Queue(e.FullPath, state, true, structural: true);
+                        watcher.Renamed += (_, e) => { Queue(e.OldFullPath, state, true, structural: true); Queue(e.FullPath, state, true, structural: true); };
                         watcher.Error += (_, _) => { state.RetryAt = DateTimeOffset.MinValue; state.Failed = true; Queue(state.Path, state, true, true); };
                         watcher.EnableRaisingEvents = true;
                         var recovering = state.Failed || state.HasConnected;

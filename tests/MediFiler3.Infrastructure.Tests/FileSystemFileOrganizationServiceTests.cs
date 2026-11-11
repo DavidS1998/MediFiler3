@@ -377,6 +377,138 @@ public sealed class FileSystemFileOrganizationServiceTests
         Assert.True(File.Exists(Path.Combine(source, "inside.txt")));
     }
 
+    [Fact]
+    public async Task CancelledBatchRetainsCompletedMoveAndReportsEveryRemainingItem()
+    {
+        using var db = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(db);
+        var target = Directory.CreateDirectory(Path.Combine(workspace.Root, "target")).FullName;
+        var paths = new[] { "first.txt", "collision.txt", "last.txt" }.Select(name => Path.Combine(workspace.Root, name)).ToArray();
+        foreach (var path in paths) File.WriteAllText(path, "source");
+        File.WriteAllText(Path.Combine(target, "collision.txt"), "blocker");
+        using var cancel = new CancellationTokenSource();
+        var service = workspace.Service.WithCollisionResolver(new BatchCollisionResolver(() =>
+        { cancel.Cancel(); return new(FileCollisionChoice.Cancel); }));
+        var result = await service.MoveFilesAsync(paths, target, cancel.Token);
+        Assert.Equal(1, result.SucceededCount);
+        Assert.Equal(FileOrganizationOutcome.Cancelled, result.Results[1].Outcome);
+        Assert.Equal(1, result.UnattemptedCount);
+        Assert.True(File.Exists(paths[1])); Assert.True(File.Exists(paths[2]));
+        Assert.Equal("blocker", File.ReadAllText(Path.Combine(target, "collision.txt")));
+        Assert.True((await workspace.Service.UndoAsync()).Succeeded);
+        Assert.True(File.Exists(paths[0]));
+        Assert.True((await workspace.Service.RedoAsync()).Succeeded);
+    }
+
+    [Fact]
+    public async Task PreCancelledMoveAndRecycleReportUnattemptedWithoutMutations()
+    {
+        using var db = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(db);
+        var source = Path.Combine(workspace.Root, "keep.txt"); File.WriteAllText(source, "keep");
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        var move = await workspace.Service.MoveFilesAsync([source], workspace.Root, cancel.Token);
+        var recycle = await workspace.Service.SendFilesToRecycleBinAsync([source], cancel.Token);
+        Assert.Equal(1, move.UnattemptedCount); Assert.Equal(1, recycle.UnattemptedCount);
+        Assert.Empty(move.Results); Assert.Empty(recycle.Results);
+        Assert.True(File.Exists(source)); Assert.Null(await db.Journal.GetNextUndoAsync());
+    }
+
+    [Fact]
+    public async Task BatchContinuesAfterMissingSourceAndKeepsOneUndoGroupAcrossReopen()
+    {
+        using var db = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(db);
+        var target = Directory.CreateDirectory(Path.Combine(workspace.Root, "target")).FullName;
+        var a = Path.Combine(workspace.Root, "a.txt"); var b = Path.Combine(workspace.Root, "b.txt");
+        File.WriteAllText(a, "a"); File.WriteAllText(b, "b");
+        var result = await workspace.Service.MoveFilesAsync([a, Path.Combine(workspace.Root, "missing.txt"), b], target);
+        Assert.Equal(2, result.SucceededCount); Assert.False(result.Succeeded); Assert.Equal(0, result.UnattemptedCount);
+        var reopened = new FileSystemFileOrganizationService(new SqliteFileOperationJournal(new SqliteDatabase(db.DatabasePath)), new WindowsFileIdentityProvider());
+        var undo = await reopened.UndoAsync(); Assert.Equal(result.BatchId, undo.BatchId); Assert.Equal(2, undo.SucceededCount);
+        Assert.True(File.Exists(a)); Assert.True(File.Exists(b));
+    }
+
+    [Fact]
+    public async Task GroupedRecycleIsJournaledAndRestoresAsOneGroupAcrossReopen()
+    {
+        using var db = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(db);
+        var identities = new WindowsFileIdentityProvider();
+        var service = new FileSystemFileOrganizationService(db.Journal, identities, new WindowsRecycleBinRestoreService(identities));
+        var a = Path.Combine(workspace.Root, "recycle-a.txt"); var b = Path.Combine(workspace.Root, "recycle-b.txt");
+        File.WriteAllText(a, "a"); File.WriteAllText(b, "b");
+        var result = await service.SendFilesToRecycleBinAsync([a, b]);
+        Assert.True(result.Succeeded, result.Message); Assert.False(File.Exists(a)); Assert.False(File.Exists(b));
+        Assert.All(await db.Journal.GetBatchAsync(result.BatchId!.Value), item => Assert.Equal(FileOperationEventKind.Completed, item.State));
+        var reopened = new FileSystemFileOrganizationService(new SqliteFileOperationJournal(new SqliteDatabase(db.DatabasePath)), identities, new WindowsRecycleBinRestoreService(identities));
+        var undo = await reopened.UndoAsync(); Assert.True(undo.Succeeded, undo.Message); Assert.Equal(2, undo.SucceededCount);
+        Assert.Equal("a", File.ReadAllText(a)); Assert.Equal("b", File.ReadAllText(b));
+        var redo = await reopened.RedoAsync(); Assert.True(redo.Succeeded, redo.Message);
+        Assert.True((await reopened.UndoAsync()).Succeeded);
+    }
+
+    [Fact]
+    public async Task PartialGroupedRestoreRetainsFailedMemberForRetryAfterReopen()
+    {
+        using var db = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(db);
+        var identities = new WindowsFileIdentityProvider();
+        var batch = Guid.NewGuid();
+        var originals = new[] { "a.txt", "b.txt" }.Select(name => Path.Combine(workspace.Root, name)).ToArray();
+        var staged = originals.Select(path => path + ".staged").ToArray();
+        for (var i = 0; i < originals.Length; i++)
+        {
+            File.WriteAllText(staged[i], $"version {i}");
+            var operation = new FileOperationRecord(Guid.NewGuid(), batch, FileOperationKind.SendToRecycleBin,
+                originals[i], null, DateTimeOffset.UtcNow, 1,
+                JsonSerializer.Serialize(new RecycleBinPayload(OriginalItemId: identities.GetIdentity(staged[i]).Identity, IsDirectory: false)));
+            await db.Journal.AppendPreparedAsync(operation);
+            await db.Journal.AppendEventAsync(operation.Id, FileOperationEventKind.Completed);
+        }
+        var restore = new PartialBatchRestore(originals, staged);
+        var service = new FileSystemFileOrganizationService(db.Journal, identities, restore);
+        var first = await service.UndoAsync();
+        Assert.Equal(1, first.SucceededCount); Assert.False(first.Succeeded);
+        Assert.False(File.Exists(originals[0])); Assert.True(File.Exists(originals[1]));
+        restore.AllowFirst = true;
+        var reopened = new FileSystemFileOrganizationService(new SqliteFileOperationJournal(new SqliteDatabase(db.DatabasePath)), identities, restore);
+        var retry = await reopened.UndoAsync();
+        Assert.Equal(batch, retry.BatchId); Assert.Single(retry.Results); Assert.True(retry.Succeeded, retry.Message);
+        Assert.All(originals, path => Assert.True(File.Exists(path)));
+    }
+
+    private sealed class PartialBatchRestore(string[] originals, string[] staged) : IRecycleBinRestoreService
+    {
+        public bool AllowFirst;
+        public Task<RecycleBinRestoreResult> RestoreAsync(string originalPath, string itemIdentity, bool isDirectory, CancellationToken cancellationToken = default)
+        {
+            var index = Array.IndexOf(originals, originalPath);
+            if (index == 0 && !AllowFirst) return Task.FromResult(new RecycleBinRestoreResult(RecycleBinRestoreOutcome.NotFound, "Missing item retained in history."));
+            File.Move(staged[index], originalPath);
+            return Task.FromResult(new RecycleBinRestoreResult(RecycleBinRestoreOutcome.Restored, "Restored fixture."));
+        }
+    }
+
+    private sealed class BatchCollisionResolver(Func<FileCollisionResolution> resolve) : IFileCollisionResolver
+    {
+        public Task<FileCollisionResolution> ResolveAsync(FileCollision collision, CancellationToken cancellationToken = default) => Task.FromResult(resolve());
+    }
+
+    [Fact]
+    public async Task StructuralEchoVersionCheckRejectsReplacementWithIdenticalMetadata()
+    {
+        using var db = new TemporaryDatabase(); using var workspace = new TemporaryWorkspace(db);
+        var path = Path.Combine(workspace.Root, "version.txt"); File.WriteAllText(path, "old");
+        var identity = new WindowsFileIdentityProvider().GetIdentity(path).Identity!;
+        var modified = File.GetLastWriteTimeUtc(path);
+        Assert.True(await workspace.Service.MatchesFileVersionAsync(path, identity, 3, modified));
+        File.Move(path, path + ".saved");
+        Assert.True(await workspace.Service.MatchesFileVersionAsync(path, identity, 3, modified));
+        File.WriteAllText(path, "new"); File.SetLastWriteTimeUtc(path, modified);
+        Assert.False(await workspace.Service.MatchesFileVersionAsync(path, identity, 3, modified));
+    }
+
     private sealed class TemporaryWorkspace : IDisposable
     {
         public TemporaryWorkspace(TemporaryDatabase database)

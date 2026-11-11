@@ -22,7 +22,7 @@ internal static partial class Program
         var database = new SqliteDatabase(Path.Combine(Root, "scoped-journal.db"));
         var journal = new SqliteFileOperationJournal(database);
         var backupStore = new FileSystemOperationBackupStore(journal, new WindowsFileIdentityProvider(), Path.Combine(Root, "app-managed", "UndoBackups"));
-        var operations = new FileSystemFileOrganizationService(journal, new WindowsFileIdentityProvider(), backupStore: backupStore);
+        var operations = new FileSystemFileOrganizationService(journal, new WindowsFileIdentityProvider(), new WindowsRecycleBinRestoreService(new WindowsFileIdentityProvider()), backupStore: backupStore);
         var availability = new FileSystemRootFolderAvailabilityService();
         var store = new SqliteApplicationStateStore(database);
         var settings = new ApplicationSettingsService(store);
@@ -283,6 +283,7 @@ internal static partial class Program
                     finally { timer.Stop(); settingsView.ClearBackupsRequested = callback; }
                 });
             await RunContentDialogChecksAsync(toolbar, window);
+            await RunGalleryMutationChecksAsync(window, state, browse, toolbar);
         }
         finally { window.Close(); await layout.FlushAsync(); }
     }
@@ -296,7 +297,10 @@ internal static partial class Program
         public bool ResolvedOnDispatcher;
         public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK")
         { InitialName = initialValue; return Task.FromResult<string?>(Name); }
-        public Task<bool> ConfirmAsync(string title, string message, string confirmAction) => Task.FromResult(false);
+        public bool ConfirmResult;
+        public Action? OnConfirm;
+        public Task<bool> ConfirmAsync(string title, string message, string confirmAction)
+        { OnConfirm?.Invoke(); return Task.FromResult(ConfirmResult); }
         public Task<MediFiler3.Application.Operations.FileCollisionResolution> ResolveCollisionAsync(MediFiler3.Application.Operations.FileCollision collision)
         { Collision = collision; ResolvedOnDispatcher = dispatcher.CheckAccess(); return Task.FromResult(Resolution); }
     }

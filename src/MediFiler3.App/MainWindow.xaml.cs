@@ -188,6 +188,7 @@ public partial class MainWindow : Window
         _browseView.PresentationChanged += UpdateToolbarContext;
         _browseView.OperationHistoryChanged += () => _ = UpdateHistoryAvailabilityAsync();
         _navigationState.PropertyChanged += OnNavigationStateChanged;
+        _navigationState.GallerySelection.Changed += UpdateFileActionAvailability;
         ToolbarIsland.SetZoomLevel(_browseView.CurrentZoomLevel);
         _ = UpdateHistoryAvailabilityAsync();
         UpdateFileActionAvailability();
@@ -313,13 +314,13 @@ public partial class MainWindow : Window
         var token = _historyAvailabilityCancellation.Token;
         var root = _navigationState.ActiveRoot;
         ToolbarIsland.SetHistoryAvailability(false, false);
-        if (root is null || PageContent.Content != _browseView || _browseView.IsGallery) return;
+        if (root is null || PageContent.Content != _browseView) return;
         try
         {
             var operations = await _fileOrganizationService.ForRootAsync(root.Path, token);
             var undo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo, token);
             var redo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo, token);
-            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView || _browseView.IsGallery) return;
+            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView) return;
             ToolbarIsland.SetHistoryAvailability(undo is not null, redo is not null, undo, redo);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -333,7 +334,7 @@ public partial class MainWindow : Window
 
     private void UpdateFileActionAvailability()
     {
-        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && !_browseView.IsGallery && _navigationState.CurrentFile is not null);
+        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && (_browseView.IsGallery ? _navigationState.GallerySelection.Count > 0 : _navigationState.CurrentFile is not null), _browseView.IsGallery, !_browseView.IsGallery || _navigationState.GallerySelection.Count == 1);
         ToolbarIsland.SetRefreshEnabled(PageContent.Content == _browseView && _navigationState.Roots.Count > 0);
     }
 
@@ -342,48 +343,51 @@ public partial class MainWindow : Window
         if (PageContent.Content == _browseView) await _browseView.RefreshAsync();
     }
 
-    private async void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    private void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.F11 || IsFullscreen && e.Key == Key.Escape)
-        {
-            e.Handled = true;
-            if (!e.IsRepeat) ToggleFullscreen();
-            return;
-        }
-        if (PageContent.Content == _browseView && e.Key == Key.F5 && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            e.Handled = true;
-            await RefreshBrowseAsync();
-            return;
-        }
-        if (PageContent.Content != _browseView || _browseView.IsGallery || Keyboard.FocusedElement is TextBox or MenuItem)
-            return;
+        if (!e.Handled) e.Handled = TryHandleViewShortcut(e.Key, Keyboard.Modifiers, e.IsRepeat);
+    }
 
-        if (e.Key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control)
+    private bool TryHandleViewShortcut(Key key, ModifierKeys modifiers, bool repeat = false)
+    {
+        if (!IsEnabled || OwnedWindows.OfType<Window>().Any(window => window.IsVisible)) return false;
+        Func<Task>? action = null;
+        if (key == Key.F11 || IsFullscreen && key == Key.Escape)
+            action = () => { ToggleFullscreen(); return Task.CompletedTask; };
+        else if (PageContent.Content == _browseView)
         {
-            e.Handled = true;
-            await _browseView.UndoLastOperationAsync();
+            if (key == Key.F5 && modifiers == ModifierKeys.None) action = RefreshBrowseAsync;
+            else if (key == Key.Z && modifiers == ModifierKeys.Control) action = _browseView.UndoLastOperationAsync;
+            else if (key == Key.Y && modifiers == ModifierKeys.Control) action = _browseView.RedoLastOperationAsync;
+            else if (key == Key.F2 && modifiers == ModifierKeys.None) action = _browseView.PromptRenameCurrentFileAsync;
+            else if (key == Key.Delete && modifiers == ModifierKeys.None) action = _browseView.SendCurrentFileToRecycleBinAsync;
+            else if (key == Key.N && modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) action = _browseView.CreateSubfolderInActiveFolderAsync;
+            else return _browseView.HandleViewShortcut(key, modifiers);
         }
-        else if (e.Key == Key.Y && Keyboard.Modifiers == ModifierKeys.Control)
+        if (action is null) return false;
+        if (!repeat)
         {
-            e.Handled = true;
-            await _browseView.RedoLastOperationAsync();
+            var page = PageContent.Content; var mode = _navigationState.ViewingMode;
+            var root = _navigationState.ActiveRoot; var folder = _navigationState.ActiveFolder;
+            var current = _navigationState.CurrentFile;
+            var selected = _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!IsEnabled || OwnedWindows.OfType<Window>().Any(window => window.IsVisible)) return;
+                if (key != Key.F11 && !(IsFullscreen && key == Key.Escape) &&
+                    (page != PageContent.Content || mode != _navigationState.ViewingMode || !ReferenceEquals(root, _navigationState.ActiveRoot) ||
+                     !ReferenceEquals(folder, _navigationState.ActiveFolder) || !ReferenceEquals(current, _navigationState.CurrentFile) ||
+                     !selected.SequenceEqual(_navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files)))) return;
+                _ = RunViewShortcutAsync(action);
+            }));
         }
-        else if (e.Key == Key.F2)
-        {
-            e.Handled = true;
-            await _browseView.PromptRenameCurrentFileAsync();
-        }
-        else if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None)
-        {
-            e.Handled = true;
-            await _browseView.SendCurrentFileToRecycleBinAsync();
-        }
-        else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-        {
-            e.Handled = true;
-            await _browseView.CreateSubfolderInActiveFolderAsync();
-        }
+        return true;
+    }
+
+    private async Task RunViewShortcutAsync(Func<Task> action)
+    {
+        try { await action(); }
+        catch (Exception exception) { _logger.LogWarning(exception, "View shortcut failed."); }
     }
 
     private void UpdateToolbarContext()

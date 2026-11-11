@@ -7,6 +7,36 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class FolderChangeTests
 {
     [Fact]
+    public void ContentHintsDominateStructuralEchoesAndOverflowRemainsStrong()
+    {
+        var buffer = new FolderChangeBuffer(["root"]); var now = DateTimeOffset.UtcNow;
+        buffer.Add("root/moved.png", true, now, structural: true);
+        buffer.Add("root/edited.png", true, now, structural: true);
+        buffer.Add("root/edited.png", false, now);
+        buffer.Add("root/edited.png", true, now, structural: true);
+        var batch = buffer.Take(now.AddSeconds(1))!;
+        Assert.Equal(new[] { "root/moved.png" }, batch.StructuralPaths);
+        Assert.Contains("root/edited.png", batch.Paths);
+        buffer.Add("root/moved.png", true, now, structural: true);
+        buffer.Add("root", true, now, overflow: true);
+        var overflow = buffer.Take(now.AddSeconds(1))!;
+        Assert.Empty(overflow.StructuralPaths!); Assert.Equal(new[] { "root" }, overflow.RescanRoots);
+    }
+
+    [Fact]
+    public void RootReconciliationRetainsSurvivingNodesExpansionAndSelectionWithoutReset()
+    {
+        var state = new MediFiler3.Application.Navigation.NavigationSessionState();
+        var child = new FolderTreeEntry("child", "root/child");
+        var root = new FolderTreeEntry("root", "root", [child]) { IsExpanded = false };
+        state.ReplaceRoots([root]); state.SetActiveFolder(child);
+        var resets = 0;
+        state.Roots.CollectionChanged += (_, args) => { if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++; };
+        state.ReconcileRoots([new FolderTreeEntry("root", "root"), new FolderTreeEntry("second", "second")]);
+        Assert.Same(root, state.Roots[0]); Assert.Same(child, state.ActiveFolder); Assert.False(root.IsExpanded); Assert.Equal(0, resets);
+    }
+
+    [Fact]
     public void StartupReconciliationDoesNotHideConcurrentRealChangeHints()
     {
         var buffer = new FolderChangeBuffer(["root"]); var now = DateTimeOffset.UtcNow;
@@ -129,6 +159,38 @@ public sealed class FolderChangeTests
             var recovery = await recovered.Task.WaitAsync(stop.Token);
             Assert.Contains(root, recovery.RescanRoots);
             Assert.Empty(recovery.ReconcileRoots ?? []);
+        }
+        finally { stop.Cancel(); await task; if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task DirectoryTimestampHintReconcilesMetadataWhileFileHintsRetainFreshness()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "MediFiler3WatchDirectory-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var nested = Directory.CreateDirectory(Path.Combine(root, "nested")).FullName;
+        var file = Path.Combine(root, "keep.txt"); File.WriteAllText(file, "same bytes");
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var directoryHint = new TaskCompletionSource<FolderChangeBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fileHint = new TaskCompletionSource<FolderChangeBatch>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = false;
+        var task = new FileSystemFolderChangeMonitor().RunAsync([root], () => root, (batch, _) =>
+        {
+            if (!started) { started = true; ready.TrySetResult(); }
+            else if (batch.ReconcileRoots?.Contains(root) == true) directoryHint.TrySetResult(batch);
+            if (batch.Paths.Contains(file)) fileHint.TrySetResult(batch);
+            return Task.CompletedTask;
+        }, stop.Token);
+        try
+        {
+            await ready.Task.WaitAsync(stop.Token);
+            Directory.SetLastWriteTimeUtc(nested, DateTime.UtcNow.AddSeconds(-10));
+            var hint = await directoryHint.Task.WaitAsync(stop.Token);
+            Assert.DoesNotContain(root, hint.Paths); Assert.Empty(hint.RescanRoots);
+            var timestamp = File.GetLastWriteTimeUtc(file);
+            File.WriteAllText(file, "new! bytes"); File.SetLastWriteTimeUtc(file, timestamp);
+            Assert.Contains(file, (await fileHint.Task.WaitAsync(stop.Token)).Paths);
         }
         finally { stop.Cancel(); await task; if (Directory.Exists(root)) Directory.Delete(root, true); }
     }

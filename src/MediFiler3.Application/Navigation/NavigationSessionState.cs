@@ -76,6 +76,18 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    public void ReconcileRoots(IReadOnlyList<FolderTreeEntry> roots)
+    {
+        foreach (var old in Roots.Where(old => !roots.Any(root => StringComparer.OrdinalIgnoreCase.Equals(root.Path, old.Path))).ToArray()) Roots.Remove(old);
+        for (var i = 0; i < roots.Count; i++)
+        {
+            var existing = Roots.FirstOrDefault(root => StringComparer.OrdinalIgnoreCase.Equals(root.Path, roots[i].Path));
+            if (existing is null) Roots.Insert(i, roots[i]);
+            else if (Roots.IndexOf(existing) != i) Roots.Move(Roots.IndexOf(existing), i);
+        }
+        OnPropertyChanged(nameof(Roots));
+    }
+
     public void ReplaceRoots(IEnumerable<FolderTreeEntry> roots, bool preserveActiveContext = false)
     {
         if (!preserveActiveContext) GallerySelection.Clear();

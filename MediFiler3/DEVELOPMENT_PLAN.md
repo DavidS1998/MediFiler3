@@ -1,5 +1,9 @@
 # Development plan
 
+## Phase 5.4 implemented (2026-11-11)
+
+Gallery grouped moves, confirmed journal-backed grouped Recycle Bin commands and root-scoped Undo/Redo are implemented with explicit partial/cancelled/unattempted outcomes. See PROJECT_STATUS.md and PHASE5_HANDOVER.md for command scope and safeguards. Phase 5.5 physical/performance acceptance remains next. Bulk rename is not planned. Earlier 5.4-pending entries below are historical.
+
 ## Current continuation state (2026-11-11)
 
 Phase 5.1-5.3 and the subsequent Gallery UX/resume/thumbnail refinements are implemented. Current rendering uses Windows-default shared PNG sizes with no manual blur, solid pink outlines, square carousel frames and Alt-hover selection; native Ctrl/Shift behavior stays standard. Full/disjoint native source changes batch one Reset, while shared-path changes remain incremental. Slider display dimensions remain independently persisted at 100-400/50, with fixed 150-pixel control widths.

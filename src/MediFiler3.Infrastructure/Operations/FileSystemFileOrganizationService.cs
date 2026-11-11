@@ -18,6 +18,21 @@ public sealed partial class FileSystemFileOrganizationService(
     private const int PayloadVersion = 1;
     private readonly IFileOperationBackupStore _backups = backupStore ?? new FileSystemOperationBackupStore(journal, identities);
 
+    public Task<bool> MatchesFileVersionAsync(string path, string identity, long size, DateTime modifiedUtc, CancellationToken token = default) =>
+        Task.Run(() =>
+        {
+            try
+            {
+                var current = identities.GetIdentity(path);
+                if (!current.Exists) return current.Accessible;
+                if (!current.Accessible || current.Identity != identity) return false;
+                var info = new FileInfo(path);
+                return info.Exists && !info.Attributes.HasFlag(FileAttributes.ReparsePoint) && info.Length == size && info.LastWriteTimeUtc == modifiedUtc &&
+                    identities.GetIdentity(path).Identity == identity;
+            }
+            catch (Exception exception) when (IsFileSystemException(exception)) { return false; }
+        }, token);
+
     public async Task<IFileOrganizationService> ForRootAsync(string rootPath, CancellationToken cancellationToken = default)
     {
         var path = Path.GetFullPath(rootPath);
@@ -48,6 +63,7 @@ public sealed partial class FileSystemFileOrganizationService(
         var operation = CreateOperation(FileOperationKind.Move, source, destination,
             new PathOperationPayload(false, crossVolume, sourceIdentity), batchId);
         await journal.AppendPreparedAsync(operation, cancellationToken).ConfigureAwait(false);
+        cancellationToken = CancellationToken.None;
 
         if (!crossVolume)
         {
@@ -230,7 +246,7 @@ public sealed partial class FileSystemFileOrganizationService(
         string path,
         bool isDirectory,
         bool confirmNonEmptyDirectory = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Guid? batchId = null)
     {
         var source = Path.GetFullPath(path);
         if (isDirectory) EnsureFolder(source); else EnsureFile(source);
@@ -245,8 +261,9 @@ public sealed partial class FileSystemFileOrganizationService(
         var sourceIdentity = RequireIdentity(source);
         var operation = CreateOperation(FileOperationKind.SendToRecycleBin, source, null,
             new RecycleBinPayload(OriginalVolume: GetVolume(sourceIdentity), OriginalItemId: sourceIdentity,
-                IsDirectory: isDirectory));
+                IsDirectory: isDirectory), batchId);
         await journal.AppendPreparedAsync(operation, cancellationToken).ConfigureAwait(false);
+        cancellationToken = CancellationToken.None;
 
         try
         {
@@ -261,14 +278,16 @@ public sealed partial class FileSystemFileOrganizationService(
                     UICancelOption.ThrowException);
             }
         }
-        catch (Exception exception) when (IsFileSystemException(exception))
+        catch (Exception exception) when (IsFileSystemException(exception) || exception is OperationCanceledException)
         {
             var remaining = identities.GetIdentity(source);
             if (remaining is { Exists: true, Accessible: true, Identity: not null } && remaining.Identity == sourceIdentity)
             {
                 await AppendEventAsync(operation, FileOperationEventKind.Failed, exception.Message, cancellationToken)
                     .ConfigureAwait(false);
-                return Failure($"Could not send the item to the Recycle Bin: {exception.Message}", operation.Id);
+                return exception is OperationCanceledException
+                    ? new(FileOrganizationOutcome.Cancelled, "Recycle Bin request cancelled.", operation.Id)
+                    : Failure($"Could not send the item to the Recycle Bin: {exception.Message}", operation.Id);
             }
 
             await AppendEventAsync(operation, FileOperationEventKind.RecoveryRequired,
@@ -291,40 +310,45 @@ public sealed partial class FileSystemFileOrganizationService(
 
     public Task<FileOrganizationBatchResult> MoveFilesAsync(IReadOnlyList<string> sourceFilePaths,
         string destinationFolderPath, CancellationToken cancellationToken = default) =>
-        Task.Run(() => OperationMaintenanceGate.RunAsync(() => MoveFilesCoreAsync(sourceFilePaths,
-            destinationFolderPath, cancellationToken), cancellationToken), cancellationToken);
+        RunFileBatchAsync(sourceFilePaths, (path, batch, token) => ExecutePathRequestAsync(
+            new PathRequest(FileOperationKind.Move, false, path,
+                Path.Combine(Path.GetFullPath(destinationFolderPath), Path.GetFileName(path))), batch, token), cancellationToken);
 
-    private async Task<FileOrganizationBatchResult> MoveFilesCoreAsync(IReadOnlyList<string> sourceFilePaths,
-        string destinationFolderPath, CancellationToken cancellationToken = default)
+    public Task<FileOrganizationBatchResult> SendFilesToRecycleBinAsync(IReadOnlyList<string> sourceFilePaths,
+        CancellationToken cancellationToken = default) =>
+        RunFileBatchAsync(sourceFilePaths, (path, batch, token) =>
+            SendToRecycleBinCoreAsync(path, false, false, token, batch), cancellationToken);
+
+    private Task<FileOrganizationBatchResult> RunFileBatchAsync(IReadOnlyList<string> paths,
+        Func<string, Guid, CancellationToken, Task<FileOrganizationResult>> execute, CancellationToken token)
     {
-        if (sourceFilePaths.Count == 0) return new FileOrganizationBatchResult(null, []);
-        var batchId = Guid.NewGuid();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var results = new List<FileOrganizationResult>(sourceFilePaths.Count);
-        foreach (var sourcePath in sourceFilePaths)
+        var snapshot = paths.ToArray();
+        return Task.Run(() => OperationMaintenanceGate.RunAsync(async () =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var fullPath = Path.GetFullPath(sourcePath);
-            if (!seen.Add(fullPath))
+            if (snapshot.Length == 0) return new FileOrganizationBatchResult(null, []);
+            var batch = Guid.NewGuid();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var results = new List<FileOrganizationResult>();
+            foreach (var path in snapshot)
             {
-                results.Add(new FileOrganizationResult(FileOrganizationOutcome.Conflict,
-                    $"'{fullPath}' appears more than once in this move."));
-                continue;
+                if (token.IsCancellationRequested)
+                    return new FileOrganizationBatchResult(batch, results, snapshot.Length - results.Count, token.IsCancellationRequested || results.Any(item => item.Outcome == FileOrganizationOutcome.Cancelled));
+                try
+                {
+                    var fullPath = Path.GetFullPath(path);
+                    results.Add(!seen.Add(fullPath)
+                        ? new FileOrganizationResult(FileOrganizationOutcome.Conflict, $"'{fullPath}' appears more than once.")
+                        : await execute(fullPath, batch, token).ConfigureAwait(false));
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                { results.Add(new(FileOrganizationOutcome.Cancelled, "Operation cancelled.")); }
+                catch (Exception exception) when (IsFileSystemException(exception))
+                { results.Add(Failure($"Could not process '{path}': {exception.Message}")); }
+                if (results[^1].Outcome is FileOrganizationOutcome.Cancelled or FileOrganizationOutcome.RecoveryRequired)
+                    break;
             }
-
-            try
-            {
-                results.Add(await ExecutePathRequestAsync(new PathRequest(FileOperationKind.Move, false, fullPath, Path.Combine(Path.GetFullPath(destinationFolderPath), Path.GetFileName(fullPath))), batchId, cancellationToken)
-                    .ConfigureAwait(false));
-                if (results[^1].Outcome == FileOrganizationOutcome.Cancelled) break;
-            }
-            catch (Exception exception) when (IsFileSystemException(exception))
-            {
-                results.Add(Failure($"Could not move '{Path.GetFileName(fullPath)}': {exception.Message}"));
-            }
-        }
-
-        return new FileOrganizationBatchResult(batchId, results);
+            return new FileOrganizationBatchResult(batch, results, snapshot.Length - results.Count, token.IsCancellationRequested || results.Any(item => item.Outcome == FileOrganizationOutcome.Cancelled));
+        }, CancellationToken.None));
     }
 
     public Task<FileOrganizationBatchResult> UndoAsync(CancellationToken cancellationToken = default) =>
@@ -354,12 +378,12 @@ public sealed partial class FileSystemFileOrganizationService(
         var replacement = plan.Operations.Any(IsReplacementBackup);
         foreach (var entry in plan.Operations)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested) break;
             try
             {
-                var result = await ApplyCompensationAsync(entry, undo, cancellationToken).ConfigureAwait(false);
+                var result = await ApplyCompensationAsync(entry, undo, CancellationToken.None).ConfigureAwait(false);
                 results.Add(result);
-                if (result.Outcome == FileOrganizationOutcome.Cancelled || (replacement && !result.Succeeded)) break;
+                if (result.Outcome is FileOrganizationOutcome.Cancelled or FileOrganizationOutcome.RecoveryRequired || (replacement && !result.Succeeded)) break;
             }
             catch (Exception exception) when (IsFileSystemException(exception) || exception is JsonException)
             {
@@ -368,7 +392,7 @@ public sealed partial class FileSystemFileOrganizationService(
             }
         }
 
-        return new FileOrganizationBatchResult(plan.BatchId, results);
+        return new FileOrganizationBatchResult(plan.BatchId, results, plan.Operations.Count - results.Count, cancellationToken.IsCancellationRequested || results.Any(item => item.Outcome == FileOrganizationOutcome.Cancelled));
     }
 
     private async Task<HistoryPlan?> GetHistoryPlanAsync(bool undo, CancellationToken cancellationToken)
@@ -521,7 +545,7 @@ public sealed partial class FileSystemFileOrganizationService(
                 undo ? "Verified undo completed." : "Verified redo completed.",
                 VerifiedDestinationIdentity: resultingIdentity, ResolvedPath: target, DisplacedItem: resolution.Displaced)), CancellationToken.None).ConfigureAwait(false);
         return Success(undo ? "Operation undone and verified." : "Operation redone and verified.",
-            operation.Id, target) with { PreviousPath = current };
+            operation.Id, target) with { PreviousPath = current, VerifiedFileIdentity = payload.IsDirectory ? null : resultingIdentity };
     }
 
     private async Task<FileOrganizationResult> ApplyFolderCreationCompensationAsync(JournaledFileOperation entry,
@@ -722,14 +746,16 @@ public sealed partial class FileSystemFileOrganizationService(
             else
                 FileSystem.DeleteFile(originalPath, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin, UICancelOption.ThrowException);
         }
-        catch (Exception exception) when (IsFileSystemException(exception))
+        catch (Exception exception) when (IsFileSystemException(exception) || exception is OperationCanceledException)
         {
             var afterFailure = identities.GetIdentity(originalPath);
             if (afterFailure is { Exists: true, Accessible: true } && afterFailure.Identity == current.Identity)
             {
                 await AppendEventAsync(redoCompensation, FileOperationEventKind.Failed, exception.Message, cancellationToken)
                     .ConfigureAwait(false);
-                return Failure($"Could not redo the Recycle Bin operation: {exception.Message}", operation.Id);
+                return exception is OperationCanceledException
+                    ? new(FileOrganizationOutcome.Cancelled, "Recycle Bin redo cancelled.", operation.Id)
+                    : Failure($"Could not redo the Recycle Bin operation: {exception.Message}", operation.Id);
             }
 
             await AppendEventAsync(redoCompensation, FileOperationEventKind.RecoveryRequired,
@@ -879,7 +905,7 @@ public sealed partial class FileSystemFileOrganizationService(
             var payload = JsonSerializer.Deserialize<PathOperationPayload>(operation.PayloadJson ?? "{}");
             var itemName = payload?.IsDirectory == true ? "Folder" : "File";
             var action = operation.Kind == FileOperationKind.Rename ? "renamed" : "moved";
-            return Success($"{itemName} {action}.", operation.Id, destination);
+            return Success($"{itemName} {action}.", operation.Id, destination) with { PreviousPath = source, VerifiedFileIdentity = payload?.IsDirectory == false ? expectedIdentity : null };
         }
 
         await AppendEventAsync(operation, FileOperationEventKind.RecoveryRequired,

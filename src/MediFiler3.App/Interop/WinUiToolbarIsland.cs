@@ -53,6 +53,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private string _folderDetailsText = "No folder loaded";
     private double _zoomLevel = 1d;
     private bool _fileActionsEnabled;
+    private bool _galleryFileActions;
+    private bool _canRenameFile = true;
 
     private AppBarButton? _fullscreenButton;
     private bool _fullscreen;
@@ -116,11 +118,19 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         menu.ShowAt(_rootElement, new FlyoutShowOptions { Position = position, Placement = FlyoutPlacementMode.Bottom });
     }
 
-    public void SetFileActionsEnabled(bool enabled)
+    public void SetFileActionsEnabled(bool enabled, bool gallery = false, bool canRename = true)
     {
         _fileActionsEnabled = enabled;
-        if (_renameFileButton is not null) _renameFileButton.IsEnabled = enabled;
-        if (_deleteFileButton is not null) _deleteFileButton.IsEnabled = enabled;
+        _galleryFileActions = gallery;
+        _canRenameFile = canRename;
+        if (_renameFileButton is not null) _renameFileButton.IsEnabled = enabled && canRename;
+        if (_deleteFileButton is not null)
+        {
+            _deleteFileButton.IsEnabled = enabled;
+            var label = gallery ? "Send selected files to Recycle Bin" : "Send current file to Recycle Bin";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_deleteFileButton, label);
+            ToolTipService.SetToolTip(_deleteFileButton, label);
+        }
     }
 
     public void SetHistoryAvailability(bool canUndo, bool canRedo,
@@ -348,8 +358,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _undoButton = CreateButton(Symbol.Undo, "Undo last file operation", () => UndoRequested?.Invoke());
         _redoButton = CreateButton(Symbol.Redo, "Redo last file operation", () => RedoRequested?.Invoke());
         SetHistoryAvailability(_canUndo, _canRedo, _undoPreview, _redoPreview);
-        _renameFileButton.IsEnabled = _fileActionsEnabled;
-        _deleteFileButton.IsEnabled = _fileActionsEnabled;
+        _renameFileButton.IsEnabled = _fileActionsEnabled && _canRenameFile;
+        SetFileActionsEnabled(_fileActionsEnabled, _galleryFileActions, _canRenameFile);
         middle.PrimaryCommands.Add(CreateButton(Symbol.Add, "Add folders", () => LoadFoldersRequested?.Invoke()));
         _refreshButton = CreateButton(Symbol.Refresh, "Refresh folders (F5)",
             () => Dispatcher.BeginInvoke(new Action(() => RefreshRequested?.Invoke())));

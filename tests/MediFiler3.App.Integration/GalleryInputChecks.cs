@@ -103,11 +103,11 @@ internal static partial class Program
             selection.Select(state.Files, files[0]); selection.Select(state.Files, files[2], toggle: true);
             var menu = Menu(files[0]);
             Require(selection.Count == 2 && selection.FocusedPath == files[0].FullPath, "Right click discarded an existing multi-selection");
-            Require(((MenuFlyoutItem)menu.Items[0]).IsEnabled && menu.Items.Count == 4, "Context menu includes unimplemented mutations or lacks opening");
+            Require(((MenuFlyoutItem)menu.Items[0]).IsEnabled && menu.Items.Count == 6, "Context menu lacks selected-file recycling or opening");
             var blank = Menu(null);
             Require(!((MenuFlyoutItem)blank.Items[0]).IsEnabled, "Blank-space menu could open the shared Browse current file");
             navigation.SelectDestination("Settings");
-            Invoke((MenuFlyoutItem)menu.Items[3]); Invoke((MenuFlyoutItem)menu.Items[2]); Invoke((MenuFlyoutItem)menu.Items[0]);
+            Invoke((MenuFlyoutItem)menu.Items[5]); Invoke((MenuFlyoutItem)menu.Items[4]); Invoke((MenuFlyoutItem)menu.Items[0]);
             await Task.Delay(50);
             Require(selection.Count == 2 && !(bool)Field(browse, "_viewerActive")!, "Stale menu acted in a hidden workspace");
             navigation.SelectDestination("Gallery");
@@ -115,7 +115,7 @@ internal static partial class Program
             var changed = files[3] with { Size = files[3].Size + 1 };
             state.ReplaceFiles(files.Select(file => file == files[3] ? changed : file));
             await WaitUntil(() => Grid().Items.Contains(changed));
-            Invoke((MenuFlyoutItem)obsolete.Items[3]);
+            Invoke((MenuFlyoutItem)obsolete.Items[5]);
             Require(selection.Count == 2, "A stale context-menu command changed a refreshed selection");
             state.ReplaceFiles(files);
             await WaitUntil(() => !Grid().Items.Contains(changed));
@@ -125,14 +125,13 @@ internal static partial class Program
             await WaitUntil(() => !browse.IsGallery && ReferenceEquals(state.CurrentFile, files[4]));
             navigation.SelectDestination("Gallery");
         });
-        await Check("Gallery Enter opens the focused file and mutation guards retain their scope", async () =>
+        await Check("Gallery Enter opens the focused file and rename requires one selected file", async () =>
         {
             selection.Select(state.Files, files[0]); selection.Select(state.Files, files[2], toggle: true);
             selection.Focus(state.Files, files[6]);
-            await browse.PromptRenameCurrentFileAsync(); await browse.SendCurrentFileToRecycleBinAsync();
-            await browse.UndoLastOperationAsync(); await browse.RedoLastOperationAsync();
-            Require(!((AppBarButton)Field(toolbar, "_renameFileButton")!).IsEnabled && !((AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled,
-                "Gallery enabled single-current-file mutation buttons");
+            await browse.PromptRenameCurrentFileAsync();
+            Require(!((AppBarButton)Field(toolbar, "_renameFileButton")!).IsEnabled && ((AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled,
+                "Gallery rename/delete availability is incorrect");
             Require(state.Files.SequenceEqual(files) && Key(VirtualKey.Enter), "Mutation guards changed files or Enter was ignored");
             await WaitUntil(() => !browse.IsGallery && ReferenceEquals(state.CurrentFile, files[6]));
             Require(selection.Count == 0, "Enter retained Gallery command targets in Browse");
