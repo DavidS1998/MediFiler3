@@ -1,5 +1,34 @@
 # Project status
 
+## Click/drag separation and cropped preview fix (2026-11-11)
+
+Automatic `UIElement.CanDrag` on tile content intercepted ordinary GridView clicks. It is now intentionally false (as is CanDragItems). Pointer press records drag scope without handling/capturing the press; native GridView retains click/Ctrl/Shift selection. GalleryDragGesture starts only once after movement reaches the Windows horizontal/vertical drag threshold. Grid-level handled-events-too movement/release/cancellation handlers track the gesture even when the item owns pointer routing. Explicit StartDragAsync then raises the tile drag-start event for the existing custom preview/payload. Release without threshold movement never begins a drag. Stale/recycled source tiles are rejected.
+
+Starting a drag exits hover-to-fit; hover cannot reapply fit while dragging. Each preview layer is rendered after restoring the normal cropped tile and completing its layout, avoiding black hover-fit margins. Opacity (80%), top-left hotspot, bounded stack, selection snapshot, opaque token and safe grouped-move/history policies remain unchanged.
+
+Verification: solution build zero warnings/errors, **327 unit/filesystem tests and 191 full native checks passed, zero failures/skips**; `git diff --check` passes. Gesture regressions cover click/release, small movement, horizontal/vertical thresholds, cancellation and single start. Native preview checks use a wide green image in hover-fit state and assert cropped green pixels replace black margins; native click routing remains enabled. Evidence: `%TEMP%\MediFiler3Integration-9416204ceb6843248aafdd521974042c`; log `%TEMP%\MediFiler3DragClickFix-final.log`. Physical click/drag feel and mixed-DPI still require interactive review. Changes remain uncommitted; the running app output was preserved.
+
+
+## Translucent pointer-anchored drag preview (2026-11-11)
+
+Gallery drags now use each tile's native UIElement DragStarting/DropCompleted events so DragUI can set an explicit top-left hotspot `(0,0)`. This supersedes the CanDragItems source event description below. The same pre-selection origin snapshot, opaque token, safe tree targets and grouped move command remain unchanged.
+
+The preview is a compact stack with the originating tile on top and up to two additional currently realized selected tiles. RenderTargetBitmap captures only existing UI visuals, capped at 192px per tile with 8px stack offsets (208px maximum canvas dimension). All premultiplied BGRA channels, including alpha, are multiplied by 0.8 for 80% opacity. Original source tiles and thumbnail caches are unchanged. Large/offscreen selections retain their full operation snapshot without decoding or realizing extra items just for the preview.
+
+Asynchronous capture uses a drag deferral and gesture-version checks; cancellation/context changes discard late results and release preview resources. Capture failures retain the native default preview and existing move operation. Native tests check rendered alpha, source opacity, bounded dimensions and top-left anchor in addition to the earlier drag/drop scope and safety checks. Final verification: clean build (zero warnings/errors), **326 unit/filesystem tests and 191 full native checks passed, zero failures/skips**; `git diff --check` passes. Evidence: `%TEMP%\MediFiler3Integration-5a3ba52babc746b0b95e29c57b5d7bf8`; log `%TEMP%\MediFiler3DragPreview-final.log`. Physical pointer/hotspot feel and DPI/fullscreen appearance remain interactive acceptance. Changes remain uncommitted; the running app output was preserved.
+
+
+## Gallery-to-tree drag moves (2026-11-11)
+
+Internal drag-and-drop from Gallery onto loaded tree folders is implemented. A pointer press captures an immutable naturally ordered snapshot: an unselected origin drags only itself; a selected origin drags the whole selected set. Native GridView drag support supplies the drag operation; its package carries a per-gesture opaque text token rather than accepting filesystem paths from external data. Gallery status shows Moving N files, the tree is revealed throughout the gesture, valid folder headers highlight pink, and allowed targets advertise Move. Same-folder, blank, stale-token, stale-context and unknown-tree targets are rejected. Existing Explorer folder loading is unchanged; external file export/import is outside this slice.
+
+BrowseView.GalleryDrag.cs owns token/root/folder/revision/record validation, target cues and reconciliation deferral cleanup. WinUiGalleryIsland.Drag.cs captures origin selection before normal item selection and prepares/completes the native drag; GallerySelectionState.GetDraggedFiles supplies business scope. Drops reuse RunGalleryFileCommandAsync with the explicit captured files, preserving grouped collisions/partial outcomes/cancellation/root history/counts and thumbnail safeguards. Mode/activity/listing changes invalidate gesture scope. Native drag owns Escape/modifiers; cancel/completion/rejection clean up cues and deferrals. No directory scanning or filesystem mutation occurs in drag-over handlers.
+
+Verification: solution build zero warnings/errors; **326 unit/filesystem tests and 191 full native checks passed, zero failures/skips**; `git diff --check` passes. New tests cover selection scope, native package preparation/caption, WPF target routing/highlight, rejected/cancelled/stale drags and one-group Undo. The first new native test attempts preceded deferred Gallery publication; tests now wait for the same realized listing required by a physical gesture, retaining stale-source guards. Full evidence: `%TEMP%\MediFiler3Integration-fd4f04c38c83486aad6031c651c6219f`; log `%TEMP%\MediFiler3GalleryDrag-final.log`.
+
+Physical pointer threshold/drag preview/cursor, actual native-to-WPF OLE transfer, Escape cancellation, long tree scrolling and mixed-DPI/fullscreen dragging still need interactive acceptance. Automated routing uses a real native DataPackage and routed WPF drag events; it does not synthesize a physical OS pointer drag. Existing native stability limits remain. Baseline was clean user commit `6416ace` (`Bug fixes`); these drag changes remain uncommitted. Temporary build output preserves the running app.
+
+
 ## Browse history current-file selection (2026-11-11)
 
 Browse file-only Undo now prefers the successfully restored/renamed file in the active folder. When Redo removes the current file, reload retains its prior natural-order index, selecting the next surviving file or the previous file at the end instead of jumping to the first file. Gallery keeps its existing current-file/selection policy. Tree identity, counts, watcher echo filtering and paused-media handling are unchanged.

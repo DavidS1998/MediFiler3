@@ -99,6 +99,9 @@
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="HeaderBackground" Property="Background" Value="#B04A5668" />
                             </Trigger>
+                            <Trigger Property="views:BrowseView.IsGalleryDropTarget" Value="True">
+                                <Setter TargetName="HeaderBackground" Property="Background" Value="#A0FF1493" />
+                            </Trigger>
                             <Trigger Property="HasItems" Value="False">
                                 <Setter TargetName="Expander" Property="Visibility" Value="Hidden" />
                             </Trigger>
@@ -182,7 +185,8 @@
                         </ToggleButton.Style>
                     </ToggleButton>
                 </Grid>
-                <TreeView x:Name="FolderTree" Grid.Row="1" ItemsSource="{Binding Roots}" Background="Transparent" BorderThickness="0"
+                <TreeView AllowDrop="True" PreviewDragEnter="OnGalleryTreeDragOver" PreviewDragOver="OnGalleryTreeDragOver"
+                          PreviewDragLeave="OnGalleryTreeDragLeave" PreviewDrop="OnGalleryTreeDrop" x:Name="FolderTree" Grid.Row="1" ItemsSource="{Binding Roots}" Background="Transparent" BorderThickness="0"
                           Foreground="#E7E8EA" SelectedItemChanged="OnFolderSelectionChanged"
                           PreviewMouseRightButtonDown="OnFolderTreePreviewMouseRightButtonDown"
                           ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"

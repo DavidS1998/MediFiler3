@@ -150,6 +150,7 @@ internal static partial class Program
                 await browse.UndoLastOperationAsync();
                 Require(selected.All(file => File.Exists(file.FullPath)), "Final restore failed");
             });
+            await RunGalleryDragChecksAsync(window, state, browse);
         }
         finally { browse.DialogService = originalDialogs; }
     }

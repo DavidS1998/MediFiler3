@@ -19,6 +19,7 @@ public partial class BrowseView
 
     private void OnGalleryContextChanged(object? sender, PropertyChangedEventArgs args)
     {
+        if (_galleryMoveDrag is not null && !GalleryDragIsCurrent()) EndGalleryMoveDrag();
         if (args.PropertyName == nameof(NavigationSessionState.Files))
         {
             _galleryFilesDirty = true;
@@ -88,6 +89,8 @@ public partial class BrowseView
                 _navigationState.SetCurrentFile(file);
                 BrowseRequested?.Invoke();
             };
+            _gallery.MoveDragStarting += BeginGalleryMoveDrag;
+            _gallery.MoveDragCompleted += EndGalleryMoveDrag;
             _gallery.RenameRequested += async () => await PromptRenameCurrentFileAsync();
             _gallery.DeleteRequested += async () => await SendCurrentFileToRecycleBinAsync();
             _gallery.UndoRequested += async () => await UndoLastOperationAsync();

@@ -1195,7 +1195,7 @@ public partial class BrowseView : UserControl
 
     private void SetFolderOverlayVisible(bool isVisible)
     {
-        isVisible |= _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel && _sidebarFolderReveal;
+        isVisible |= _galleryMoveDrag is not null || _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel && _sidebarFolderReveal;
         if (_folderOverlayVisible == isVisible)
         {
             return;

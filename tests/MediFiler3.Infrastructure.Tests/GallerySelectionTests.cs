@@ -10,6 +10,37 @@ public sealed class GallerySelectionTests
     private static readonly FileEntry[] Files = [File("a"), File("b"), File("c"), File("d")];
 
     [Fact]
+    public void DragThresholdLeavesClicksAndSmallPointerTravelAloneAndStartsOnlyOnce()
+    {
+        var gesture = new GalleryDragGesture();
+        Assert.False(gesture.TryStart(100, 100, true, 4, 4));
+        gesture.Begin(10, 20);
+        Assert.False(gesture.TryStart(12, 22, true, 4, 4));
+        Assert.False(gesture.TryStart(10, 20, false, 4, 4));
+        Assert.False(gesture.TryStart(100, 100, true, 4, 4));
+        gesture.Begin(10, 20);
+        Assert.True(gesture.TryStart(14, 20, true, 4, 4));
+        Assert.False(gesture.TryStart(20, 30, true, 4, 4));
+        gesture.Reset(); gesture.Begin(10, 20);
+        Assert.True(gesture.TryStart(10, 16, true, 4, 4));
+    }
+
+    [Fact]
+    public void DragUsesOnlyUnselectedOriginOrNaturallyOrderedSelectedSnapshot()
+    {
+        var selection = new GallerySelectionState();
+        selection.Select(Files, Files[2]); selection.Select(Files, Files[0], toggle: true);
+        var group = selection.GetDraggedFiles(Files, Files[2]);
+        Assert.Equal(new[] { Files[0], Files[2] }, group);
+        Assert.Equal(new[] { Files[1] }, selection.GetDraggedFiles(Files, Files[1]));
+        Assert.Empty(selection.GetDraggedFiles(Files, File("missing")));
+        Assert.Empty(selection.GetDraggedFiles(Files, Files[0] with { Size = 999 }));
+        selection.Clear();
+        Assert.Equal(new[] { Files[0], Files[2] }, group);
+        Assert.Equal(new[] { Files[0] }, selection.GetDraggedFiles(Files, Files[0]));
+    }
+
+    [Fact]
     public void NativeSnapshotsValidatePathsResolveCurrentRecordsAndPreserveRangeAnchor()
     {
         var selection = new GallerySelectionState();

@@ -351,6 +351,7 @@ public partial class MainWindow : Window
     private bool TryHandleViewShortcut(Key key, ModifierKeys modifiers, bool repeat = false)
     {
         if (!IsEnabled || OwnedWindows.OfType<Window>().Any(window => window.IsVisible)) return false;
+        if (_browseView.IsGalleryMoveDragActive) return false; // Let the native drag loop own Escape/modifiers.
         Func<Task>? action = null;
         if (key == Key.F11 || IsFullscreen && key == Key.Escape)
             action = () => { ToggleFullscreen(); return Task.CompletedTask; };

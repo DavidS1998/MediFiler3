@@ -40,6 +40,7 @@ public sealed partial class WinUiGalleryIsland
 
     private void PaintHoveredTile(bool alt)
     {
+        if (_dragCaption is not null) return;
         if (!alt) { _hoverSelection.Reset(); return; }
         if (_active && _hoveredRoot is not null && FileFromElement(_hoveredRoot) is { } file)
             _hoverSelection.Visit(_files, file, alt: true);
@@ -47,7 +48,7 @@ public sealed partial class WinUiGalleryIsland
 
     private void OnTilePointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
     {
-        if (!_active || sender is not Grid root) return;
+        if (!_active || _startingMoveDrag || _dragCaption is not null || sender is not Grid root) return;
         if (_hoveredRoot != root)
         {
             if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
@@ -81,7 +82,7 @@ public sealed partial class WinUiGalleryIsland
             UpdateSelectionBorders();
             if (_selectionStatus is not null)
             {
-                var text = $"{wanted.Count} selected";
+                var text = _dragCaption ?? $"{wanted.Count} selected";
                 if (_selectionStatus.Text != text)
                 {
                     _selectionStatus.Text = text;
@@ -160,6 +161,7 @@ public sealed partial class WinUiGalleryIsland
 
     private bool HandleSelectionKey(VirtualKey key, bool control)
     {
+        if (_dragCaption is not null) return false;
         if (!_active) return false;
         if (key == VirtualKey.A && control) { _selection.SelectAll(_files); return true; }
         if (key == VirtualKey.Escape) { _selection.Clear(); return true; }

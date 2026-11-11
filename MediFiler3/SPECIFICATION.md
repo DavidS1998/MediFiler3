@@ -329,8 +329,13 @@ The application should use native Windows filesystem operations wherever practic
 
 Although right-click interactions are central to the application, drag and drop should also be considered.
 
-Potential functionality:
-- Drag files from the gallery onto folders in the tree to move them.
+Implemented internal Gallery drag-and-drop:
+- Drag an unselected file alone; drag a selected file together with the full selected set in natural order.
+- Drop onto any loaded destination folder in the tree to move through the existing safe grouped-operation service. Same-folder and stale drops are rejected; collisions, partial outcomes and grouped Undo/Redo keep their existing safeguards.
+- Preserve normal click, Ctrl-click and Shift-click selection. Begin a drag only after pointer movement crosses the Windows drag threshold; a press/release alone never initiates dragging. Preview tiles use their cropped presentation, without hover-fit letterboxing.
+- Show a native drag operation and explicit moving-file count, reveal the tree while dragging, and highlight valid targets with Move feedback. Use an 80%-opaque dragged-tile preview stack with its top-left corner anchored to the pointer. The preview is bounded to three realized tiles; the full selected set remains the move payload. Cancellation does not mutate files.
+
+Potential later functionality:
 - Drag files from Windows Explorer into the application.
 - Drag folders into the application to load them.
 - Drag selected files between application panels.

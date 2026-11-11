@@ -9,7 +9,7 @@ public partial class BrowseView
 {
     private CancellationTokenSource? _galleryCommandCancellation;
 
-    private async Task RunGalleryFileCommandAsync(FolderTreeEntry? destination)
+    private async Task RunGalleryFileCommandAsync(FolderTreeEntry? destination, IReadOnlyList<MediFiler3.Domain.Files.FileEntry>? dragFiles = null)
     {
         if (_galleryCommandCancellation is not null || _historyBusy || !_viewerActive || !IsGallery) return;
         using var deferral = DeferReconciliation();
@@ -17,7 +17,7 @@ public partial class BrowseView
         var root = _navigationState.ActiveRoot;
         var folder = _navigationState.ActiveFolder;
         var revision = _commandRevision;
-        var selected = _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files).ToArray();
+        var selected = dragFiles?.ToArray() ?? _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files).ToArray();
         if (root is null || selected.Length == 0) return;
         using var cancellation = new CancellationTokenSource();
         _galleryCommandCancellation = cancellation;
@@ -30,7 +30,7 @@ public partial class BrowseView
         {
             if (destination is null && selected.Length > 1 && !await RequireDialogService().ConfirmAsync("Send selected files to Recycle Bin",
                     $"Send {selected.Length} selected files to the Recycle Bin? Restore is best effort and depends on Windows retaining the items.", "Recycle")) return;
-            if (!Current() || !selected.SequenceEqual(_navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files))) return;
+            if (!Current() || dragFiles is null && !selected.SequenceEqual(_navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files))) return;
             var operations = await GetRootOperationsAsync(root, true, cancellation.Token, allowGallery: true, scopeIsCurrent: Current);
             if (!Current()) return;
             var paths = selected.Select(file => file.FullPath).ToArray();

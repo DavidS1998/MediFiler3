@@ -27,6 +27,13 @@ public sealed class GallerySelectionState
     public IReadOnlyList<FileEntry> GetSelectedFiles(IReadOnlyList<FileEntry> files) =>
         files.Where(IsSelected).ToArray();
 
+    public IReadOnlyList<FileEntry> GetDraggedFiles(IReadOnlyList<FileEntry> files, FileEntry origin)
+    {
+        var current = files.FirstOrDefault(file => file == origin);
+        if (current is null) return [];
+        return IsSelected(current) ? GetSelectedFiles(files) : new[] { current };
+    }
+
     public void Select(IReadOnlyList<FileEntry> files, FileEntry file, bool toggle = false, bool range = false)
     {
         var target = IndexOf(files, file.FullPath);

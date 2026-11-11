@@ -191,7 +191,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         if (_active == active) return;
         _active = active; _activityVersion++;
         _hoverSelection.Reset();
-        if (!active) _selectionMenu?.Hide();
+        if (!active) { _selectionMenu?.Hide(); FinishMoveDrag(); }
         if (!active) CancelPendingReveal();
         else QueueRegionRefresh();
         if (active) QueuePendingFiles();
@@ -330,6 +330,9 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         _grid.SizeChanged += (_, _) => { CenterTiles(); QueuePendingReveal(); };
         _grid.AddHandler(Xaml.UIElement.PointerWheelChangedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
         _grid.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => CancelPendingReveal()), true);
+        _grid.AddHandler(Xaml.UIElement.PointerMovedEvent, new Xaml.Input.PointerEventHandler(OnMoveDragPointerMoved), true);
+        _grid.AddHandler(Xaml.UIElement.PointerReleasedEvent, new Xaml.Input.PointerEventHandler(OnMoveDragPointerReleased), true);
+        _grid.AddHandler(Xaml.UIElement.PointerCanceledEvent, new Xaml.Input.PointerEventHandler(OnMoveDragPointerReleased), true);
         _grid.DoubleTapped += (_, args) =>
         {
             var source = args.OriginalSource as Xaml.DependencyObject;
@@ -441,6 +444,10 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         if (root.Tag is null)
         {
             root.Tag = true;
+            root.CanDrag = false; // Explicit threshold drag keeps ordinary GridView clicks native.
+            root.DragStarting += OnTileMoveDragStarting;
+            root.DropCompleted += (_, _) => FinishMoveDrag();
+            root.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler(OnTileDragPointerPressed), true);
             root.PointerEntered += OnTilePointerEntered;
             root.PointerExited += OnTilePointerExited;
             root.PointerMoved += OnTilePointerMoved;
@@ -457,7 +464,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
 
     private void OnTilePointerEntered(object sender, Xaml.Input.PointerRoutedEventArgs args)
     {
-        if (sender is not Grid root || !_active) return;
+        if (sender is not Grid root || !_active || _startingMoveDrag || _dragCaption is not null) return;
         if (_hoveredRoot is not null && _hoveredRoot != root) SetTileHover(_hoveredRoot, false);
         _hoveredRoot = root;
         SetTileHover(root, true);
@@ -618,6 +625,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     }
     protected override void DestroyWindowCore(HandleRef handle)
     {
+        FinishMoveDrag();
         _selection.Changed -= OnSelectionChanged;
         _pendingFiles = null; _pendingCurrent = null;
         _hoverSelection.Reset();
