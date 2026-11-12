@@ -8,6 +8,7 @@ namespace MediFiler3.Views;
 
 public partial class BrowseView
 {
+    public Func<System.Windows.Input.Key, System.Windows.Input.ModifierKeys, bool, bool>? ViewShortcutHandler { get; set; }
     private WinUiReaderIsland? _reader;
     private IReaderImageService? _readerImages;
     private string? _lastReaderCurrent;
@@ -35,6 +36,7 @@ public partial class BrowseView
         {
             _readerImages ??= new FileSystemReaderImageService(new FileSystemFileContentService());
             _reader = new WinUiReaderIsland(_navigationState.Reader, _readerImages);
+            _reader.ViewShortcutHandler = (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false;
             _reader.CurrentPageChanged += file =>
             {
                 if (!IsReader || !_viewerActive || _readerReconciliationDepth > 0 || !_navigationState.ContainsFile(file)) return;

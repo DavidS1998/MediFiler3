@@ -69,8 +69,8 @@ internal static partial class Program
                 Require(!(bool)Field(browse.FindName("ViewerHost"), "_active")! && ((FrameworkElement)browse.FindName("CarouselOverlay")).Visibility == Visibility.Collapsed,
                     "Reader started Browse presentation");
                 Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled &&
-                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_renameFileButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
-                    "Reader page actions unavailable");
+                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_renameFileButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
+                    "Reader underlying page actions or hidden chrome changed");
                 await WaitUntil(() => state.CurrentFile?.Name == "page 5.png" &&
                     !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
                 await Task.Delay(100); // Allow native layout to apply the newly discovered aspect ratio.
@@ -428,9 +428,9 @@ internal static partial class Program
                 var external = Field(toolbar, "_externalToolbar")!;
                 var defaultOpen = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("OpenButton")!.GetValue(external)!;
                 var chooseApp = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("ChooseButton")!.GetValue(external)!;
-                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Visible && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Visible &&
-                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerBrowse")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
-                    "Reader Open buttons are missing");
+                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed &&
+                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerBrowse")!).Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
+                    "Reader Open buttons should be hidden");
                 var originalFolder = state.ActiveFolder;
                 Require(browse.JumpReaderPage(4), "Explicit Reader jump was rejected");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4] && !(bool)Field(Reader(), "_restore")!);
@@ -458,7 +458,9 @@ internal static partial class Program
                 Require(!((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerNext")!).IsEnabled && Key(System.Windows.Input.Key.Right) &&
                     ReferenceEquals(originalFolder, state.ActiveFolder) && state.Files.SequenceEqual(files), "Reader crossed a folder or enabled next beyond the sequence");
                 Require(!Key(System.Windows.Input.Key.Right, System.Windows.Input.ModifierKeys.Control), "Reader claimed an undefined shortcut");
-                Require(Key(System.Windows.Input.Key.Enter), "Reader Enter was ignored");
+                Require(!Key(System.Windows.Input.Key.Enter), "Reader Enter handoff should be dormant");
+                await Task.Delay(50); Require(browse.IsReader, "Dormant Enter left Reader");
+                browse.OpenReaderInBrowse();
                 await WaitUntil(() => browse.IsBrowse && state.CurrentFile == state.Reader.Pages[^1]);
                 Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Visible && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
                     "Reader changed external buttons in Browse");
@@ -484,6 +486,57 @@ internal static partial class Program
                 Require(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName((Microsoft.UI.Xaml.Controls.TextBlock)Field(Reader(), "_indicator")!).Contains(replacement.Name),
                     "Reader counter retained an old filename when page number/count were unchanged");
                 state.ReplaceFiles(files); await WaitUntil(LoadedImage);
+            });
+            await Check("Reader arrows route through actual native key preview before ScrollViewer or slider handling", async () =>
+            {
+                var nativeRoutes = 0; var toolbarRoutes = 0; var sidebarRoutes = 0;
+                var readerHandler = Reader().ViewShortcutHandler!; var toolbarHandler = toolbar.ViewShortcutHandler!; var sidebarHandler = navigation.ViewShortcutHandler!;
+                Reader().ViewShortcutHandler = (key, modifiers, repeat) => { nativeRoutes++; return readerHandler(key, modifiers, repeat); };
+                toolbar.ViewShortcutHandler = (key, modifiers, repeat) => { toolbarRoutes++; return toolbarHandler(key, modifiers, repeat); };
+                navigation.ViewShortcutHandler = (key, modifiers, repeat) => { sidebarRoutes++; return sidebarHandler(key, modifiers, repeat); };
+                void NativeKey(nint island, int key, bool repeat = false)
+                {
+                    var input = island;
+                    while (ReaderInputChild(input, 5) is var child && child != 0) input = child;
+                    SendReaderPointerMessage(input, 0x0100, key, repeat ? (nint)0x40000001 : 1);
+                    SendReaderPointerMessage(input, 0x0101, key, unchecked((nint)0xC0000001));
+                }
+                try
+                {
+                    Require(browse.JumpReaderPage(4), "Could not prepare native arrow target");
+                    await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4] && !(bool)Field(Reader(), "_restore")!);
+                    browse.FocusReader(); NativeKey(Reader().Handle, 0x27);
+                    try { await WaitUntil(() => state.CurrentFile == state.Reader.Pages[5]); }
+                    catch (TimeoutException exception) { throw new InvalidOperationException($"Native Right did not navigate: routes={nativeRoutes}, page={browse.ReaderPageIndex}, restore={Field(Reader(), "_restore")}", exception); }
+                    Require(nativeRoutes > 0, "Reader bypassed native preview regression coverage");
+                    NativeKey(Reader().Handle, 0x25); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4]);
+                    var offset = Scroll().VerticalOffset;
+                    NativeKey(Reader().Handle, 0x28); await WaitUntil(() => Math.Abs(Scroll().VerticalOffset - offset - 48) < 2);
+                    NativeKey(Reader().Handle, 0x26); await WaitUntil(() => Math.Abs(Scroll().VerticalOffset - offset) < 2);
+                    NativeKey(Reader().Handle, 0x27, repeat: true); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[5]);
+                    var slider = (Microsoft.UI.Xaml.Controls.Slider)Field(toolbar, "_readerWidthSlider")!;
+                    var width = slider.Value; slider.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                    NativeKey(toolbar.Handle, 0x25); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4]);
+                    Require(toolbarRoutes > 0 && slider.Value == width, "Toolbar consumed Reader Left as slider input");
+                    var rail = (Microsoft.UI.Xaml.Controls.NavigationView)Field(navigation, "_navigationView")!;
+                    ((Microsoft.UI.Xaml.Controls.NavigationViewItem)rail.SelectedItem).Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                    NativeKey(navigation.Handle, 0x27); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[5]);
+                    Require(sidebarRoutes > 0 && browse.IsReader, "Sidebar consumed Reader arrow");
+                    browse.FocusReader();
+                    var input = Reader().Handle;
+                    while (ReaderInputChild(input, 5) is var child && child != 0) input = child;
+                    Require(PostReaderKeyboardMessage(input, 0x0100, 0x25, 1) &&
+                        PostReaderKeyboardMessage(input, 0x0101, 0x25, unchecked((nint)0xC0000001)), "Could not queue Reader Left");
+                    await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4]);
+                    await Task.Delay(100); Require(browse.ReaderPageIndex == 4, "Queued arrow was processed twice");
+                    var tree = (System.Windows.Controls.TreeView)browse.FindName("FolderTree"); tree.Focus();
+                    var args = new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice,
+                        System.Windows.PresentationSource.FromVisual(window), Environment.TickCount, System.Windows.Input.Key.Right)
+                        { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent };
+                    tree.RaiseEvent(args); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[5]);
+                    Require(args.Handled, "Tree focus did not consume Reader arrow");
+                }
+                finally { Reader().ViewShortcutHandler = readerHandler; toolbar.ViewShortcutHandler = toolbarHandler; navigation.ViewShortcutHandler = sidebarHandler; }
             });
             await Check("Reader jump dialog accepts only page numbers and rejects cancellation stale inputs and inactive views", async () =>
             {
@@ -596,7 +649,7 @@ internal static partial class Program
                 navigation.SelectDestination("Browse"); Require(!Reader().IsActive && browse.IsBrowse, "Browse handoff retained active reader");
             });
             await RunFolderClickChecksAsync(window, state, browse, navigation);
-            await Check("Reader external toolbar and shortcuts open only the active page without Browse work", async () =>
+            await Check("Reader hides command chrome and shortcuts while retaining guarded APIs and other views", async () =>
             {
                 navigation.SelectDestination("Reader"); browse.JumpReaderPage(1);
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[1] && !(bool)Field(Reader(), "_restore")!);
@@ -604,36 +657,69 @@ internal static partial class Program
                 var group = Field(toolbar, "_externalToolbar")!;
                 var open = (Microsoft.UI.Xaml.Controls.AppBarButton)group.GetType().GetProperty("OpenButton")!.GetValue(group)!;
                 var choose = (Microsoft.UI.Xaml.Controls.AppBarButton)group.GetType().GetProperty("ChooseButton")!.GetValue(group)!;
-                await WaitUntil(() => open.IsEnabled && choose.IsEnabled);
-                var before = readerExternal.Calls.Count;
-                InvokeReaderToolbarButton(open); await WaitUntil(() => readerExternal.Calls.Count == before + 1 && !browse.ExternalOpenState.Busy);
-                InvokeReaderToolbarButton(choose); await WaitUntil(() => readerExternal.Calls.Count == before + 2 && !browse.ExternalOpenState.Busy);
+                var fileButtons = new[] { "_renameFileButton", "_deleteFileButton", "_undoButton", "_redoButton" }
+                    .Select(name => (Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, name)!).ToArray();
+                Require(fileButtons.Concat(new[] { open, choose, (Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerBrowse")! })
+                    .All(button => button.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed), "Requested Reader buttons remain visible");
                 var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
-                Require((bool)shortcut.Invoke(window, [System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control, false])!, "Ctrl+Enter ignored in Reader");
-                await WaitUntil(() => readerExternal.Calls.Count == before + 3);
-                Require((bool)shortcut.Invoke(window, [System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift, false])!, "Ctrl+Shift+Enter ignored in Reader");
-                await WaitUntil(() => readerExternal.Calls.Count == before + 4);
-                Require(readerExternal.Calls.Skip(before).All(call => call.Path == expected.FullPath && call.Owner != 0) &&
-                    readerExternal.Calls.Skip(before).Select(call => call.Action).SequenceEqual(new[] { ExternalFileAction.DefaultApplication,
-                        ExternalFileAction.ChooseApplication, ExternalFileAction.DefaultApplication, ExternalFileAction.ChooseApplication }) &&
-                    !(bool)Field(browse.FindName("ViewerHost"), "_active")!, "Reader launched another file or resumed Browse");
+                var snapshot = state.Files.ToArray(); var before = readerExternal.Calls.Count; var prompts = 0;
+                var originalDialogs = browse.DialogService;
+                browse.DialogService = new ReaderScopedDialogs { OnPrompt = () => { prompts++; return null; } };
+                try
+                {
+                    foreach (var (key, modifiers) in new[] {
+                        (System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.None),
+                        (System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control),
+                        (System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift),
+                        (System.Windows.Input.Key.F2, System.Windows.Input.ModifierKeys.None),
+                        (System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None),
+                        (System.Windows.Input.Key.Z, System.Windows.Input.ModifierKeys.Control),
+                        (System.Windows.Input.Key.Y, System.Windows.Input.ModifierKeys.Control) })
+                        foreach (var repeat in new[] { false, true })
+                            Require(!(bool)shortcut.Invoke(window, [key, modifiers, repeat])!, "Dormant Reader shortcut was claimed: " + key);
+                    await Task.Delay(100);
+                    Require(browse.IsReader && state.CurrentFile == expected && snapshot.SequenceEqual(state.Files) &&
+                        snapshot.All(file => File.Exists(file.FullPath)) && prompts == 0 && readerExternal.Calls.Count == before,
+                        "Dormant Reader shortcut navigated, prompted, mutated files or launched an application");
+                }
+                finally { browse.DialogService = originalDialogs; }
+                await browse.OpenExternallyAsync(ExternalFileAction.DefaultApplication);
+                await browse.OpenExternallyAsync(ExternalFileAction.ChooseApplication);
+                Require(readerExternal.Calls.Skip(before).Select(call => call.Action).SequenceEqual(new[] {
+                    ExternalFileAction.DefaultApplication, ExternalFileAction.ChooseApplication }) &&
+                    readerExternal.Calls.Skip(before).All(call => call.Path == expected.FullPath && call.Owner != 0) &&
+                    !(bool)Field(browse.FindName("ViewerHost"), "_active")!, "Hidden Reader external APIs lost functionality or resumed Browse");
                 readerExternal.Pending = new TaskCompletionSource<ExternalFileResult>();
-                InvokeReaderToolbarButton(choose); await WaitUntil(() => browse.ExternalOpenState.Busy && !open.IsEnabled && !choose.IsEnabled);
+                var pending = browse.OpenExternallyAsync(ExternalFileAction.ChooseApplication);
+                await WaitUntil(() => browse.ExternalOpenState.Busy && !open.IsEnabled && !choose.IsEnabled);
                 var count = readerExternal.Calls.Count;
                 await browse.OpenExternallyAsync(ExternalFileAction.DefaultApplication);
                 Require(readerExternal.Calls.Count == count, "Reader allowed a duplicate launch");
                 navigation.SelectDestination("Settings");
                 readerExternal.Pending.SetResult(new(ExternalFileOutcome.Cancelled, "stale external result")); readerExternal.Pending = null;
-                await Task.Delay(100); Require(!Reader().IsActive && !browse.ExternalOpenState.Visible, "External completion reactivated Reader");
+                await pending; Require(!Reader().IsActive && !browse.ExternalOpenState.Visible, "External completion reactivated Reader");
+                foreach (var view in new[] { "Browse", "Gallery", "Browse" })
+                {
+                    navigation.SelectDestination(view);
+                    Require(fileButtons.All(button => button.Visibility == Microsoft.UI.Xaml.Visibility.Visible), "Reader file-command hiding leaked into " + view);
+                    var externalVisibility = view == "Gallery" ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+                    Require(open.Visibility == externalVisibility && choose.Visibility == externalVisibility &&
+                        ((Microsoft.UI.Xaml.Controls.AppBarSeparator)Field(toolbar, "_externalActionsSeparator")!).Visibility == externalVisibility,
+                        "External command visibility did not follow " + view);
+                }
                 navigation.SelectDestination("Reader"); await WaitUntil(() => !browse.ExternalOpenState.Busy);
             });
             await RunReaderMutationChecksAsync(window, state, browse, navigation, toolbar, monitor);
+            await RunReaderAcceptanceChecksAsync(window, state, browse, navigation, readerImages);
         }
         finally { window.Close(); }
     }
     private static void InvokeReaderToolbarButton(Microsoft.UI.Xaml.Controls.AppBarButton button) =>
         ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(button)
             .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "PostMessageW")]
+    private static extern bool PostReaderKeyboardMessage(nint window, int message, nint wParam, nint lParam);
 
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern nint SendReaderPointerMessage(nint window, int message, nint wParam, nint lParam);

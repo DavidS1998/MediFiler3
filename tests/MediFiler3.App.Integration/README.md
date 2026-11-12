@@ -1,6 +1,22 @@
 # Windows viewer integration runner
 
-## Current runner state (Phase 5.5 closeout, 2026-11-11)
+## Current Reader presentation follow-up (2026-11-12)
+
+Reader temporarily hides Rename/Delete/Undo/Redo, default/custom application and Open-current-image-in-Browse toolbar actions. Its matching shortcuts are dormant; underlying APIs and failed-page recovery remain implemented. Tests assert collapsed controls, unclaimed dormant shortcut mappings (including repeats) with no side effects, retained direct API behavior and restored Browse/Gallery visibility. Native Reader arrows/scroll, modal input and existing operation/history suites remain. Search is deferred to a future phase. Latest build is clean; 362 unit/filesystem and 221 full native checks pass, zero failures/skips, including all 27 Reader-runner checks. Full evidence `%TEMP%\MediFiler3Integration-516e430d8ead4687b2b1da1540fd26bb`; log `%TEMP%\MediFiler3Reader-hidden-commands-full.log`.
+
+The closeout and focused-repeat evidence below is the preceding baseline.
+
+## Current runner state (Reader slice 6 closeout, 2026-11-12)
+
+Fresh build: zero warnings/errors. Unit/filesystem: **362 passed**. Full native with supplied codec/media fixtures: **221 passed**, including **27 Reader-runner checks**. Focused Reader repeat: **27 passed**. Zero failures/skips. [Reader acceptance](../../MediFiler3/READER_ACCEPTANCE.md) records user acceptance, measurements and carried limits; [current status](../../MediFiler3/PROJECT_STATUS.md) and [active handover](../../MediFiler3/READER_HANDOVER.md) supersede earlier pending-slice notes below. The complete previous Reader handover is [archived](../../MediFiler3/READER_HANDOVER_HISTORY.md).
+
+Full evidence: `%TEMP%\MediFiler3Integration-4605bff9714048a481b75f22331c1143`; log `%TEMP%\MediFiler3Reader-slice6-full.log`. Focused repeat: `%TEMP%\MediFiler3Integration-caf7ba762b904f259f8f8e627c8f6cb8`; log `%TEMP%\MediFiler3Reader-slice6-focused.log`.
+
+ReaderAcceptanceChecks creates 1,000 actual 1024x1536 PNG files from a deterministic raster, uses real folder listing/WIC decoding, visits distant pages and checks Home return. It writes `reader-acceptance.json` with ready times, sampled row/cache bounds, decoder concurrency, inactive scheduling, warm source identity and whole-process memory sample points. Fixture creation is outside the entry timer. Readiness includes source assignment and native restoration/queue settling, with 25 ms polling; no FPS, user-library, cold-I/O, total-memory or percentile guarantee is inferred. Two retained samples live in [verification](../../MediFiler3/READER_ACCEPTANCE.md). Existing 10,000-missing-record tests remain structural virtualization/cancellation checks. Slice 6 preserves all production source hashes and existing assertions.
+
+The user confirms Reader arrow keys work after reporting the rest of Reader in order. This closes the approved MVP in their tested setup, with dedicated Narrator, mixed-DPI/fullscreen, touchpad, diverse-library/long-session memory, storage/codec and deployment matrices carried as limits. Earlier milestone totals below remain historical.
+
+## Earlier Gallery 5.5 baseline (2026-11-11)
 
 Fresh build: zero warnings/errors. Unit/filesystem suite: **327 passed**. Full native runner with supplied codec fixtures: **192 passed**. Focused Gallery repeat: **31 passed**. All runs have zero failures/skips. The [acceptance report](../../MediFiler3/PHASE5_ACCEPTANCE.md) distinguishes automated/user-confirmed acceptance and remaining physical/native/environment limits; [current status](../../MediFiler3/PROJECT_STATUS.md) and [handover](../../MediFiler3/PHASE5_HANDOVER.md) supersede old pending-slice notes below.
 
@@ -173,3 +189,15 @@ Reader external-open/active-folder follow-up adds two checks (25 Reader-runner c
 
 
 External-open/active-folder final verification: clean build; 362 unit/filesystem tests and 219 full native checks passed, zero failures/skips (25 Reader-runner checks). Full evidence `%TEMP%\MediFiler3Integration-8d4fd8f9b03643d2859a4f4c37bf350d`; log `%TEMP%\MediFiler3Reader-open-folder-full.log`. The reflow probe explicitly requires a 20% fractional offset before the width change, retaining the original preservation assertions.
+
+
+Reader arrow-key regression adds one native check (26 Reader-runner checks). It sends actual HWND key messages and observes the native preview bridge, verifies previous/next image, exact 48px Up/Down, repeat input, toolbar slider and sidebar focus, WPF tree routing, and queued-key single execution. The old tests that call TryHandleViewShortcut directly remain policy coverage, not evidence of physical/native key delivery. Owned-dialog, inactive-view and undefined-modifier tests remain required. Physical user confirmation remains manual.
+
+
+Arrow-key final verification: build zero warnings/errors; 362 unit/filesystem tests and 220 full native checks passed, zero failures/skips (26 Reader-runner checks). Full evidence `%TEMP%\MediFiler3Integration-d2f0fca84f1a492c85226fb84fe923b8`; log `%TEMP%\MediFiler3Reader-arrows-full.log`.
+
+
+Gallery external-command visibility follow-up: the mode-switch check requires Open in default application, Choose an application and their separator collapsed in Gallery/Reader and restored in Browse, including Browse -> Gallery -> Browse. Gallery rename/delete/history controls remain visible; underlying functions and keyboard behavior are unchanged.
+
+
+Gallery external-button follow-up verification: build zero warnings/errors; focused Reader/view-switch runner repeat **27 passed**, zero failures/skips. Evidence `%TEMP%\MediFiler3Integration-bdb55a3705f844beada871a1c15dd110`; log `%TEMP%\MediFiler3Gallery-hidden-external-focused-repeat.log`. The first focused attempt passed the visibility regression but had one existing width-reflow timing failure (fractional scroll stayed at the page top: offset 1665 versus target 1776); its log is `%TEMP%\MediFiler3Gallery-hidden-external-focused.log`. The unchanged-code/assertion repeat passed. Keep this timing sensitivity as a verification limit; no scrolling behavior or assertion was changed for this visibility-only follow-up. The preceding full 362/221 verification predates this follow-up and was not repeated.

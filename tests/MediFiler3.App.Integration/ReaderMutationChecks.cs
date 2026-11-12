@@ -64,8 +64,8 @@ internal static partial class Program
                 await browse.UndoLastOperationAsync(); await Settled("b.png");
                 await browse.RedoLastOperationAsync(); await Settled("b-renamed.png");
                 await browse.UndoLastOperationAsync(); await Settled("b.png");
-                Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_undoButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
-                    "Reader history commands are hidden");
+                Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_undoButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
+                    "Reader history toolbar should remain hidden while APIs work");
             });
             await Check("Reader move recycle Undo and Redo select image neighbors and retain tree counters", async () =>
             {

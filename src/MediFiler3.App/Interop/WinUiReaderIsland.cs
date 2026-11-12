@@ -260,7 +260,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                 row.ErrorActions.Visibility = Xaml.Visibility.Visible;
                 Xaml.Automation.AutomationProperties.SetName(row.Status, Xaml.Automation.AutomationProperties.GetName(row.Root) + ". " + row.Status.Text);
                 Xaml.Automation.AutomationProperties.SetAccessibilityView(row.Status, Xaml.Automation.Peers.AccessibilityView.Content);
-                Xaml.Automation.AutomationProperties.SetHelpText(row.Root, row.Status.Text + ". Retry this page, or press Enter to view it in Browse.");
+                Xaml.Automation.AutomationProperties.SetHelpText(row.Root, row.Status.Text + ". Retry this page, or use Open in Browse.");
             }
         }
         finally { if (entered) _workers.Release(); }
@@ -286,14 +286,15 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         _scroll = new ScrollViewer { Content = _canvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, ZoomMode = ZoomMode.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
         Xaml.Automation.AutomationProperties.SetName(_scroll, "Continuous reader pages");
-        Xaml.Automation.AutomationProperties.SetHelpText(_scroll, "Up/Down scroll. Left/Right select images. Page Up/Down or Space/Shift+Space scroll a viewport. Home/End reach the sequence ends. Ctrl+G jumps to a page. Enter opens Browse. Ctrl+R retries the current page. F3 toggles the folder pin.");
+        Xaml.Automation.AutomationProperties.SetHelpText(_scroll, "Up/Down scroll. Left/Right select images. Page Up/Down or Space/Shift+Space scroll a viewport. Home/End reach the sequence ends. Ctrl+G jumps to a page. Ctrl+R retries the current page. F3 toggles the folder pin.");
         _scroll.Loaded += (_, _) => { _regionKey = null; UpdateRegion(); QueueUpdate(); };
         _scroll.AddHandler(Xaml.UIElement.PointerWheelChangedEvent, new Xaml.Input.PointerEventHandler((_, _) => OnReaderInput()), true);
         _scroll.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => OnReaderInput()), true);
-        _scroll.AddHandler(Xaml.UIElement.KeyDownEvent, new Xaml.Input.KeyEventHandler((_, _) => OnReaderInput()), true);
+        _scroll.AddHandler(Xaml.UIElement.KeyDownEvent, new Xaml.Input.KeyEventHandler((_, args) => { if (!args.Handled) OnReaderInput(); }), true);
         _scroll.SizeChanged += (_, _) => { _restore = true; QueueUpdate(); };
         _scroll.ViewChanged += (_, _) => OnReaderViewChanged();
         var root = new Grid { Background = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black) }; root.Children.Add(_scroll);
+        WinUiViewKeyboard.Attach(root, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
         _empty = new TextBlock { Text = "No supported images in this folder.", HorizontalAlignment = Xaml.HorizontalAlignment.Center,
             VerticalAlignment = Xaml.VerticalAlignment.Center, Foreground = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White), IsHitTestVisible = false };
         _indicatorHost = OutlinedStatus.Create(_indicatorOutlines, out _indicator);

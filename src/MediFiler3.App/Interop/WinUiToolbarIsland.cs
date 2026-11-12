@@ -30,7 +30,9 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private MediaToolbarGroup? _mediaToolbar;
     private bool _mediaControlsVisible;
     private MediFiler3.Application.Viewing.MediaPlaybackState _mediaState = MediFiler3.Application.Viewing.MediaPlaybackState.Empty;
+    public Func<System.Windows.Input.Key, System.Windows.Input.ModifierKeys, bool, bool>? ViewShortcutHandler { get; set; }
     private ExternalOpenToolbarGroup? _externalToolbar;
+    private AppBarSeparator? _externalActionsSeparator;
     private MediFiler3.Application.Files.ExternalOpenState _externalState = new(false, false, null);
     private bool _textControlsVisible;
     private bool _textScrolling;
@@ -331,6 +333,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         var background = Brush(0, 0, 0);
         var layout = new Grid { Background = background, RequestedTheme = ElementTheme.Dark };
         _rootElement = layout;
+        WinUiViewKeyboard.Attach(layout, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
         layout.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent,
             new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
             {
@@ -375,7 +378,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         middle.PrimaryCommands.Add(new AppBarSeparator());
         middle.PrimaryCommands.Add(_undoButton);
         middle.PrimaryCommands.Add(_redoButton);
-        middle.PrimaryCommands.Add(new AppBarSeparator());
+        _externalActionsSeparator = new AppBarSeparator();
+        middle.PrimaryCommands.Add(_externalActionsSeparator);
         _externalToolbar = new ExternalOpenToolbarGroup(() => OpenDefaultRequested?.Invoke(), () => OpenWithRequested?.Invoke());
         middle.PrimaryCommands.Add(_externalToolbar.OpenButton);
         middle.PrimaryCommands.Add(_externalToolbar.ChooseButton);

@@ -1,9 +1,17 @@
 using MediFiler3.Application.Navigation;
+using System.Windows.Input;
 
 namespace MediFiler3;
 
 public partial class MainWindow
 {
+    // Keep these Reader shortcuts dormant with their hidden toolbar actions. The shared
+    // Browse/Gallery bindings and the underlying command APIs remain enabled.
+    private static bool IsHiddenReaderCommandShortcut(Key key, ModifierKeys modifiers) =>
+        modifiers == ModifierKeys.None && key is Key.Enter or Key.F2 or Key.Delete ||
+        modifiers == ModifierKeys.Control && key is Key.Enter or Key.Z or Key.Y ||
+        modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.Enter;
+
     private bool _readerJumpOpen;
     private bool ReaderIsActive => PageContent.Content == _browseView && _browseView.IsReader;
     private bool ReaderCommandsAvailable => ReaderIsActive && IsEnabled && !OwnedWindows.OfType<System.Windows.Window>().Any(window => window.IsVisible);

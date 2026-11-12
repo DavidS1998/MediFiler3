@@ -13,6 +13,7 @@ public sealed partial class WinUiReaderIsland
     private long _interactionVersion;
     private double _explicitScrollOffset = double.NaN;
     public event Action<FileEntry>? OpenInBrowseRequested;
+    public Func<Key, ModifierKeys, bool, bool>? ViewShortcutHandler { get; set; }
     public int CurrentPageIndex => _explicitPage is not null && session.Pages.Contains(_explicitPage)
         ? session.Pages.ToList().IndexOf(_explicitPage)
         : session.IndexAt(_scroll is null ? session.Offset(session.Anchor) : _scroll.VerticalOffset + _scroll.ViewportHeight * .25);

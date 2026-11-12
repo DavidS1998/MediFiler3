@@ -20,6 +20,7 @@ public sealed class WinUiNavigationIsland : HwndHost
 
     public event Action<string>? DestinationSelected;
     public event Action? RefreshRequested;
+    public Func<Key, ModifierKeys, bool, bool>? ViewShortcutHandler { get; set; }
 
     public void SelectDestination(string destination)
     {
@@ -41,6 +42,7 @@ public sealed class WinUiNavigationIsland : HwndHost
         _xamlSource.ShouldConstrainPopupsToWorkArea = true;
 
         _navigationView = CreateNavigationView();
+        WinUiViewKeyboard.Attach(_navigationView, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
         _navigationView.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
         {
             if (args.Key != Windows.System.VirtualKey.F5) return;

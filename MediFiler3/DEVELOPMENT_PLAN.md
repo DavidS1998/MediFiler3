@@ -1,8 +1,8 @@
 # Development plan
 
-## Current closeout state (2026-11-11)
+## Current closeout state (2026-11-12)
 
-**The approved Gallery phase 5.1-5.5 and internal Gallery-to-tree drag/drop follow-ups are complete with recorded limits.** See [PROJECT_STATUS.md](PROJECT_STATUS.md), [PHASE5_ACCEPTANCE.md](PHASE5_ACCEPTANCE.md) and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for current behavior, verification, measured scale latency and continuation safeguards. Earlier dated pending-slice statements below are historical.
+**The approved Gallery phase 5.1-5.5, internal Gallery-to-tree drag/drop and Reader slices 1-6 are complete with recorded limits.** See [PROJECT_STATUS.md](PROJECT_STATUS.md), [PHASE5_ACCEPTANCE.md](PHASE5_ACCEPTANCE.md) and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for current behavior, verification, measured scale latency and continuation safeguards. Earlier dated pending-slice statements below are historical.
 
 | Slice | State |
 |---|---|
@@ -12,14 +12,16 @@
 | 5.4 | Safe grouped moves/recycle/root history, partial/cancel outcomes and follow-up fixes complete |
 | Approved drag/drop extension | Threshold-safe internal dragging, cropped translucent preview, tree targets/hover/edge/native wheel navigation complete |
 | 5.5 | Full regression, two bounded scale samples and targeted user physical acceptance complete; remaining cases documented |
+| Reader 1-5 | Projection/source rendering/settings/navigation/safe operations/history/live reconciliation implemented |
+| Reader 6 | Acceptance closed: fresh full regression, two 1,000-source-image scale samples, user-confirmed arrow/workflow acceptance and carried limits |
 
 User confirmed nested-folder dragging, edge scrolling and wheel scrolling during a drag. Final build is clean; 327 unit/filesystem and 192 full native checks passed, plus a 31-check focused Gallery repeat, all without failures/skips. Clearing 10,000 selected files measured 0.76-1.03s; keep that known scale latency and the physical/native/environment limits visible.
 
-Reader slices 1-5 are now implemented using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md). Reader organization/live reconciliation (5) is implemented; final acceptance (6) remains pending. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
+Reader slices 1-6 are closed using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md) and [READER_ACCEPTANCE.md](READER_ACCEPTANCE.md). Fresh build is clean; 362 unit/filesystem and 221 full native checks pass, plus a 27-check focused Reader repeat, zero failures/skips. Production sources are unchanged during closeout. Exhaustive display/accessibility/storage/user-library matrices remain carried limits, not pending implementation slices. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
 
-## Pinned future work: Browse/Gallery search (2026-11-12)
+## Deferred future phase: Browse/Gallery search (2026-11-12)
 
-The user wants a search feature considered for Browse and Gallery in a separately scoped future slice. Work out matching/filter behavior, navigation/selection interaction, large-library performance and keyboard UX then. This is a backlog idea, not an implemented feature or authorization to start it. Reader Go remains a simple bounded numeric page-jump field; the earlier list/grid picker is superseded.
+The user explicitly defers Browse/Gallery search to a future phase. It is not the next active implementation slice; revisit and scope it separately when requested. Work out matching/filter behavior, navigation/selection interaction, large-library performance and keyboard UX then. This is a backlog idea, not an implemented feature or authorization to start it. Reader Go remains a simple bounded numeric page-jump field; the earlier list/grid picker is superseded.
 
 ## Dated milestones
 

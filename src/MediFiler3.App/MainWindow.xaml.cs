@@ -101,6 +101,7 @@ public partial class MainWindow : Window
         _browseView.AudioSettingsChanged += (volume, muted) => settings.Update(s => s with { Volume = volume, Muted = muted });
         _browseView.FolderPinChanged += pinned => settings.Update(s => s with { FolderTreePinned = pinned });
         Closed += (_, _) => { _historyAvailabilityCancellation?.Cancel(); _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
+        _browseView.ViewShortcutHandler = TryHandleViewShortcut;
         _browseView.SetReaderOptions(settings.Current.GetReaderOptions());
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount, settings.Current.CarouselEnabled);
         _settingsView.SetReaderOptions(settings.Current.GetReaderOptions());
@@ -123,6 +124,8 @@ public partial class MainWindow : Window
             settings.Update(s => s with { CarouselEnabled = enabled });
         };
         InitializeComponent();
+        ToolbarIsland.ViewShortcutHandler = TryHandleViewShortcut;
+        NavigationIsland.ViewShortcutHandler = TryHandleViewShortcut;
         ToolbarIsland.ReaderNavigateRequested += command => { if (ReaderCommandsAvailable) _browseView.NavigateReader(command); };
         ToolbarIsland.ReaderJumpRequested += async () => await RunViewShortcutAsync(PromptReaderJumpAsync);
         ToolbarIsland.ReaderOpenBrowseRequested += () => { if (ReaderCommandsAvailable) _browseView.OpenReaderInBrowse(); };
@@ -371,6 +374,7 @@ public partial class MainWindow : Window
     {
         if (!IsEnabled || OwnedWindows.OfType<Window>().Any(window => window.IsVisible)) return false;
         if (_browseView.IsGalleryMoveDragActive) return false; // Let the native drag loop own Escape/modifiers.
+        if (ReaderIsActive && IsHiddenReaderCommandShortcut(key, modifiers)) return false;
         Func<Task>? action = null;
         var pinTree = key == Key.F3 && modifiers == ModifierKeys.None;
         if (key == Key.F11 || IsFullscreen && key == Key.Escape)
@@ -378,9 +382,13 @@ public partial class MainWindow : Window
         else if (PageContent.Content == _browseView)
         {
             if (ReaderIsActive && key == Key.G && modifiers == ModifierKeys.Control) action = PromptReaderJumpAsync;
-            else if (ReaderIsActive && key == Key.Enter && modifiers == ModifierKeys.None) action = () => { _browseView.OpenReaderInBrowse(); return Task.CompletedTask; };
-            else if (ReaderIsActive && key == Key.Enter && modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
-                action = () => _browseView.OpenExternallyAsync(modifiers == ModifierKeys.Control ? ExternalFileAction.DefaultApplication : ExternalFileAction.ChooseApplication);
+            // Reader command shortcuts temporarily commented out with the hidden toolbar:
+            // else if (ReaderIsActive && key == Key.Enter && modifiers == ModifierKeys.None)
+            //     action = () => { _browseView.OpenReaderInBrowse(); return Task.CompletedTask; };
+            // else if (ReaderIsActive && key == Key.Enter && modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
+            //     action = () => _browseView.OpenExternallyAsync(modifiers == ModifierKeys.Control ? ExternalFileAction.DefaultApplication : ExternalFileAction.ChooseApplication);
+            // Reader F2/Delete/Ctrl+Z/Ctrl+Y also skip the shared bindings below via the
+            // Reader-only guard above; their Browse/Gallery bindings remain unchanged.
             else if (pinTree) action = () => { _browseView.ToggleFolderPinned(); return Task.CompletedTask; };
             else if (key == Key.F5 && modifiers == ModifierKeys.None) action = RefreshBrowseAsync;
             else if (key == Key.Z && modifiers == ModifierKeys.Control) action = _browseView.UndoLastOperationAsync;

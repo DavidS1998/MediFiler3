@@ -15,6 +15,7 @@ public sealed partial class WinUiToolbarIsland
     public void SetGalleryControls(bool visible, double width, double height)
     {
         _galleryControlsVisible = visible;
+        UpdateExternalCommandVisibility();
         _galleryWidth = width; _galleryHeight = height;
         if (_galleryControls is not null) _galleryControls.Visibility = visible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
         _settingGalleryControls = true;
@@ -24,6 +25,18 @@ public sealed partial class WinUiToolbarIsland
             if (_galleryHeightSlider is not null) _galleryHeightSlider.Value = height;
         }
         finally { _settingGalleryControls = false; }
+    }
+
+    private void UpdateExternalCommandVisibility()
+    {
+        var visibility = _readerControlsVisible || _galleryControlsVisible
+            ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+        if (_externalToolbar is not null)
+        {
+            _externalToolbar.OpenButton.Visibility = visibility;
+            _externalToolbar.ChooseButton.Visibility = visibility;
+        }
+        if (_externalActionsSeparator is not null) _externalActionsSeparator.Visibility = visibility;
     }
 
     private Grid CreateGalleryControls()
