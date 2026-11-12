@@ -1,0 +1,35 @@
+F4 text-mode crash investigation, 2026-11-12
+
+Windows Application Event 1026 at 01:02:41 local records an unhandled
+System.InvalidOperationException in PresentationCore:
+"Every RoutedEventArgs must have a non-null RoutedEvent associated with it."
+
+Recorded stack:
+System.Windows.RoutedEventArgs.set_Handled(Boolean)
+ViewerHostView.HandleKey(KeyEventArgs), line 79
+BrowseView.HandleViewShortcut(Key, ModifierKeys), line 29
+MainWindow.TryHandleViewShortcut(...), line 389
+MainWindow.OnFullscreenMessage(...), line 46
+ComponentDispatcherThread.RaiseThreadMessage(...)
+
+Associated Event 1000 at 01:02:42 records KERNELBASE.dll / 0xe0434352.
+WER report ID: d4b957cd-5365-4649-b29e-e357d504b73c.
+
+Cause: the cross-view shortcut adapter constructed KeyEventArgs without
+assigning RoutedEvent. F4 successfully toggled text mode, then setting
+Handled threw. Forwarded image zoom and media keys used the same unsafe
+adapter. Normal WPF-routed key events already had their RoutedEvent.
+
+Fix: assign Keyboard.PreviewKeyDownEvent to the synthetic KeyEventArgs before
+calling ViewerHostView.HandleKey. Existing focus-independent routing and
+handler behavior remain unchanged. No global exception suppression added.
+
+Regression: real MainWindow/Browse with text, image and silent WAV fixtures;
+repeated F4 through the shared shortcut handler from native toolbar focus,
+plus forwarded image zoom and playback Space. Tests use only runner-owned
+files. Actual physical keyboard travel and DPI remain manual acceptance.
+
+Verification: build 0 warnings/errors; 359 unit/filesystem and 209 full native
+checks passed, zero failures/skips. The F4/zoom/media forwarding check passed
+in both the 17-check focused run and the full supplied-fixture run. Full log:
+%TEMP%/MediFiler3Reader-picker-full.log.

@@ -292,6 +292,9 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _deleteFileButton = null;
         _rootElement = null;
         _fullscreenButton = null;
+        _readerFileSeparators.Clear(); _readerNavigationDivider = null;
+        _readerPrevious = null; _readerNext = null; _readerJump = null;
+        _readerControls = null; _readerWidthControls = null; _readerWidthButton = null; _readerHeightButton = null; _readerWidthSlider = null; _readerWidthLabel = null;
         _galleryControls = null; _galleryWidthSlider = null; _galleryHeightSlider = null;
     }
 
@@ -375,6 +378,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _externalToolbar = new ExternalOpenToolbarGroup(() => OpenDefaultRequested?.Invoke(), () => OpenWithRequested?.Invoke());
         middle.PrimaryCommands.Add(_externalToolbar.OpenButton);
         middle.PrimaryCommands.Add(_externalToolbar.ChooseButton);
+        AddReaderNavigationControls(middle);
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
 
@@ -403,6 +407,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         layout.Children.Add(_mediaToolbar.Control);
         SetExternalOpenState(_externalState);
 
+        var reader = CreateReaderControls();
+        Grid.SetColumn(reader, 2); layout.Children.Add(reader);
         var gallery = CreateGalleryControls();
         Grid.SetColumn(gallery, 2);
         layout.Children.Add(gallery);

@@ -104,6 +104,7 @@ public partial class BrowseView
         }
         if (!Current()) return false;
         _gallery?.InvalidateThumbnails(invalidatedPaths.Concat(batch.RescanRoots));
+        _reader?.Invalidate(invalidatedPaths.Concat(batch.RescanRoots));
         if (batch.Status is not null) StatusChanged?.Invoke(batch.Status);
 
         if (batch.HierarchyChanged || batch.RescanRoots.Count > 0 || reconcileRoots.Count > 0)
@@ -160,6 +161,7 @@ public partial class BrowseView
                 foreach (var path in changed) await maintenance.InvalidateAsync(path, false, token);
             if (!Current() || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
             _gallery?.InvalidateThumbnails(changed);
+            _reader?.Invalidate(changed);
             foreach (var item in CarouselItems.OfType<CarouselThumbnailItem>().Where(i => changed.Contains(i.File.FullPath, StringComparer.OrdinalIgnoreCase)))
             {
                 item.ThumbnailCancellation?.Cancel();

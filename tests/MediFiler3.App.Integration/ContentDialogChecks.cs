@@ -57,14 +57,18 @@ internal static partial class Program
         });
     }
 
+    private static Task DriveContentDialogAsync(string title, Func<Task> request,
+        Action<System.Windows.Window, Native.ContentDialog> choose) =>
+        DriveContentDialogAsync(title, request, (window, dialog) => { choose(window, dialog); return Task.CompletedTask; });
+
     private static async Task DriveContentDialogAsync(string title, Func<Task> request,
-        Action<System.Windows.Window, Native.ContentDialog> choose)
+        Func<System.Windows.Window, Native.ContentDialog, Task> choose)
     {
         Exception? failure = null;
         var visited = false;
         var started = DateTime.UtcNow;
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(25) };
-        timer.Tick += (_, _) =>
+        timer.Tick += async (_, _) =>
         {
             var window = System.Windows.Application.Current.Windows.Cast<System.Windows.Window>().FirstOrDefault(w => w.Title == title);
             if (window is null) return;
@@ -75,7 +79,7 @@ internal static partial class Program
                     ?.GetValue(window.Content) as Native.Grid;
                 if (root?.Children.FirstOrDefault() is not Native.ContentDialog dialog || NativeDialogButton(dialog, "CloseButton") is null) return;
                 timer.Stop(); visited = true;
-                choose(window, dialog);
+                await choose(window, dialog);
             }
             catch (Exception exception) { failure = exception; timer.Stop(); window.Close(); }
         };
@@ -83,7 +87,7 @@ internal static partial class Program
         try
         {
             await request();
-            if (failure is not null) throw failure;
+            if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
             Require(visited, "Expected ContentDialog was never shown");
         }
         finally { timer.Stop(); }

@@ -145,26 +145,49 @@ internal static partial class Program
             Require(Math.Abs(Grid().Padding.Left - Grid().Padding.Right - 26) < 1, "Unpin retained reserved tree space");
         });
         await RunGalleryInputChecksAsync(state, browse, toolbar, navigation, Gallery);
+        var performance = new Dictionary<string, object>
+        {
+            ["Scope"] = "Single-run Gallery scale smoke check; generated nonexistent paths, not an image-decoding or real-library benchmark",
+            ["CapturedUtc"] = DateTimeOffset.UtcNow,
+            ["Runtime"] = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+            ["OS"] = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+            ["ProcessorCount"] = Environment.ProcessorCount,
+            ["DpiScale"] = System.Windows.Media.VisualTreeHelper.GetDpi(browse).DpiScaleX,
+            ["ViewportWidth"] = Grid().ActualWidth, ["ViewportHeight"] = Grid().ActualHeight,
+            ["FileCount"] = 10000
+        };
         await Check("Gallery virtualizes a large file list and releases realized work on tab change", async () =>
         {
             var files = state.Files.ToArray();
+            var publish = System.Diagnostics.Stopwatch.StartNew();
             state.ReplaceFiles(Enumerable.Range(0, 10000).Select(i => new FileEntry(System.IO.Path.Combine(directory, $"large-{i}.unknown"), $"large-{i}.unknown", 1, DateTime.UnixEpoch)));
             await WaitUntil(() => Grid().Items.Count == 10000 && Gallery().RealizedCount > 0);
+            performance["PublishAndInitialRealizationMs"] = publish.Elapsed.TotalMilliseconds;
+            performance["InitialRealizedTiles"] = Gallery().RealizedCount;
             Require(Gallery().RealizedCount < 1000, "Gallery realized the full collection");
+            var selection = System.Diagnostics.Stopwatch.StartNew();
             typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.A, true]);
             Require(state.GallerySelection.Count == 10000 && Grid().SelectedItems.Count == 10000 && Gallery().RealizedCount < 1000,
                 "Select All lost targets or realized the full collection");
+            performance["SelectAllMs"] = selection.Elapsed.TotalMilliseconds;
+            performance["SelectAllRealizedTiles"] = Gallery().RealizedCount;
+            selection.Restart();
             typeof(WinUiGalleryIsland).GetMethod("HandleSelectionKey", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Gallery(), [Windows.System.VirtualKey.Escape, false]);
+            performance["ClearSelectionMs"] = selection.Elapsed.TotalMilliseconds;
             var items = Grid().Items;
             Grid().ScrollIntoView(items[9000]);
             await Task.Delay(200);
             Require(Gallery().RealizedCount is > 0 and < 1000, "Scrolling retained an unbounded container set");
             Require(((System.Collections.IDictionary)Field(Gallery(), "_decodedIndex")!).Count <= 512 && (long)Field(Gallery(), "_decodedBytes")! <= 128L * 1024 * 1024,
                 "Decoded thumbnail retention is not bounded");
+            performance["RealizedTilesAfterDistantScroll"] = Gallery().RealizedCount;
+            performance["DecodedCacheEntries"] = ((System.Collections.IDictionary)Field(Gallery(), "_decodedIndex")!).Count;
+            performance["DecodedCacheBytes"] = (long)Field(Gallery(), "_decodedBytes")!;
             navigation.SelectDestination("Settings");
             await WaitUntil(() => !(bool)Field(Gallery(), "_active")!);
             var calls = thumbnails.Calls; await Task.Delay(100);
             Require(thumbnails.Calls == calls, "Inactive Gallery keeps scheduling thumbnail work");
+            performance["ThumbnailRequestsWhileInactive100ms"] = thumbnails.Calls - calls;
             state.ReplaceFiles(files);
             navigation.SelectDestination("Gallery");
             await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland island && Field(island, "_grid") is Microsoft.UI.Xaml.Controls.GridView { IsLoaded: true, Items.Count: 80 });
@@ -175,6 +198,7 @@ internal static partial class Program
             var files = state.Files.ToArray();
             var source = Grid().ItemsSource;
             var large = Enumerable.Range(0, 10000).Select(i => new FileEntry(System.IO.Path.Combine(directory, $"return-{i}.unknown"), $"return-{i}.unknown", 1, DateTime.UnixEpoch)).ToArray();
+            var returns = System.Diagnostics.Stopwatch.StartNew();
             var resets = 0; var individualChanges = 0;
             var notifications = (System.Collections.Specialized.INotifyCollectionChanged)source;
             System.Collections.Specialized.NotifyCollectionChangedEventHandler changed = (_, args) =>
@@ -201,6 +225,13 @@ internal static partial class Program
                     Require(ReferenceEquals(source, Grid().ItemsSource), "Large returns replaced the native source");
                 }
                 Require(resets == 4 && individualChanges == 0, "Disjoint listing replacement exposed intermediate native collection indices");
+                performance["DisjointResetCount"] = resets;
+                performance["DisjointIndividualNotifications"] = individualChanges;
+                performance["TwoLargeReturnRoundsMsIncludingFixedWaits"] = returns.Elapsed.TotalMilliseconds;
+                performance["RetainedItemsSource"] = ReferenceEquals(source, Grid().ItemsSource);
+                var json = System.Text.Json.JsonSerializer.Serialize(performance, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                System.IO.File.WriteAllText(System.IO.Path.Combine(Root, "phase5-performance.json"), json);
+                Console.WriteLine("Phase 5 scale evidence: " + System.IO.Path.Combine(Root, "phase5-performance.json"));
             }
             finally { notifications.CollectionChanged -= changed; }
         });

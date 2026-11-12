@@ -1,9 +1,20 @@
+using MediFiler3.Application.Navigation;
+
 namespace MediFiler3.Application.Persistence;
 
 public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5,
     int CarouselIconCount = 11, bool FolderTreePinned = false, bool CarouselEnabled = true,
-    int GalleryThumbnailWidth = 150, int GalleryThumbnailHeight = 150)
+    int GalleryThumbnailWidth = 150, int GalleryThumbnailHeight = 150,
+    ReaderScalingMode ReaderScaling = ReaderScalingMode.FitWidth, int ReaderSpacing = 0,
+    int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100)
 {
+    public ReaderOptions GetReaderOptions() => new(ReaderScaling, ReaderSpacing, ReaderPreload, ReaderPageIndicator, ReaderWidthPercent);
+    public ApplicationSettings WithReaderOptions(ReaderOptions options) => this with
+    {
+        ReaderScaling = options.Scaling, ReaderSpacing = options.Spacing,
+        ReaderPreload = options.Preload, ReaderPageIndicator = options.ShowPageIndicator, ReaderWidthPercent = options.WidthPercent
+    };
+
     public static int SnapGalleryDimension(double value) =>
         (int)(Math.Round(Math.Clamp(value, 100, 400) / 50, MidpointRounding.AwayFromZero) * 50);
 
@@ -17,6 +28,7 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
 
     public void Validate()
     {
+        GetReaderOptions().Validate();
         if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(Volume));
         if (CarouselIconCount is < 1 or > 25 || CarouselIconCount % 2 == 0)

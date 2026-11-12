@@ -1,23 +1,21 @@
 # Development plan
 
-## Phase 5.4 implemented (2026-11-11)
+## Current closeout state (2026-11-11)
 
-Gallery grouped moves, confirmed journal-backed grouped Recycle Bin commands and root-scoped Undo/Redo are implemented with explicit partial/cancelled/unattempted outcomes. See PROJECT_STATUS.md and PHASE5_HANDOVER.md for command scope and safeguards. Phase 5.5 physical/performance acceptance remains next. Bulk rename is not planned. Earlier 5.4-pending entries below are historical.
+**The approved Gallery phase 5.1-5.5 and internal Gallery-to-tree drag/drop follow-ups are complete with recorded limits.** See [PROJECT_STATUS.md](PROJECT_STATUS.md), [PHASE5_ACCEPTANCE.md](PHASE5_ACCEPTANCE.md) and [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md) for current behavior, verification, measured scale latency and continuation safeguards. Earlier dated pending-slice statements below are historical.
 
-## Current continuation state (2026-11-11)
-
-Phase 5.1-5.3 and the subsequent Gallery UX/resume/thumbnail refinements are implemented. Current rendering uses Windows-default shared PNG sizes with no manual blur, solid pink outlines, square carousel frames and Alt-hover selection; native Ctrl/Shift behavior stays standard. Full/disjoint native source changes batch one Reset, while shared-path changes remain incremental. Slider display dimensions remain independently persisted at 100-400/50, with fixed 150-pixel control widths.
-
-Current branch/HEAD: master/0880e94; subsequent source/tests remain uncommitted. Fresh handover verification: 316 unit/filesystem tests and 181 native checks passed without failures/skips; build zero warnings/errors. Current snapshot and next actions: [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation caveats and pending decisions: [PHASE5_HANDOVER.md](PHASE5_HANDOVER.md). Earlier "not started", baseline hashes and intermediate counts below describe their original milestones.
-
-| Next work | Boundary |
+| Slice | State |
 |---|---|
-| Thumbnail review | Latest Windows-default/no-blur appearance and DPI behavior await user feedback; crop changes were not adopted |
-| 5.4 | Plan concrete command scope/partial outcomes/cancellation, reuse existing grouped moves, add journal-backed grouped recycle and validate collisions/Undo/Redo; retain current guards until ready |
-| 5.5 | Continue targeted reconciliation/performance/native stability checks and physical acceptance; existing automation alone does not close these limits |
-| Later | Continuous reader, additional sorts/filtering and drag/drop remain separately scoped |
+| 5.1 | Shared workspace/mode/selection foundations complete |
+| 5.2 | Retained virtualized Gallery and persisted independent dimensions complete |
+| 5.3 | Selection/input/accessibility/scoped shortcuts complete |
+| 5.4 | Safe grouped moves/recycle/root history, partial/cancel outcomes and follow-up fixes complete |
+| Approved drag/drop extension | Threshold-safe internal dragging, cropped translucent preview, tree targets/hover/edge/native wheel navigation complete |
+| 5.5 | Full regression, two bounded scale samples and targeted user physical acceptance complete; remaining cases documented |
 
-This final turn is documentation/verification only, not authorization to implement the next slice or to commit/push.
+User confirmed nested-folder dragging, edge scrolling and wheel scrolling during a drag. Final build is clean; 327 unit/filesystem and 192 full native checks passed, plus a 31-check focused Gallery repeat, all without failures/skips. Clearing 10,000 selected files measured 0.76-1.03s; keep that known scale latency and the physical/native/environment limits visible.
+
+Reader slices 1-4 are now implemented using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md). Reader organization/live reconciliation (5) and final acceptance (6) remain pending. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
 
 ## Dated milestones
 

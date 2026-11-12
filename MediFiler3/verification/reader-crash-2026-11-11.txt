@@ -1,0 +1,53 @@
+Reader crash investigation, 2026-11-11
+
+Evidence: local Windows Application events and minidumps; no user media changed.
+Windows Event 1000 records Microsoft.UI.Xaml.dll 3.3.0.0, offset 0x3d1699,
+exception 0xc000027b. Associated WER events record combase.dll / 0x80000013
+(RO_E_CLOSED). Reports at 22:48:44 and 22:49:31; third dump at 22:51:57.
+
+Minidumps retained outside the repository in %LOCALAPPDATA%/CrashDumps:
+MediFiler3.App.exe.61292.dmp (59,902,417 bytes)
+MediFiler3.App.exe.57884.dmp (67,342,041 bytes)
+MediFiler3.App.exe.56752.dmp (59,667,538 bytes)
+
+All three failing thread stacks contain the same image-worker addresses.
+Resolved against the matching Microsoft public PDB (RSDS
+C1689B46-4BD2-CADF-9955-9893CD94970C, age 2):
+Microsoft.UI.Xaml.dll+0x3d1699: FailFastWithStowedExceptions+0x61
+Microsoft.UI.Xaml.dll+0x36ab02: AsyncCopyToSurfaceTask::CopyOperation (cold code)
+Microsoft.UI.Xaml.dll+0x1e4462: AsyncCopyToSurfaceTask::Execute+0x92
+Microsoft.UI.Xaml.dll+0x267597: AsyncImageFactory::WorkCallback+0x17
+Microsoft.UI.Xaml.dll+0x25638b: CWinWorkItem::WorkCallback+0x1b
+
+Method: parsed minidump exception/module/thread/memory streams, scanned the
+failing thread's captured stack for code addresses, resolved those addresses
+with dbghelp and the matching PDB. This is not a complete debugger unwind.
+The stowed exception heap records were absent from these minidumps, so their
+nested information is unavailable. The PDB and scripts remain in %TEMP%, not
+in the repository. No application-wide exception suppression was added.
+
+Reader previously created a disposable SoftwareBitmap, awaited
+SoftwareBitmapSource.SetBitmapAsync and then closed the input bitmap. The
+native image worker stack and RO_E_CLOSED match a deferred render copy using
+that closed input. Replaced the handoff with a WriteableBitmap whose pixel
+buffer owns a copy of the bounded decoded BGRA bytes. This removes that input
+lifetime dependency; original decoder/file lifetimes and output/cache bounds
+remain intact. Reader image tooltips were removed as separately requested.
+
+Regression uses 1536x2048 runner-owned pages, repeated resize/scroll,
+rendered-pixel assertions after collection, invalidation, warm return and cache
+pressure, plus mouse drag/right/double-click messages addressed only to the
+hidden test island. It verifies no tooltip, source mutation or mode change.
+Synthetic messages do not establish physical pointer routing or complete
+interactive acceptance. Existing unrelated native crash history stays open.
+
+Validation also exposed asynchronous ChangeView anchor loss on Home return.
+Reader now retains the file/fraction anchor until the native vertical offset
+reaches the requested position, and realizes that intended window while
+waiting. This prevents stale offsets and unrelated first-page loading from
+changing the anchor during native reattachment/measurement.
+
+Final validation: build 0 warnings/errors; 333 unit/filesystem and 199 full
+native checks passed, 0 failures/skips. Focused Reader: 7 passed. Full native
+evidence: %TEMP%/MediFiler3Integration-605a8ed3a472423b9522bdb7d9fcd1cc;
+log: %TEMP%/MediFiler3Reader-crash-full.log. Physical pointer review is pending.

@@ -10,6 +10,7 @@ public partial class BrowseView
     public bool HandleViewShortcut(Key key, ModifierKeys modifiers)
     {
         if (!_viewerActive) return false;
+        if (IsReader) return _reader?.HandleNavigationShortcut(key, modifiers) == true;
         if (IsGallery)
         {
             if (key == Key.A && modifiers == ModifierKeys.Control) _navigationState.GallerySelection.SelectAll(_navigationState.Files);
@@ -24,7 +25,10 @@ public partial class BrowseView
         }
         var source = PresentationSource.FromVisual(this);
         if (source is null) return false;
-        var args = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key);
+        var args = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)
+        {
+            RoutedEvent = Keyboard.PreviewKeyDownEvent
+        };
         if (ViewerHost.HandleKey(args)) return true;
         if (modifiers == ModifierKeys.None && key is Key.Left or Key.Right or Key.Up or Key.Down &&
             ViewerInputPolicy.CanNavigateWithArrow(false, ViewerHost.Capabilities, ViewerHost.Interaction))

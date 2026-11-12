@@ -21,13 +21,14 @@ public partial class BrowseView
     }
     private void OpenCarouselFileInGallery(MediFiler3.Domain.Files.FileEntry file)
     {
-        if (!_viewerActive || IsGallery || !_navigationState.ContainsFile(file)) return;
+        if (!_viewerActive || !IsBrowse || !_navigationState.ContainsFile(file)) return;
         _navigationState.SetCurrentFile(file);
         GalleryRequested?.Invoke();
     }
 
     private void HandleCarouselTileClick(MediFiler3.Domain.Files.FileEntry file, int clickCount)
     {
+        if (!IsBrowse) return;
         if (clickCount == 2) OpenCarouselFileInGallery(file);
         else if (!ReferenceEquals(file, _navigationState.CurrentFile)) SelectFile(file);
     }
@@ -52,7 +53,7 @@ public partial class BrowseView
         _carouselEnabled = enabled;
         _carouselRefreshVersion++;
         _carouselLoadCancellation?.Cancel();
-        CarouselOverlay.Visibility = enabled && !IsGallery ? Visibility.Visible : Visibility.Collapsed;
+        CarouselOverlay.Visibility = enabled && IsBrowse ? Visibility.Visible : Visibility.Collapsed;
         CarouselGhosts.Children.Clear();
         if (!enabled) { _carouselScrollTimer.Stop(); CancelCarouselItemLoads(); CarouselItems.Clear(); }
         SetFullscreenCarousel(_fullscreenCarousel);

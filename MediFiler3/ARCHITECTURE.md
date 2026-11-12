@@ -12,9 +12,9 @@ Use [PROJECT_STATUS.md](PROJECT_STATUS.md) for the active snapshot and [PHASE5_H
 | Selection visuals | Solid five-pixel #FF1493 pink, square carousel/current/ghost frames; no dash/accent/inner-stroke experiment remains |
 | Input | Native Ctrl/Shift Extended selection plus Alt-hover paint; mode-local state and guarded command snapshots |
 | Native source lifetime | Retain grid/ItemsSource/LRU; defer updates until loaded; atomic Reset for disjoint/empty lists, incremental diffs for shared paths; reapply HWND clipping and defer reveals |
-| Next phase | 5.1-5.3 implemented; Gallery file mutations/history stay guarded for 5.4; continuous reader and other sorts deferred |
+| Current phase | Gallery 5.1-5.5 and approved internal drag/drop complete with documented acceptance limits; Reader slices 1-4 implemented (see READER_HANDOVER.md); later Reader slices, other sorts/filtering and external file drag/export remain deferred |
 
-No implementation changes were made for this final documentation handover. Fresh verification: 316 unit/filesystem and 181 full native checks passed, clean build. Historical native collection faults and physical/DPI/provider-performance limits remain documented rather than declared impossible.
+Phase 5.5 closeout changes documentation and native scale diagnostics only. The clean build, 327 unit/filesystem tests, 192 full native checks and 31-check focused Gallery repeat passed. See [PHASE5_ACCEPTANCE.md](PHASE5_ACCEPTANCE.md) for measured bounds/latency, user physical confirmations and continuing native/environment limits. Production sources/settings/schema remain unchanged in closeout.
 
 ## Dated decision records
 
@@ -410,3 +410,17 @@ Enabled favorite stars now use the filled glyph with solid opaque white (`#FFFFF
 The full native Settings page intentionally retains the existing WinUiCarouselSettingsIsland name. Fullscreen transient persistence suppression includes native caption reveal, not just entry/exit. The native outer-window hit test must include negative client-relative Y over the caption; tree/sidebar reveal lifetime and offset must remain coordinated with video clipping and native HWND surface order. Carousel cancellation clears pending task references so missing previews resume on Browse reactivation.
 
 No new implementation was made during the final handover. Fresh build, 276 unit/filesystem tests and 144 native checks passed without failures/skips; physical limits remain in PHASE4_ACCEPTANCE.md. Gallery is the recommended next discussion, followed by continuous reader; neither is implemented.
+
+## Continuous Reader slices 1-2 (2026-11-11)
+
+ReaderSessionState owns an image-only projection and path/fraction anchor over the shared navigation list. A native ScrollViewer/Canvas realizes only the visible/preload window; source decoding lives behind IReaderImageService, independent of thumbnail caching. The WinRT first-frame decoder has two worker permits and a four-megapixel output cap; native decoded pages use a 128 MiB LRU. View changes cancel realized work and validate late publication. The adapter suppresses inactive Browse presentation and guards Reader file commands until the organization slice. See [READER_HANDOVER.md](READER_HANDOVER.md) for exact defaults, bounds and remaining scope.
+
+Reader slice 3 adds validated ReaderOptions and four backward-compatible ApplicationSettings JSON fields without a schema change. Native Settings routes changes through MainWindow into session/native geometry and existing debounced persistence. Per-page display widths determine decode buckets; page/fraction plus gap anchors survive reflow. A shared OutlinedStatus factory keeps Gallery/Reader counter appearance and rebuild lifetime consistent.
+
+Reader toolbar sizing follow-up moves scaling into a Reader-only native toolbar group with a 10-100% width slider. ReaderWidthPercent defaults to 100 in existing JSON payloads. MainWindow synchronizes toolbar, session and Settings snapshots through existing debounced settings persistence; narrower geometry remains centered and DPI decode requests use actual page width. Height mode retains but ignores the percentage.
+
+Reader icon-button follow-up uses native AppBarToggleButtons with Switch/Sort glyphs and keeps exactly one mode selected; the width slider precedes the command group. ReadingMode identifies the sidebar destination. F3 routes through the shared WPF/native window shortcut handler into the existing pin setter and persistence event, consuming repeats and validating dialogs/drag/page scope. It intentionally does not depend on current-file identity because Reader scrolling can change that while the pin action is queued.
+
+Reader slice 4 keeps page lookup/bounded navigation in Application and native viewport/explicit-selection/recovery lifetime in WinUiReaderIsland.Navigation. The toolbar uses the existing owned WinUI dialog host for validated jumps; MainWindow validates root/folder/projection/view before applying results. Existing window preprocessing routes Reader keys across WPF/native focus. Error actions use live row/activity membership guards and shared Browse handoff. Source ownership, cache limits, operation guards and persistence schema remain unchanged.
+
+Reader picker follow-up uses an immutable numbered-filename snapshot in a fixed-height native virtualized ListView. Typing and selection share validation; deferred ScrollIntoView uses closure/input-version guards, and the existing post-dialog context validation remains. Reader Open in Browse buttons are removed while Enter handoff remains. Sidebar grouping uses NavigationViewItemSeparator. Forwarded Browse viewer key arguments now include their WPF routed event, preventing the confirmed F4 Handled setter exception without suppressing failures.

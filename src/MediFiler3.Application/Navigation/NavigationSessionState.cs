@@ -12,6 +12,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
     private FileEntry? _currentFile;
     private readonly Dictionary<FileEntry, int> _fileIndices = [];
     private bool _replacingFiles;
+    public ReaderSessionState Reader { get; } = new();
     public GallerySelectionState GallerySelection { get; } = new();
     public ViewingMode ViewingMode { get; private set; } = ViewingMode.Browse;
 

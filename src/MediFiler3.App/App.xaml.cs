@@ -58,6 +58,7 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();
                     services.AddSingleton<IFolderChangeMonitor, FileSystemFolderChangeMonitor>();
                     services.AddSingleton<FileSystemThumbnailService>();
+                    services.AddSingleton<IReaderImageService, FileSystemReaderImageService>();
                     services.AddSingleton<IThumbnailService>(p => p.GetRequiredService<FileSystemThumbnailService>());
                     services.AddSingleton<IFileCollisionPreviewService, FileSystemCollisionPreviewService>();
                     services.AddSingleton<ITextContentService, FileSystemTextContentService>();

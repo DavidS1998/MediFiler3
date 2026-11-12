@@ -58,6 +58,10 @@ internal static partial class Program
                     Directory.CreateDirectory(Root); MakeFixtures();
                     await RunUiRefinementChecksAsync();
                 }
+                else if (args.Length == 1 && args[0] == "--reader-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures(); await RunReaderChecksAsync();
+                }
                 else if (args.Length == 1 && args[0] == "--gallery-resume-only")
                 {
                     Directory.CreateDirectory(Root); MakeFixtures();
@@ -378,6 +382,7 @@ internal static partial class Program
         await RunWatcherChecksAsync();
         await RunUiRefinementChecksAsync();
         await RunGalleryResumeChecksAsync();
+        await RunReaderChecksAsync();
         await RunPhase4RestartChecksAsync();
         await RunHomeChecksAsync();
         await RunRootHistoryChecksAsync();

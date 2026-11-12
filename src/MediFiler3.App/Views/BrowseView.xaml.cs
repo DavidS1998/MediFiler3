@@ -72,6 +72,7 @@ public partial class BrowseView : UserControl
         FolderPinButton.IsChecked = pinned;
         ApplyFolderPin();
     }
+    public void ToggleFolderPinned() => SetFolderPinned(!_folderOverlayPinned);
     public void TogglePlayback() => ViewerHost.TogglePlayback();
     public void StopPlayback() => ViewerHost.StopPlayback();
     public void SeekPlayback(double seconds) => ViewerHost.SeekPlayback(seconds);
@@ -107,8 +108,9 @@ public partial class BrowseView : UserControl
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
-        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null, IFolderChangeMonitor? changeMonitor = null)
+        WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null, IFolderChangeMonitor? changeMonitor = null, IReaderImageService? readerImages = null)
     {
+        _readerImages = readerImages;
         _changeMonitor = changeMonitor;
         _rootHistory = rootHistory;
         _folderTreeService = folderTreeService;
@@ -445,6 +447,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
+        if (IsReader) return;
         if (IsGallery) { await RunGalleryFileCommandAsync(destination); return; }
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -483,6 +486,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        if (IsReader) return;
         if (_galleryCommandCancellation is not null || _historyBusy) return;
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -535,6 +539,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
+        if (IsReader) return;
         if (IsGallery) { await RunGalleryFileCommandAsync(null); return; }
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -569,6 +574,7 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        if (IsReader) return;
         if (_historyBusy || _galleryCommandCancellation is not null) return;
         using var reconciliationDeferral = DeferReconciliation();
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
@@ -687,6 +693,7 @@ public partial class BrowseView : UserControl
         {
             if (_thumbnailService is IThumbnailCacheMaintenance cache) await cache.InvalidateAsync(active.Path, true);
             _gallery?.InvalidateThumbnails([active.Path]);
+            _reader?.Invalidate([active.Path]);
         }
         if (_navigationState.Roots.Count == 0) return;
         await RefreshFolderTreeAsync(_navigationState.ActiveFolder?.Path,
@@ -941,6 +948,7 @@ public partial class BrowseView : UserControl
         _viewerActive = false;
         _navigationState.PropertyChanged -= OnGalleryContextChanged;
         if (_gallery is not null) { GalleryHost.Children.Remove(_gallery); _gallery.Dispose(); _gallery = null; }
+        if (_reader is not null) { ReaderHost.Children.Remove(_reader); _reader.Dispose(); _reader = null; }
         _carouselRefreshVersion++;
         _carouselLoadCancellation?.Cancel();
         CancelCarouselItemLoads();
@@ -1029,6 +1037,7 @@ public partial class BrowseView : UserControl
 
     private void OnCarouselSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!IsBrowse) return;
         if (!_carouselOverlayVisible)
         {
             RestoreCarouselSelection();
@@ -1100,6 +1109,7 @@ public partial class BrowseView : UserControl
 
     private void OnBrowsePreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (!IsBrowse) return;
         if (!ViewerHost.IsKeyboardFocusWithin && !CarouselList.IsKeyboardFocusWithin)
         {
             return;
@@ -1156,7 +1166,8 @@ public partial class BrowseView : UserControl
         UpdateGalleryTreeInset();
         FolderPinChanged?.Invoke(_folderOverlayPinned);
         FolderPinGlyph.Text = _folderOverlayPinned ? "\uE77A" : "\uE718";
-        FolderPinButton.ToolTip = _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open";
+        FolderPinButton.SetValue(System.Windows.Automation.AutomationProperties.AcceleratorKeyProperty, "F3");
+        FolderPinButton.ToolTip = _folderOverlayPinned ? "Unpin folder panel (F3)" : "Pin folder panel open (F3)";
         FolderPinButton.SetValue(System.Windows.Automation.AutomationProperties.NameProperty,
             _folderOverlayPinned ? "Unpin folder panel" : "Pin folder panel open");
         SetFolderOverlayVisible(_folderOverlayPinned || _folderOverlayVisible);
@@ -1164,7 +1175,7 @@ public partial class BrowseView : UserControl
 
     private void OnVideoSurfaceRendering(object? sender, EventArgs args)
     {
-        if ((!ViewerHost.HasVideoSurface && (!IsGallery || _gallery is null)) || !IsVisible) return;
+        if ((!ViewerHost.HasVideoSurface && (!IsGallery || _gallery is null) && (!IsReader || _reader is null)) || !IsVisible) return;
         // Native HWNDs otherwise cover WPF overlays. Cut out only their visible regions, preserving video layout.
         var width = BrowseSurface.ActualWidth;
         var height = BrowseSurface.ActualHeight;
@@ -1175,7 +1186,7 @@ public partial class BrowseView : UserControl
         {
             new(0, 0, Math.Max(26, folderWidth), height)
         };
-        if (_carouselEnabled && !IsGallery) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
+        if (_carouselEnabled && IsBrowse) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
         foreach (var shellExclusion in _shellVideoExclusions) exclusions.Add(shellExclusion);
         if (OperationNotice.Visibility == Visibility.Visible)
             exclusions.Add(OperationNotice.TransformToAncestor(BrowseSurface).TransformBounds(new Rect(OperationNotice.RenderSize)));
@@ -1184,6 +1195,11 @@ public partial class BrowseView : UserControl
         {
             UpdateGalleryTreeInset();
             _gallery?.SetExclusions(exclusions);
+        }
+        if (IsReader)
+        {
+            _reader?.SetTreeInset(_folderOverlayPinned ? FolderOverlay.Width + FolderOverlay.Margin.Left : 26);
+            _reader?.SetExclusions(exclusions);
         }
     }
 
@@ -1213,7 +1229,7 @@ public partial class BrowseView : UserControl
 
     private void SetCarouselOverlayVisible(bool isVisible)
     {
-        isVisible &= _carouselEnabled && !IsGallery;
+        isVisible &= _carouselEnabled && IsBrowse;
         if (_carouselOverlayVisible == isVisible)
         {
             return;
@@ -1267,7 +1283,7 @@ public partial class BrowseView : UserControl
 
     private void PresentSelectedFile(FileEntry file)
     {
-        if (IsGallery) return;
+        if (!IsBrowse) { RefreshReaderFiles(); return; }
         var item = CarouselItems.OfType<CarouselThumbnailItem>()
             .FirstOrDefault(candidate => ReferenceEquals(candidate.File, file));
         ViewerHost.ResetZoomState();
@@ -1278,7 +1294,7 @@ public partial class BrowseView : UserControl
 
     private async Task RefreshCarouselAsync()
     {
-        if (!_carouselEnabled || !_viewerActive || IsGallery) return;
+        if (!_carouselEnabled || !_viewerActive || !IsBrowse) return;
         var refreshVersion = ++_carouselRefreshVersion;
         if (_carouselLoadCancellation is null || _carouselLoadCancellation.IsCancellationRequested)
         {
@@ -1529,7 +1545,7 @@ public partial class BrowseView : UserControl
     }
 
     private Task LoadCurrentImageAsync(bool clearCurrentImage, BitmapSource? immediatePreview = null) =>
-        IsGallery ? Task.CompletedTask : ViewerHost.LoadAsync(_navigationState.CurrentFile, clearCurrentImage, immediatePreview);
+        !IsBrowse ? Task.CompletedTask : ViewerHost.LoadAsync(_navigationState.CurrentFile, clearCurrentImage, immediatePreview);
 
     public void ResetZoomToFit() => ViewerHost.ResetZoomToFit();
     private bool _viewerActive = true;
@@ -1548,7 +1564,7 @@ public partial class BrowseView : UserControl
             CancelCarouselItemLoads();
             _carouselScrollTimer.Stop();
         }
-        if (IsGallery) ApplyViewingMode();
+        if (!IsBrowse) ApplyViewingMode();
         else ViewerHost.SetActive(active);
         if (active && changed) { StartWatching(); _ = RefreshCarouselAsync(); }
     }
@@ -1557,6 +1573,7 @@ public partial class BrowseView : UserControl
         bool requireActive = false, CancellationToken token = default, bool allowGallery = false, Func<bool>? scopeIsCurrent = null)
     {
         if (root is null) throw new InvalidOperationException("Select a folder in a loaded root first.");
+        if (requireActive && IsReader) throw new InvalidOperationException("Reader file commands are not enabled in this slice.");
         var service = await _fileOrganizationService.ForRootAsync(root.Path, token);
         if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive || IsGallery && !allowGallery)))
             throw new InvalidOperationException("The active root changed before the command could run.");

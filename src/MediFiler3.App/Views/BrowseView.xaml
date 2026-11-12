@@ -119,6 +119,7 @@
         <views:ViewerHostView x:Name="ViewerHost"
                               TextSideClearance="{Binding ActualWidth, ElementName=FolderOverlay}" />
         <Grid x:Name="GalleryHost" />
+        <Grid x:Name="ReaderHost" Visibility="Collapsed" />
 
         <Border x:Name="LeftRevealTarget" Width="26" HorizontalAlignment="Left" Background="Transparent" IsHitTestVisible="True" />
         <Border x:Name="BottomRevealTarget" Height="26" VerticalAlignment="Bottom" Background="Transparent" IsHitTestVisible="True" />

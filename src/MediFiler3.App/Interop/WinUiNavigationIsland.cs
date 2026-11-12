@@ -116,6 +116,7 @@ public sealed class WinUiNavigationIsland : HwndHost
             Icon = new SymbolIcon(Symbol.Home),
             Tag = "Home"
         });
+        navigationView.MenuItems.Add(new NavigationViewItemSeparator());
         navigationView.MenuItems.Add(new NavigationViewItem
         {
             Content = "Browse",
@@ -128,6 +129,7 @@ public sealed class WinUiNavigationIsland : HwndHost
             Icon = new SymbolIcon(Symbol.Pictures),
             Tag = "Gallery"
         });
+        navigationView.MenuItems.Add(new NavigationViewItem { Content = "Reader", Icon = new FontIcon { Glyph = "\uE736" }, Tag = "Reader" });
         navigationView.FooterMenuItems.Add(new NavigationViewItem
         {
             Content = "Settings",

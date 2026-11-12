@@ -13,7 +13,7 @@ using Windows.Graphics;
 
 namespace MediFiler3.Interop;
 
-public sealed class WinUiCarouselSettingsIsland : HwndHost
+public sealed partial class WinUiCarouselSettingsIsland : HwndHost
 {
     private DesktopWindowXamlSource? _xamlSource;
     private Slider? _slider;
@@ -113,6 +113,7 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
         var count = new TextBlock { Text = $"{_neighborCount * 2 + 1} icons", VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
         _slider.ValueChanged += (_, _) => count.Text = $"{_neighborCount * 2 + 1} icons";
         Grid.SetColumn(count, 1); sliderRow.Children.Add(count); page.Children.Add(sliderRow);
+        AddReaderSettings(page);
         page.Children.Add(Heading("Overwrite backups"));
         page.Children.Add(Description("Replaced files are kept for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."));
         _clearBackups = new Button { Content = "Clear overwrite backups" };
@@ -159,6 +160,7 @@ public sealed class WinUiCarouselSettingsIsland : HwndHost
             _xamlSource = null;
         }
 
+        _readerSpacing = null; _readerPreload = null; _readerIndicator = null;
         _slider = null; _carouselToggle = null; _clearBackups = null; _clearCache = null; _backupStatus = null; _cacheStatus = null;
     }
 

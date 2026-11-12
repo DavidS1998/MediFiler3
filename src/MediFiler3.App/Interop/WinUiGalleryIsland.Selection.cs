@@ -12,26 +12,7 @@ public sealed partial class WinUiGalleryIsland
     private long _selectionContextVersion;
     private readonly List<TextBlock> _selectionOutlines = [];
 
-    private Grid CreateSelectionStatus()
-    {
-        var host = new Grid { HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Bottom,
-            Margin = new Thickness(8, 8, 24, 8), IsHitTestVisible = false };
-        for (var y = -1; y <= 1; y++)
-            for (var x = -1; x <= 1; x++)
-            {
-                if (x == 0 && y == 0) continue;
-                var outline = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black),
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    RenderTransform = new Microsoft.UI.Xaml.Media.TranslateTransform { X = x, Y = y } };
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAccessibilityView(outline, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-                _selectionOutlines.Add(outline); host.Children.Add(outline);
-            }
-        _selectionStatus = new TextBlock { Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White),
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetLiveSetting(_selectionStatus, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
-        host.Children.Add(_selectionStatus);
-        return host;
-    }
+    private Grid CreateSelectionStatus() => OutlinedStatus.Create(_selectionOutlines, out _selectionStatus);
 
     private static bool ControlHeld() => (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) &
         Windows.UI.Core.CoreVirtualKeyStates.Down) != 0;

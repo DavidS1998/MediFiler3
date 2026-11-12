@@ -23,7 +23,7 @@ public partial class BrowseView
         if (args.PropertyName == nameof(NavigationSessionState.Files))
         {
             _galleryFilesDirty = true;
-            QueueGalleryRefresh();
+            QueueGalleryRefresh(); RefreshReaderFiles();
         }
     }
 
@@ -63,10 +63,10 @@ public partial class BrowseView
     private void ApplyViewingMode()
     {
         var gallery = IsGallery && _viewerActive;
-        ViewerHost.Visibility = IsGallery ? Visibility.Collapsed : Visibility.Visible;
-        CarouselOverlay.Visibility = !IsGallery && _carouselEnabled ? Visibility.Visible : Visibility.Collapsed;
-        BottomRevealTarget.IsHitTestVisible = !IsGallery && _carouselEnabled;
-        if (IsGallery)
+        ViewerHost.Visibility = !IsBrowse ? Visibility.Collapsed : Visibility.Visible;
+        CarouselOverlay.Visibility = IsBrowse && _carouselEnabled ? Visibility.Visible : Visibility.Collapsed;
+        BottomRevealTarget.IsHitTestVisible = IsBrowse && _carouselEnabled;
+        if (!IsBrowse)
         {
             ViewerHost.SetActive(false);
             _carouselRefreshVersion++;
@@ -111,7 +111,8 @@ public partial class BrowseView
             UpdateGalleryTreeInset();
             _gallery.RevealCurrentFile(_navigationState.CurrentFile, preserveSelection: true);
         }
-        if (!IsGallery)
+        ApplyReaderMode();
+        if (IsBrowse)
         {
             // Capture the shared file while inactive, then resume only the requested Browse context.
             _ = ViewerHost.LoadAsync(_navigationState.CurrentFile, false);

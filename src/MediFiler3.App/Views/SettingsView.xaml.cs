@@ -1,3 +1,4 @@
+using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Files;
 using System.Windows;
 using System.Windows.Controls;
@@ -37,6 +38,8 @@ public partial class SettingsView : UserControl
         catch (Exception ex) { if (revision == _cacheRequestRevision) CarouselSliderIsland.SetCacheState(false, $"Cache usage unavailable: {ex.Message}"); }
     }
 
+    public event Action<ReaderOptions>? ReaderOptionsChanged;
+    public void SetReaderOptions(ReaderOptions options) => CarouselSliderIsland.SetReaderOptions(options);
     public event Action<int>? CarouselNeighborCountChanged;
     public event Action<bool>? CarouselEnabledChanged;
     public Func<Task>? ClearBackupsRequested { get; set; }
@@ -55,6 +58,7 @@ public partial class SettingsView : UserControl
     {
         InitializeComponent();
         CarouselSliderIsland.SetCarouselEnabled(carouselEnabled);
+        CarouselSliderIsland.ReaderOptionsChanged += options => ReaderOptionsChanged?.Invoke(options);
         CarouselSliderIsland.CarouselEnabledChanged += value => CarouselEnabledChanged?.Invoke(value);
         CarouselSliderIsland.ClearBackupsRequested += OnClearBackupsClick;
         CarouselSliderIsland.ClearCacheRequested += OnClearThumbnailCache;
