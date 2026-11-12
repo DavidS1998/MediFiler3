@@ -6,6 +6,24 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class FolderHierarchyLoadingTests
 {
     [Fact]
+    public void CollapseDirectChildrenChangesOnlyDirectExpandosAndRetainsDeeperState()
+    {
+        var deep = new FolderTreeEntry("deep", "root/a/deep", [new("leaf", "root/a/deep/leaf")]);
+        var first = new FolderTreeEntry("a", "root/a", [deep]);
+        var second = new FolderTreeEntry("b", "root/b", [new("other", "root/b/other")]);
+        var root = new FolderTreeEntry("root", "root", [first, second], isRoot: true);
+        var changes = new List<string>();
+        foreach (var entry in new[] { root, first, second, deep })
+            entry.PropertyChanged += (_, args) => changes.Add(entry.Name + "." + args.PropertyName);
+        root.CollapseDirectChildren();
+        Assert.True(root.IsExpanded); Assert.False(first.IsExpanded); Assert.False(second.IsExpanded); Assert.True(deep.IsExpanded);
+        Assert.Equal(new[] { "a.IsExpanded", "b.IsExpanded" }, changes);
+        changes.Clear(); root.CollapseDirectChildren(); Assert.Empty(changes);
+        first.IsExpanded = true; Assert.True(deep.IsExpanded);
+        root.IsExpanded = false; root.CollapseDirectChildren(); Assert.False(root.IsExpanded);
+    }
+
+    [Fact]
     public async Task PublishesShallowRootsThenDiscoversSortedChildrenBeforeDescendants()
     {
         using var workspace = new Workspace();

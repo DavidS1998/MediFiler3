@@ -1,0 +1,8 @@
+{
+  "Records": 10102,
+  "InitialContainers": 22,
+  "DistantContainers": 102,
+  "EnterFullscreenMs": 92.6554,
+  "ExitFullscreenMs": 28.1512,
+  "Scope": "Single hidden-window synthetic expanded-tree sample; not physical input, mixed-DPI or real-library throughput acceptance."
+}

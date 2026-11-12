@@ -59,6 +59,11 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         _publishedDisplayName = DisplayName;
     }
 
+    public void CollapseDirectChildren()
+    {
+        foreach (var child in Children) child.IsExpanded = false;
+    }
+
     public void AddChild(FolderTreeEntry child)
     {
         child.Parent = this;

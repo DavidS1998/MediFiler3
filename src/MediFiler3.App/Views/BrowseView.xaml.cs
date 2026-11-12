@@ -319,6 +319,9 @@ public partial class BrowseView : UserControl
                 case "rename-folder": await RenameFolderAsync(folder); break;
                 case "move-folder": await MoveFolderAsync(folder); break;
                 case "recycle-folder": await DeleteFolderAsync(folder); break;
+                case "collapse-children":
+                    if (_navigationState.GetRootForFolder(folder) is not null) folder.CollapseDirectChildren();
+                    break;
                 case "refresh-tree": await RefreshFolderTreeFromMenuAsync(folder); break;
                 case "open-explorer": await OpenFolderInExplorerAsync(folder); break;
                 case "properties": await ShowFolderPropertiesAsync(folder); break;

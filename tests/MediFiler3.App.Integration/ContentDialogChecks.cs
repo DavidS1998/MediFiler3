@@ -23,6 +23,17 @@ internal static partial class Program
                     });
                 Require(result == (close ? null : "Updated.name"), "Text trim/cancellation result changed");
             });
+        await Check("ContentDialog outer window excludes rounded corners across layout changes", async () =>
+        {
+            await DriveContentDialogAsync("Rounded dialog", async () => await toolbar.PromptTextAsync("Rounded dialog", "Corner test"), async (window, dialog) =>
+            {
+                await WaitUntil(() => dialog.CornerRadius.TopLeft > 0 && HasRoundedDialogRegion(window));
+                var width = window.ActualWidth;
+                window.Width += 80;
+                await WaitUntil(() => window.ActualWidth > width && HasRoundedDialogRegion(window));
+                InvokeNativeButton(NativeDialogButton(dialog, "CloseButton")!);
+            });
+        });
         foreach (var escape in new[] { false, true })
             await Check(escape ? "ContentDialog Escape cancels confirmation" : "ContentDialog host close cancels confirmation", async () =>
             {
@@ -56,6 +67,24 @@ internal static partial class Program
             Require(result == Native.ContentDialogResult.None, "Warning return value changed");
         });
     }
+
+    private static bool HasRoundedDialogRegion(System.Windows.Window window)
+    {
+        var region = CreateDialogProbeRegion(0, 0, 0, 0);
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(window);
+            return ReadDialogRegion(handle, region) == 3 && !DialogRegionContains(region, 0, 0) &&
+                DialogRegionContains(region, (int)(window.ActualWidth * dpi.DpiScaleX / 2), (int)(window.ActualHeight * dpi.DpiScaleY / 2)) &&
+                DialogRegionContains(region, (int)(window.ActualWidth * dpi.DpiScaleX) - 2, (int)(window.ActualHeight * dpi.DpiScaleY / 2));
+        }
+        finally { DeleteDialogProbeRegion(region); }
+    }
+    [System.Runtime.InteropServices.DllImport("gdi32.dll", EntryPoint = "CreateRectRgn")] private static extern nint CreateDialogProbeRegion(int left, int top, int right, int bottom);
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindowRgn")] private static extern int ReadDialogRegion(nint window, nint region);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll", EntryPoint = "PtInRegion")] private static extern bool DialogRegionContains(nint region, int x, int y);
+    [System.Runtime.InteropServices.DllImport("gdi32.dll", EntryPoint = "DeleteObject")] private static extern bool DeleteDialogProbeRegion(nint region);
 
     private static Task DriveContentDialogAsync(string title, Func<Task> request,
         Action<System.Windows.Window, Native.ContentDialog> choose) =>

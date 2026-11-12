@@ -392,32 +392,26 @@ internal static partial class Program
                 Require(Key(System.Windows.Input.Key.Space), "Forwarded playback key did not safely mark its event handled");
                 viewer.SetActive(false); state.ReplaceFiles(files); navigation.SelectDestination("Reader"); await WaitUntil(LoadedImage);
             });
-            await Check("Reader page picker virtualizes 10000 numbered filenames and supports click selection and typed reveal", async () =>
+            await Check("Reader Go is a single bounded number field even for 10000 pages", async () =>
             {
                 var pages = Enumerable.Range(1, 10000).Select(i => new FileEntry(Path.Combine(directory, $"pick-{i}.png"), $"pick-{i}.png", 1, DateTime.UnixEpoch)).ToArray();
                 int? selected = null;
-                await DriveContentDialogAsync("Go to Reader page or file", async () => selected = await toolbar.PromptReaderPageAsync(pages, 5000), async (_, dialog) =>
+                await DriveContentDialogAsync("Go to Reader page", async () => selected = await toolbar.PromptReaderPageAsync(pages, 5000), async (_, dialog) =>
                 {
                     var panel = (Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content;
-                    var list = panel.Children.OfType<Microsoft.UI.Xaml.Controls.ListView>().Single();
+                    Require(panel.Children.OfType<Microsoft.UI.Xaml.Controls.GridView>().Count() == 0 && panel.Children.OfType<Microsoft.UI.Xaml.Controls.ListView>().Count() == 0,
+                        "Reader Go still creates a page picker");
                     var input = panel.Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().Single();
-                    await WaitUntil(() => list.IsLoaded && list.ItemsPanelRoot is not null && list.ContainerFromIndex(5000) is not null);
-                    Require(list.Items.Count == 10000 && list.SelectedIndex == 5000 && list.ActualHeight <= 256 &&
-                        Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(list.ItemsPanelRoot) < 100, "Reader picker created an unbounded page UI");
-                    list.ScrollIntoView(list.Items[9000]); await WaitUntil(() => list.ContainerFromIndex(9000) is not null);
-                    var container = (Microsoft.UI.Xaml.Controls.ListViewItem)list.ContainerFromIndex(9000);
-                    container.IsSelected = true; // Native selection path used by clicking a row.
-                    await WaitUntil(() => input.Text == "9001" && dialog.IsPrimaryButtonEnabled);
-                    await WaitUntil(() => list.ContainerFromIndex(9000) is Microsoft.UI.Xaml.Controls.ListViewItem current &&
-                        HasReaderDialogText(current, "pick-9001.png") && Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(current).Contains("9001"));
-                    input.Text = "123";
-                    await WaitUntil(() => list.SelectedIndex == 122 && list.ContainerFromIndex(122) is not null && dialog.IsPrimaryButtonEnabled);
-                    Require(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(list.ItemsPanelRoot) < 100, "Distant picker reveal realized the entire list");
-                    input.Text = "pick-77.png";
-                    await WaitUntil(() => list.SelectedIndex == 76 && dialog.IsPrimaryButtonEnabled);
+                    Require(input.Text == "5001" && input.MaxLength == 5, "Initial page or digit bound changed");
+                    input.Text = "123"; await WaitUntil(() => dialog.IsPrimaryButtonEnabled && input.Text == "123");
+                    input.Text = "10001"; await Task.Delay(50); Require(input.Text == "123", "Reader page entry accepted a value beyond the page count");
+                    input.Text = "0"; await Task.Delay(50); Require(input.Text == "123", "Reader page entry accepted zero");
+                    input.Text = ""; await WaitUntil(() => !dialog.IsPrimaryButtonEnabled);
+                    input.Text = "pick-77.png"; await Task.Delay(50); Require(input.Text == "" && !dialog.IsPrimaryButtonEnabled, "Reader Go accepted nonnumeric text");
+                    input.Text = "10000"; await WaitUntil(() => dialog.IsPrimaryButtonEnabled);
                     InvokeNativeButton(NativeDialogButton(dialog, "PrimaryButton")!);
                 });
-                Require(selected == 76, "Reader picker committed the wrong page");
+                Require(selected == 9999, "Reader Go did not accept the last available page");
             });
             await Check("Reader navigation uses focus-independent keys and accessible toolbar without crossing folders", async () =>
             {
@@ -426,6 +420,12 @@ internal static partial class Program
                 var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 bool Key(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers = System.Windows.Input.ModifierKeys.None, bool repeat = false) =>
                     (bool)shortcut.Invoke(window, [key, modifiers, repeat])!;
+                var external = Field(toolbar, "_externalToolbar")!;
+                var defaultOpen = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("OpenButton")!.GetValue(external)!;
+                var chooseApp = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("ChooseButton")!.GetValue(external)!;
+                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed &&
+                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerBrowse")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
+                    "Reader hid the wrong Open buttons");
                 var originalFolder = state.ActiveFolder;
                 Require(browse.JumpReaderPage(4), "Explicit Reader jump was rejected");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4] && !(bool)Field(Reader(), "_restore")!);
@@ -455,6 +455,8 @@ internal static partial class Program
                 Require(!Key(System.Windows.Input.Key.Right, System.Windows.Input.ModifierKeys.Control), "Reader claimed an undefined shortcut");
                 Require(Key(System.Windows.Input.Key.Enter), "Reader Enter was ignored");
                 await WaitUntil(() => browse.IsBrowse && state.CurrentFile == state.Reader.Pages[^1]);
+                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Visible && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Visible,
+                    "Reader changed external buttons in Browse");
                 navigation.SelectDestination("Reader"); await WaitUntil(LoadedImage);
                 var fresh = Enumerable.Range(0, 6).Select(i => Path.Combine(directory, $"fresh-tail-{i}.png")).ToArray();
                 foreach (var path in fresh) File.Copy(Fixtures[".png"].FullPath, path);
@@ -478,25 +480,27 @@ internal static partial class Program
                     "Reader counter retained an old filename when page number/count were unchanged");
                 state.ReplaceFiles(files); await WaitUntil(LoadedImage);
             });
-            await Check("Reader jump dialog validates page and filename and rejects cancellation stale lists and inactive views", async () =>
+            await Check("Reader jump dialog accepts only page numbers and rejects cancellation stale inputs and inactive views", async () =>
             {
                 var jump = typeof(MediFiler3.MainWindow).GetMethod("PromptReaderJumpAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 Task Prompt() => (Task)jump.Invoke(window, null)!;
-                await DriveContentDialogAsync("Go to Reader page or file", Prompt, async (_, dialog) =>
+                await DriveContentDialogAsync("Go to Reader page", Prompt, async (_, dialog) =>
                 {
                     var input = ((Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().Single();
+                    input.Text = ""; await WaitUntil(() => !dialog.IsPrimaryButtonEnabled);
                     input.Text = "999999"; await WaitUntil(() => !dialog.IsPrimaryButtonEnabled); Require(!dialog.IsPrimaryButtonEnabled, "Jump dialog accepted an out-of-range page");
                     input.Text = "missing.png"; Require(!dialog.IsPrimaryButtonEnabled, "Jump dialog accepted an absent image");
-                    input.Text = "page 7.png"; await WaitUntil(() => dialog.IsPrimaryButtonEnabled); Require(dialog.IsPrimaryButtonEnabled, "Jump dialog rejected an exact filename");
+                    input.Text = "page 7.png"; await WaitUntil(() => !dialog.IsPrimaryButtonEnabled);
+                    input.Text = "7"; await WaitUntil(() => dialog.IsPrimaryButtonEnabled); Require(dialog.IsPrimaryButtonEnabled, "Jump dialog rejected a page number");
                     InvokeNativeButton(NativeDialogButton(dialog, "PrimaryButton")!);
                 });
                 await WaitUntil(() => state.CurrentFile?.Name == "page 7.png" && !(bool)Field(Reader(), "_restore")!);
                 var previous = state.CurrentFile;
-                await DriveContentDialogAsync("Go to Reader page or file", Prompt, (_, dialog) => InvokeNativeButton(NativeDialogButton(dialog, "CloseButton")!));
+                await DriveContentDialogAsync("Go to Reader page", Prompt, (_, dialog) => InvokeNativeButton(NativeDialogButton(dialog, "CloseButton")!));
                 Require(state.CurrentFile == previous, "Cancelled Reader jump changed the current file");
                 var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
                 var visited = false;
-                await DriveContentDialogAsync("Go to Reader page or file", async () =>
+                await DriveContentDialogAsync("Go to Reader page", async () =>
                 {
                     Require((bool)shortcut.Invoke(window, [System.Windows.Input.Key.G, System.Windows.Input.ModifierKeys.Control, false])!, "Ctrl+G was ignored");
                     await WaitUntil(() => visited && !(bool)Field(window, "_readerJumpOpen")!);
@@ -508,7 +512,7 @@ internal static partial class Program
                     InvokeNativeButton(NativeDialogButton(dialog, "PrimaryButton")!);
                 });
                 await WaitUntil(() => state.CurrentFile?.Name == "page 2.png");
-                await DriveContentDialogAsync("Go to Reader page or file", Prompt, (_, dialog) =>
+                await DriveContentDialogAsync("Go to Reader page", Prompt, (_, dialog) =>
                 {
                     ((Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().Single().Text = "10";
                     state.ReplaceFiles(files.Take(3));
@@ -516,7 +520,7 @@ internal static partial class Program
                 });
                 await Task.Delay(100); Require(state.CurrentFile?.Name != "page 10.png" && state.Reader.Pages.Count == 3, "Stale dialog published a removed image");
                 state.ReplaceFiles(files); await WaitUntil(LoadedImage); previous = state.CurrentFile;
-                await DriveContentDialogAsync("Go to Reader page or file", Prompt, (_, dialog) =>
+                await DriveContentDialogAsync("Go to Reader page", Prompt, (_, dialog) =>
                 {
                     ((Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().Single().Text = "8";
                     navigation.SelectDestination("Home"); InvokeNativeButton(NativeDialogButton(dialog, "PrimaryButton")!);
@@ -533,7 +537,7 @@ internal static partial class Program
                     Equals(row.GetType().GetProperty("File")!.GetValue(row), file) && ((Microsoft.UI.Xaml.Controls.TextBlock)row.GetType().GetProperty("Status")!.GetValue(row)!).Text.StartsWith("Cannot display"));
                 await WaitUntil(() => ErrorRow() is not null);
                 var row = ErrorRow()!; var actions = (Microsoft.UI.Xaml.Controls.StackPanel)row.GetType().GetProperty("ErrorActions")!.GetValue(row)!;
-                Require(actions.Visibility == Microsoft.UI.Xaml.Visibility.Visible && actions.Children.Count == 1 &&
+                Require(actions.Visibility == Microsoft.UI.Xaml.Visibility.Visible && actions.Children.Count == 2 &&
                     Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(actions.Children[0]).Contains(file.Name), "Reader failure actions are inaccessible");
                 var warm = ((System.Collections.IDictionary)Field(Reader(), "_rows")!).Values.Cast<object>().FirstOrDefault(item =>
                     !Equals(item.GetType().GetProperty("File")!.GetValue(item), file) && ((Microsoft.UI.Xaml.Controls.Image)item.GetType().GetProperty("Image")!.GetValue(item)!).Source is not null);
@@ -548,11 +552,11 @@ internal static partial class Program
                 Require(browse.HandleViewShortcut(System.Windows.Input.Key.R, System.Windows.Input.ModifierKeys.Control), "Ctrl+R did not retry the current page");
                 await WaitUntil(() => ErrorRow() is not null);
                 actions = (Microsoft.UI.Xaml.Controls.StackPanel)ErrorRow()!.GetType().GetProperty("ErrorActions")!.GetValue(ErrorRow())!;
-                browse.OpenReaderInBrowse(); navigation.SelectDestination("Home");
+                InvokeNativeButton((Microsoft.UI.Xaml.Controls.Button)actions.Children[1]); navigation.SelectDestination("Home");
                 await Task.Delay(100); Require(!browse.IsBrowse && !Reader().IsActive, "Stale error action opened Browse after leaving Reader");
                 navigation.SelectDestination("Reader"); await WaitUntil(() => ErrorRow() is not null);
                 actions = (Microsoft.UI.Xaml.Controls.StackPanel)ErrorRow()!.GetType().GetProperty("ErrorActions")!.GetValue(ErrorRow())!;
-                browse.OpenReaderInBrowse();
+                InvokeNativeButton((Microsoft.UI.Xaml.Controls.Button)actions.Children[1]);
                 await WaitUntil(() => browse.IsBrowse && state.CurrentFile == file);
                 Require(File.ReadAllText(path) == "broken again", "Reader recovery mutated the source");
                 state.ReplaceFiles(files); navigation.SelectDestination("Reader"); await WaitUntil(LoadedImage);
@@ -588,14 +592,6 @@ internal static partial class Program
         }
         finally { window.Close(); }
     }
-    private static bool HasReaderDialogText(Microsoft.UI.Xaml.DependencyObject element, string text)
-    {
-        if (element is Microsoft.UI.Xaml.Controls.TextBlock block && block.Text.Contains(text)) return true;
-        for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(element); i++)
-            if (HasReaderDialogText(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(element, i), text)) return true;
-        return false;
-    }
-
     private static void InvokeReaderToolbarButton(Microsoft.UI.Xaml.Controls.AppBarButton button) =>
         ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(button)
             .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();

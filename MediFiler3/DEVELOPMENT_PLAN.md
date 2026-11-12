@@ -17,6 +17,10 @@ User confirmed nested-folder dragging, edge scrolling and wheel scrolling during
 
 Reader slices 1-4 are now implemented using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md). Reader organization/live reconciliation (5) and final acceptance (6) remain pending. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
 
+## Pinned future work: Browse/Gallery search (2026-11-12)
+
+The user wants a search feature considered for Browse and Gallery in a separately scoped future slice. Work out matching/filter behavior, navigation/selection interaction, large-library performance and keyboard UX then. This is a backlog idea, not an implemented feature or authorization to start it. Reader Go remains a simple bounded numeric page-jump field; the earlier list/grid picker is superseded.
+
 ## Dated milestones
 
 ## Phase 5.3 implemented (2026-11-11)

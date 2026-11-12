@@ -162,6 +162,46 @@ internal static partial class Program
                     browse.StopPlayback();
                 });
             await RunGalleryChecksAsync(window, state, browse, toolbar, settings, thumbnails, directory);
+            await Check("large folder trees recycle across fullscreen and collapse only direct children", async () =>
+            {
+                Destination("Browse"); browse.SetFolderPinned(true);
+                var groups = Enumerable.Range(0, 100).Select(g => new FolderTreeEntry($"group{g:D3}", Path.Combine(directory, $"group{g:D3}"),
+                    Enumerable.Range(0, 100).Select(i => new FolderTreeEntry($"leaf{i:D3}", Path.Combine(directory, $"group{g:D3}", $"leaf{i:D3}"), directFileCount: 0)).ToArray(), directFileCount: 0)).ToArray();
+                groups[0].Children[0].AddChild(new FolderTreeEntry("deep", Path.Combine(directory, "group000", "leaf000", "deep"), directFileCount: 0));
+                var root = new FolderTreeEntry("scale", directory, groups, isRoot: true, directFileCount: 0);
+                state.ReplaceRoots([root]); state.SetActiveFolder(root);
+                window.UpdateLayout(); await Task.Delay(100);
+                var tree = (TreeView)browse.FindName("FolderTree");
+                IEnumerable<DependencyObject> Visuals(DependencyObject parent)
+                {
+                    yield return parent;
+                    for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+                        foreach (var child in Visuals(System.Windows.Media.VisualTreeHelper.GetChild(parent, i))) yield return child;
+                }
+                int Realized() => Visuals(tree).OfType<TreeViewItem>().Count();
+                Require(VirtualizingPanel.GetIsVirtualizing(tree) && VirtualizingPanel.GetVirtualizationMode(tree) == VirtualizationMode.Recycling,
+                    "Tree recycling is disabled");
+                var initial = Realized();
+                Require(initial > 0 && initial < 500, $"Large tree realized {initial} containers");
+                var timer = System.Diagnostics.Stopwatch.StartNew();
+                window.ToggleFullscreen(); StopFullscreenTimer(); window.UpdateLayout();
+                typeof(MediFiler3.MainWindow).GetMethod("SetFullscreenChrome", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, [true, true]);
+                window.UpdateLayout(); var enterMs = timer.Elapsed.TotalMilliseconds;
+                var scroll = Visuals(tree).OfType<ScrollViewer>().First();
+                scroll.ScrollToVerticalOffset(scroll.ScrollableHeight * .75); window.UpdateLayout(); await Task.Delay(100);
+                var distant = Realized();
+                Require(distant > 0 && distant < 500 && root.IsExpanded && groups.All(g => g.IsExpanded) && groups[0].Children[0].IsExpanded,
+                    $"Tree recycling lost expansion or retained {distant} containers");
+                timer.Restart(); window.ToggleFullscreen(); window.UpdateLayout(); var exitMs = timer.Elapsed.TotalMilliseconds;
+                await browse.ExecuteFolderMenuActionAsync(root, "collapse-children");
+                Require(root.IsExpanded && groups.All(g => !g.IsExpanded) && groups[0].Children[0].IsExpanded && ReferenceEquals(state.Roots[0], root),
+                    "Collapse child folders reset the root, deeper expansion or node identity");
+                groups[0].IsExpanded = true;
+                Require(groups[0].Children[0].IsExpanded && root.TotalFileCount == 0, "Reopening lost deeper expansion or counters");
+                var sample = new { Records = 10102, InitialContainers = initial, DistantContainers = distant, EnterFullscreenMs = enterMs, ExitFullscreenMs = exitMs };
+                var json = System.Text.Json.JsonSerializer.Serialize(sample);
+                File.WriteAllText(Path.Combine(Root, "tree-scale.json"), json); Console.WriteLine("TREE SCALE " + json);
+            });
             await Check("native-island F11 shortcut works and closing fullscreen retains normal restart layout", async () =>
             {
                 Destination("Settings");

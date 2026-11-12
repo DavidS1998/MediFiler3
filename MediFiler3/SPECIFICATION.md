@@ -315,6 +315,7 @@ The folder tree should support standard folder operations:
 - Delete a folder by moving it to the Windows Recycle Bin.
 - Root favorites are managed from Home only; folder-tree menus do not expose favorite actions.
 - Refresh a folder.
+- Collapse child folders: set only the selected folder's direct children to collapsed, retaining the selected folder and deeper expansion states. This changes presentation only.
 - Open a folder in Windows Explorer.
 - Copy a folder path.
 - View folder properties.
@@ -411,7 +412,7 @@ The gallery should also support standard file operations through context menus.
 
 ## 6.2 Continuous reader view
 
-Implementation state (2026-11-11): approved slices 1-4 provide shared image projection/anchors, lazy native scrolling, persisted scaling/spacing/preload/counter settings and keyboard/page/file navigation with accessible retry/Browse recovery. Reader scaling uses Switch/Sort toggle buttons in its top-right toolbar, with the width slider to their left; width mode shows a persisted 10-100% image-column slider. Defaults remain fit width at 100%, spacing 0, preload 2, counter on. The counter matches Gallery's bottom-right outlined white semibold status. Go to page/file supports typing and a fixed-height virtualized numbered filename list with selection plus Go confirmation. Reader Open in Browse buttons are removed; Enter still provides the existing handoff. Home is separated from the file-view sidebar group. Reader file organization/history and final acceptance remain later slices. See [READER_HANDOVER.md](READER_HANDOVER.md). The requirements below describe the full target.
+Implementation state (2026-11-11): approved slices 1-4 provide shared image projection/anchors, lazy native scrolling, persisted scaling/spacing/preload/counter settings and keyboard/page/file navigation with accessible retry/Browse recovery. Reader scaling uses Switch/Sort toggle buttons in its top-right toolbar, with the width slider to their left; width mode shows a persisted 10-100% image-column slider. Defaults remain fit width at 100%, spacing 0, preload 2, counter on. The counter matches Gallery's bottom-right outlined white semibold status. Go to page uses a simple focused text field restricted to one-based page numbers through the current image-page count; Go confirms and Cancel/Escape leave the page unchanged. Open in Browse and the Enter handoff remain; external-application buttons are hidden in Reader. Home is separated from the file-view sidebar group. Reader file organization/history and final acceptance remain later slices. See [READER_HANDOVER.md](READER_HANDOVER.md). The requirements below describe the full target.
 
 Provide an alternative reader mode intended for collections of images that should be consumed sequentially, such as comics, manga, scanned documents, and image sequences.
 
@@ -925,3 +926,5 @@ When requirements are ambiguous, propose a solution consistent with the product'
 Carousel visual updates should coalesce during rapid scrolling without losing navigation steps. Keep surviving tiles stable, cancel obsolete thumbnail work and fade entering/departing edge tiles without delaying input or removal. Honor the Windows animation preference.
 
 Fullscreen reveal follow-up: top hover now shows the actual native caption with the toolbar and remains active over nonclient title-bar controls. Left hover reveals the sidebar and folder tree together, offsetting the tree beside the sidebar and retaining both while the pointer is within their combined area. Pin state and normal-mode reveals remain unchanged; video exclusions follow the offset tree. `.jfif` routes through the WIC image viewer and WIC thumbnail generation, with a JPEG-encoded fixture covering decoding, image capabilities, metadata, thumbnails and source-file release.
+
+Future search note (2026-11-12): consider search for Browse and Gallery in a separately scoped future feature. Reader Go remains a numeric-only text field. See DEVELOPMENT_PLAN.md.

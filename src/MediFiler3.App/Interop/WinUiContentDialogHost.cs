@@ -35,6 +35,7 @@ internal static class WinUiContentDialogHost
             ShowInTaskbar = false,
             Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(32, 32, 32))
         };
+        using var rounded = new RoundedDialogWindow(window);
         var host = new WinUiDialogIsland();
         window.Content = host;
         ContentDialog? dialog = null;
@@ -63,10 +64,14 @@ internal static class WinUiContentDialogHost
                 dialog.VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Top;
                 dialog.Resources["ContentDialogMaxWidth"] = width;
                 dialog.Resources["ContentDialogMinWidth"] = width;
+                void UpdateCorners() => rounded.SetRadius(Math.Max(Math.Max(dialog.CornerRadius.TopLeft, dialog.CornerRadius.TopRight),
+                    Math.Max(dialog.CornerRadius.BottomLeft, dialog.CornerRadius.BottomRight)));
                 dialog.SizeChanged += (_, args) =>
                 {
                     if (args.NewSize.Height > 0) window.Height = Math.Ceiling(args.NewSize.Height);
+                    UpdateCorners();
                 };
+                dialog.Opened += (_, _) => UpdateCorners();
                 host.RootElement!.Children.Add(dialog);
                 completion.TrySetResult(await dialog.ShowAsync(ContentDialogPlacement.InPlace));
             }

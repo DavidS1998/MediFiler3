@@ -191,7 +191,8 @@
                           Foreground="#E7E8EA" SelectedItemChanged="OnFolderSelectionChanged"
                           PreviewMouseRightButtonDown="OnFolderTreePreviewMouseRightButtonDown"
                           ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          ScrollViewer.CanContentScroll="False" VirtualizingStackPanel.IsVirtualizing="False"
+                          ScrollViewer.CanContentScroll="True" VirtualizingStackPanel.IsVirtualizing="True"
+                          VirtualizingStackPanel.VirtualizationMode="Recycling" VirtualizingPanel.CacheLength="1"
                           Padding="0,0,0,6"
                           VirtualizingPanel.ScrollUnit="Pixel">
                     <TreeView.ItemTemplate>

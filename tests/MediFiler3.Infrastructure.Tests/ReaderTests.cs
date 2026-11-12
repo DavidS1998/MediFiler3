@@ -138,14 +138,14 @@ public sealed class ReaderTests
     [Theory]
     [InlineData("1", 0)]
     [InlineData(" 2 ", 1)]
-    [InlineData("PAGE2.PNG", 1)]
-    [InlineData("page3.png", 2)]
+    [InlineData("PAGE2.PNG", -1)]
+    [InlineData("page3.png", -1)]
     [InlineData("0", -1)]
     [InlineData("4", -1)]
     [InlineData("", -1)]
     [InlineData("missing.png", -1)]
     [InlineData("../../page2.png", -1)]
-    public void PageLookupAcceptsOnlyNumberOrExactImageInTheProjection(string query, int expected)
+    public void PageLookupAcceptsOnlyPageNumbersInTheProjection(string query, int expected)
     {
         var pages = new[] { File("page1.png"), File("page2.png"), File("page3.png") };
         Assert.Equal(expected, ReaderPageLookup.Resolve(pages, query, out var error));
@@ -153,11 +153,12 @@ public sealed class ReaderTests
         Assert.Equal(-1, ReaderPageLookup.Resolve([], query, out _));
     }
     [Fact]
-    public void PageLookupRejectsAmbiguousNamesAndAcceptsTheExactFullPath()
+    public void PageLookupRejectsFilenameAndFullPathSearch()
     {
         var files = new[] { new FileEntry("folder1/page.png", "page.png", 1, DateTime.UnixEpoch), new FileEntry("folder2/page.png", "page.png", 1, DateTime.UnixEpoch) };
         Assert.Equal(-1, ReaderPageLookup.Resolve(files, "page.png", out _));
-        Assert.Equal(1, ReaderPageLookup.Resolve(files, "FOLDER2/PAGE.PNG", out _));
+        Assert.Equal(-1, ReaderPageLookup.Resolve(files, "FOLDER2/PAGE.PNG", out _));
+        Assert.Equal(1, ReaderPageLookup.Resolve(files, "2", out _));
     }
     [Fact]
     public void ReaderNavigationClampsWithinTheSequenceAndRetainsExplicitTargetsAcrossGeometryChanges()

@@ -112,6 +112,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         AddFolderMenuItem(menu, "Move folder to...", "move-folder", folderName, actionHandler);
         AddFolderMenuItem(menu, "Send folder to Recycle Bin", "recycle-folder", folderName, actionHandler);
         menu.Items.Add(new MenuFlyoutSeparator());
+        AddFolderMenuItem(menu, "Collapse child folders", "collapse-children", folderName, actionHandler);
         AddFolderMenuItem(menu, "Refresh tree", "refresh-tree", folderName, actionHandler);
         AddFolderMenuItem(menu, "Open in File Explorer", "open-explorer", folderName, actionHandler);
         AddFolderMenuItem(menu, "Properties", "properties", folderName, actionHandler);
@@ -293,7 +294,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _rootElement = null;
         _fullscreenButton = null;
         _readerFileSeparators.Clear(); _readerNavigationDivider = null;
-        _readerPrevious = null; _readerNext = null; _readerJump = null;
+        _readerPrevious = null; _readerNext = null; _readerJump = null; _readerBrowse = null;
         _readerControls = null; _readerWidthControls = null; _readerWidthButton = null; _readerHeightButton = null; _readerWidthSlider = null; _readerWidthLabel = null;
         _galleryControls = null; _galleryWidthSlider = null; _galleryHeightSlider = null;
     }

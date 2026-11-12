@@ -14,8 +14,8 @@ public sealed partial class WinUiToolbarIsland
     private bool _readerControlsVisible, _settingReaderControls;
     public event Action<ReaderOptions>? ReaderOptionsChanged;
     public event Action<ReaderNavigation>? ReaderNavigateRequested;
-    public event Action? ReaderJumpRequested;
-    private AppBarButton? _readerPrevious, _readerNext, _readerJump;
+    public event Action? ReaderJumpRequested, ReaderOpenBrowseRequested;
+    private AppBarButton? _readerPrevious, _readerNext, _readerJump, _readerBrowse;
     private int _readerPageIndex = -1, _readerPageCount;
     private readonly List<AppBarSeparator> _readerFileSeparators = [];
     private AppBarSeparator? _readerNavigationDivider;
@@ -25,6 +25,7 @@ public sealed partial class WinUiToolbarIsland
         if (_readerPrevious is not null) _readerPrevious.IsEnabled = index > 0 && count > 0;
         if (_readerNext is not null) _readerNext.IsEnabled = index >= 0 && index + 1 < count;
         if (_readerJump is not null) _readerJump.IsEnabled = count > 0;
+        if (_readerBrowse is not null) _readerBrowse.IsEnabled = index >= 0 && index < count;
     }
 
     public void SetReaderControls(bool visible, ReaderOptions options)
@@ -34,10 +35,15 @@ public sealed partial class WinUiToolbarIsland
         try
         {
             if (_readerControls is not null) _readerControls.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
-            foreach (var command in new AppBarButton?[] { _readerPrevious, _readerNext, _readerJump })
+            foreach (var command in new AppBarButton?[] { _readerPrevious, _readerNext, _readerJump, _readerBrowse })
                 if (command is not null) command.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
             foreach (var command in new AppBarButton?[] { _renameFileButton, _deleteFileButton, _undoButton, _redoButton })
                 if (command is not null) command.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+            if (_externalToolbar is not null)
+            {
+                _externalToolbar.OpenButton.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+                _externalToolbar.ChooseButton.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+            }
             foreach (var separator in _readerFileSeparators) separator.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
             if (_readerNavigationDivider is not null) _readerNavigationDivider.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
             if (_readerWidthButton is not null) _readerWidthButton.IsChecked = options.Scaling == ReaderScalingMode.FitWidth;
@@ -84,9 +90,10 @@ public sealed partial class WinUiToolbarIsland
         _readerNavigationDivider = new AppBarSeparator(); middle.PrimaryCommands.Add(_readerNavigationDivider);
         _readerPrevious = CreateButton(Symbol.Back, "Previous Reader image (Left)", () => ReaderNavigateRequested?.Invoke(ReaderNavigation.PreviousImage));
         _readerNext = CreateButton(Symbol.Forward, "Next Reader image (Right)", () => ReaderNavigateRequested?.Invoke(ReaderNavigation.NextImage));
-        _readerJump = CreateButton(Symbol.Find, "Go to Reader page or file (Ctrl+G)", () => ReaderJumpRequested?.Invoke());
+        _readerJump = CreateButton(Symbol.Find, "Go to Reader page (Ctrl+G)", () => ReaderJumpRequested?.Invoke());
         middle.PrimaryCommands.Add(_readerPrevious); middle.PrimaryCommands.Add(_readerNext);
-        middle.PrimaryCommands.Add(_readerJump);
+        _readerBrowse = CreateButton(Symbol.OpenFile, "Open current Reader image in Browse (Enter)", () => ReaderOpenBrowseRequested?.Invoke());
+        middle.PrimaryCommands.Add(_readerJump); middle.PrimaryCommands.Add(_readerBrowse);
         SetReaderNavigation(_readerPageIndex, _readerPageCount);
     }
 

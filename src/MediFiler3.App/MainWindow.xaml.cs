@@ -125,6 +125,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         ToolbarIsland.ReaderNavigateRequested += command => { if (ReaderCommandsAvailable) _browseView.NavigateReader(command); };
         ToolbarIsland.ReaderJumpRequested += async () => await RunViewShortcutAsync(PromptReaderJumpAsync);
+        ToolbarIsland.ReaderOpenBrowseRequested += () => { if (ReaderCommandsAvailable) _browseView.OpenReaderInBrowse(); };
         ToolbarIsland.ReaderOptionsChanged += options =>
         {
             if (PageContent.Content == _browseView && _browseView.IsReader) ApplyReaderOptions(options);

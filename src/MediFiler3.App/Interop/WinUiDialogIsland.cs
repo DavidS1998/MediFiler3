@@ -26,7 +26,7 @@ internal sealed class WinUiDialogIsland : HwndHost
         RootElement = new Grid
         {
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                Microsoft.UI.ColorHelper.FromArgb(255, 0, 0, 0)),
+                Microsoft.UI.Colors.Transparent),
             RequestedTheme = ElementTheme.Dark
         };
         _xamlSource.Content = RootElement;

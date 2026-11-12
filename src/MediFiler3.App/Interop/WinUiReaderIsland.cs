@@ -145,10 +145,11 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                         HorizontalAlignment = Xaml.HorizontalAlignment.Center, VerticalAlignment = Xaml.VerticalAlignment.Center, TextWrapping = Xaml.TextWrapping.Wrap };
                     var errorActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8,
                         HorizontalAlignment = Xaml.HorizontalAlignment.Center, Visibility = Xaml.Visibility.Collapsed };
-                    var retry = new Button { Content = "Retry" };
+                    var retry = new Button { Content = "Retry" }; var open = new Button { Content = "Open in Browse" };
                     Xaml.Automation.AutomationProperties.SetName(retry, "Retry " + file.Name);
                     ToolTipService.SetToolTip(retry, "Retry this page (Ctrl+R retries the current page)");
-                    errorActions.Children.Add(retry);
+                    Xaml.Automation.AutomationProperties.SetName(open, "Open " + file.Name + " in Browse");
+                    errorActions.Children.Add(retry); errorActions.Children.Add(open);
                     var message = new StackPanel { Spacing = 12, VerticalAlignment = Xaml.VerticalAlignment.Center };
                     message.Children.Add(status); message.Children.Add(errorActions);
                     var content = new Grid(); content.Children.Add(message); content.Children.Add(image);
@@ -161,6 +162,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                     row = new(file, border, image, status, errorActions, new CancellationTokenSource(), pixelWidth);
                     var created = row;
                     retry.Click += (_, _) => QueueRowAction(created, () => Invalidate([file.FullPath]));
+                    open.Click += (_, _) => QueueRowAction(created, () => OpenInBrowseRequested?.Invoke(file));
                     _rows.Add(file, row); _canvas.Children.Add(border);
                     _ = LoadRowAsync(row);
                 }
@@ -262,7 +264,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         _scroll = new ScrollViewer { Content = _canvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, ZoomMode = ZoomMode.Disabled, HorizontalScrollMode = ScrollMode.Disabled };
         Xaml.Automation.AutomationProperties.SetName(_scroll, "Continuous reader pages");
-        Xaml.Automation.AutomationProperties.SetHelpText(_scroll, "Up/Down scroll. Left/Right select images. Page Up/Down or Space/Shift+Space scroll a viewport. Home/End reach the sequence ends. Ctrl+G jumps to a page or file. Enter opens Browse. Ctrl+R retries the current page. F3 toggles the folder pin.");
+        Xaml.Automation.AutomationProperties.SetHelpText(_scroll, "Up/Down scroll. Left/Right select images. Page Up/Down or Space/Shift+Space scroll a viewport. Home/End reach the sequence ends. Ctrl+G jumps to a page. Enter opens Browse. Ctrl+R retries the current page. F3 toggles the folder pin.");
         _scroll.Loaded += (_, _) => { _regionKey = null; UpdateRegion(); QueueUpdate(); };
         _scroll.AddHandler(Xaml.UIElement.PointerWheelChangedEvent, new Xaml.Input.PointerEventHandler((_, _) => OnReaderInput()), true);
         _scroll.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => OnReaderInput()), true);

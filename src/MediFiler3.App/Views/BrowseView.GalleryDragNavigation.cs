@@ -14,6 +14,7 @@ public partial class BrowseView
     private bool _galleryTreeDragInside;
     private Point _galleryTreeDragPoint;
     private TreeViewItem? _galleryTreeHoverItem;
+    private FolderTreeEntry? _galleryTreeHoverFolder;
     private long _galleryTreeHoverSince;
     private static readonly TimeSpan GalleryFolderExpandDelay = TimeSpan.FromMilliseconds(600);
 
@@ -36,7 +37,7 @@ public partial class BrowseView
     private void StopGalleryTreeDragNavigation()
     {
         _galleryTreeDragTimer?.Stop();
-        _galleryTreeDragInside = false; _galleryTreeHoverItem = null;
+        _galleryTreeDragInside = false; _galleryTreeHoverItem = null; _galleryTreeHoverFolder = null;
     }
 
     private TreeViewItem? GalleryTreeItemAtDragPoint() =>
@@ -45,8 +46,9 @@ public partial class BrowseView
     private void UpdateGalleryTreeHoverItem()
     {
         var item = GalleryTreeItemAtDragPoint();
-        if (ReferenceEquals(item, _galleryTreeHoverItem)) return;
-        _galleryTreeHoverItem = item;
+        var folder = item?.DataContext as FolderTreeEntry;
+        if (ReferenceEquals(item, _galleryTreeHoverItem) && ReferenceEquals(folder, _galleryTreeHoverFolder)) return;
+        _galleryTreeHoverItem = item; _galleryTreeHoverFolder = folder;
         _galleryTreeHoverSince = Stopwatch.GetTimestamp();
     }
 
