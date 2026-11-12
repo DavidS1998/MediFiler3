@@ -36,7 +36,33 @@ public sealed class ReaderTests
         var files = Enumerable.Range(0, 10000).Select(i => File($"{i}.png")).ToArray();
         var reader = new ReaderSessionState(); reader.SetFiles("folder", files, files[9000], true); reader.Arrange(1000);
         Assert.InRange(reader.Window(reader.Offset(reader.Anchor), 800).Count, 1, 6);
-        reader.SetFiles("folder", files.Take(5).ToArray(), files[3], false); Assert.Equal(files[3].FullPath, reader.Anchor!.Path);
+        reader.SetFiles("folder", files.Take(5).ToArray(), files[3], false); Assert.Equal(files[4].FullPath, reader.Anchor!.Path);
+    }
+    [Fact]
+    public void RemovalUsesNextSurvivingImageThenPreviousAndPreservesAnchorOnInsertions()
+    {
+        var a = File("a.png"); var b = File("b.png"); var c = File("c.png"); var note = File("b.txt");
+        var reader = new ReaderSessionState(); reader.SetFiles("folder", [a, b, note, c], b, true); reader.Arrange(200);
+        var anchor = reader.Capture(reader.Top(1) + reader.Height(1) * .3);
+        reader.SetFiles("folder", [File("0.png"), a, b, note, c], a, false);
+        Assert.Equal(anchor, reader.Anchor);
+        reader.SetFiles("folder", [a, note, c], a, false); Assert.Equal(c.FullPath, reader.Anchor!.Path);
+        reader.SetFiles("folder", [a, note], note, false); Assert.Equal(a.FullPath, reader.Anchor!.Path);
+        reader.SetFiles("folder", [note], note, false); Assert.Null(reader.Anchor);
+    }
+    [Fact]
+    public void KnownFileAndFolderMappingsRetainFractionWithoutCrossingSiblingPrefixes()
+    {
+        var old = File(System.IO.Path.Combine("root", "a", "page.png"));
+        var renamed = old with { FullPath = System.IO.Path.Combine("root", "b", "renamed.png"), Name = "renamed.png" };
+        var reader = new ReaderSessionState(); var folder = System.IO.Path.Combine("root", "a");
+        reader.SetFiles(folder, [old], old, true); reader.SetDimensions(old, 100, 800); reader.Arrange(100);
+        reader.Capture(reader.Height(0) * .4);
+        reader.MapPaths([(old.FullPath, System.IO.Path.Combine(folder, "renamed.png")), (folder, System.IO.Path.Combine("root", "b"))]);
+        reader.SetFiles(System.IO.Path.Combine("root", "b"), [renamed], renamed, false);
+        Assert.Equal(renamed.FullPath, reader.Anchor!.Path); Assert.Equal(.4, reader.Anchor.Fraction, 6); Assert.Equal(800, reader.Height(0));
+        reader.MapPaths([(System.IO.Path.Combine("root", "bb"), "elsewhere")]);
+        Assert.Equal(renamed.FullPath, reader.Anchor.Path);
     }
     [Fact]
     public void ReaderModeClearsGallerySelectionWithoutChangingRootsFolderOrFiles()

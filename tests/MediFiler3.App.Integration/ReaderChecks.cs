@@ -28,14 +28,16 @@ internal static partial class Program
         var layout = new WindowLayoutService(store); await layout.InitializeAsync();
         var journal = new SqliteFileOperationJournal(database); var identities = new WindowsFileIdentityProvider();
         var backups = new FileSystemOperationBackupStore(journal, identities, Path.Combine(Root, "reader-backups"));
-        var operations = new FileSystemFileOrganizationService(journal, identities, backupStore: backups);
+        var operations = new FileSystemFileOrganizationService(journal, identities, new WindowsRecycleBinRestoreService(identities), backupStore: backups);
         var availability = new FileSystemRootFolderAvailabilityService(); var state = new NavigationSessionState();
         var readerImages = new RecordingReaderImages();
+        var readerExternal = new RecordingReaderExternal();
+        var monitor = new ManualMonitor();
         var window = new MediFiler3.MainWindow(Microsoft.Extensions.Logging.Abstractions.NullLogger<MediFiler3.MainWindow>.Instance,
             new FileSystemFolderTreeService(), new FileSystemFileListingService(), state, new WicImageDecoder(Files), NativeThumbnails,
-            operations, journal, new FileSystemTextContentService(Files), new External(), new Defaults(), settings,
+            operations, journal, new FileSystemTextContentService(Files), readerExternal, new Defaults(), settings,
             new RootFolderHistoryService(store, availability), availability, new FileSystemCollisionPreviewService(NativeThumbnails), backups,
-            layout, new WindowsWindowPlacement(), readerImages: readerImages) { Opacity = 0, ShowInTaskbar = false, ShowActivated = false };
+            layout, new WindowsWindowPlacement(), changeMonitor: monitor, readerImages: readerImages) { Opacity = 0, ShowInTaskbar = false, ShowActivated = false };
         window.Show();
         var browse = (BrowseView)Field(window, "_browseView")!;
         var navigation = (WinUiNavigationIsland)window.FindName("NavigationIsland");
@@ -57,7 +59,7 @@ internal static partial class Program
             var files = state.Files.ToArray(); var root = state.ActiveRoot; var folder = state.ActiveFolder;
             var current = files.Single(file => file.Name == "page 5.png");
             ((NavigationController)Field(browse, "_navigationController")!).SelectFile(current);
-            await Check("Reader mode projects images without rescan and suppresses inactive Browse and file commands", async () =>
+            await Check("Reader mode projects images without rescan and suppresses inactive Browse", async () =>
             {
                 navigation.SelectDestination("Reader");
                 await WaitUntil(() => Field(browse, "_reader") is WinUiReaderIsland reader && reader.RealizedCount > 0 && LoadedImage());
@@ -66,9 +68,9 @@ internal static partial class Program
                 Require(state.Reader.Pages.Select(file => file.Name).SequenceEqual(Enumerable.Range(1, 12).Select(i => $"page {i}.png")), "Reader lost natural order or included media/text");
                 Require(!(bool)Field(browse.FindName("ViewerHost"), "_active")! && ((FrameworkElement)browse.FindName("CarouselOverlay")).Visibility == Visibility.Collapsed,
                     "Reader started Browse presentation");
-                Require(!((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled, "Reader enabled unimplemented file commands");
-                await browse.PromptRenameCurrentFileAsync(); await browse.SendCurrentFileToRecycleBinAsync(); await browse.UndoLastOperationAsync();
-                Require(files.All(file => File.Exists(file.FullPath)), "Reader command guards changed files");
+                Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled &&
+                    ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_renameFileButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
+                    "Reader page actions unavailable");
                 await WaitUntil(() => state.CurrentFile?.Name == "page 5.png" &&
                     !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
                 await Task.Delay(100); // Allow native layout to apply the newly discovered aspect ratio.
@@ -285,9 +287,12 @@ internal static partial class Program
                 Require(group.Visibility == Microsoft.UI.Xaml.Visibility.Visible && group.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right &&
                     slider.Minimum == 10 && slider.Maximum == 100 && slider.Value == 100, "Reader width toolbar has incorrect context/default/range");
                 SelectScaling(false);
-                await WaitUntil(() => LoadedImage() && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
+                Require(browse.JumpReaderPage(3), "Could not prepare the width-reflow anchor page");
+                await WaitUntil(() => LoadedImage() && state.CurrentFile == state.Reader.Pages[3] &&
+                    !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
                 Scroll().ChangeView(null, state.Reader.Top(3) + state.Reader.Height(3) * .2, null, true);
-                await WaitUntil(() => state.Reader.Anchor?.Path == state.Reader.Pages[3].FullPath);
+                try { await WaitUntil(() => state.Reader.Anchor?.Path == state.Reader.Pages[3].FullPath && Math.Abs(state.Reader.Anchor.Fraction - .2) < .03); }
+                catch (TimeoutException exception) { throw new InvalidOperationException($"Reader width probe scroll did not settle: anchor={state.Reader.Anchor}; offset={Scroll().VerticalOffset}; target={state.Reader.Top(3) + state.Reader.Height(3) * .2}; extent={Scroll().ScrollableHeight}; restore={Field(Reader(), "_restore")}; queued={Field(Reader(), "_queued")}", exception); }
                 await Task.Delay(100); var anchor = state.Reader.Anchor!;
                 slider.Value = 50;
                 await WaitUntil(() => LoadedImage() && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
@@ -423,9 +428,9 @@ internal static partial class Program
                 var external = Field(toolbar, "_externalToolbar")!;
                 var defaultOpen = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("OpenButton")!.GetValue(external)!;
                 var chooseApp = (Microsoft.UI.Xaml.Controls.AppBarButton)external.GetType().GetProperty("ChooseButton")!.GetValue(external)!;
-                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed &&
+                Require(defaultOpen.Visibility == Microsoft.UI.Xaml.Visibility.Visible && chooseApp.Visibility == Microsoft.UI.Xaml.Visibility.Visible &&
                     ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerBrowse")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible,
-                    "Reader hid the wrong Open buttons");
+                    "Reader Open buttons are missing");
                 var originalFolder = state.ActiveFolder;
                 Require(browse.JumpReaderPage(4), "Explicit Reader jump was rejected");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[4] && !(bool)Field(Reader(), "_restore")!);
@@ -474,7 +479,7 @@ internal static partial class Program
                     "Reader images do not expose page/filename accessibility");
                 browse.JumpReaderPage(0); await WaitUntil(() => state.CurrentFile == state.Reader.Pages[0]);
                 var renamedPath = Path.Combine(directory, "reader-accessible-name.png"); File.Copy(Fixtures[".png"].FullPath, renamedPath);
-                var replacement = Entry(renamedPath); state.ReplaceFiles(new[] { replacement }.Concat(files.Skip(1)));
+                var replacement = Entry(renamedPath); Reader().MapPaths([(files[0].FullPath, renamedPath)]); state.ReplaceFiles(new[] { replacement }.Concat(files.Skip(1)));
                 await WaitUntil(() => state.CurrentFile == replacement && !(bool)Field(Reader(), "_restore")!);
                 Require(Microsoft.UI.Xaml.Automation.AutomationProperties.GetName((Microsoft.UI.Xaml.Controls.TextBlock)Field(Reader(), "_indicator")!).Contains(replacement.Name),
                     "Reader counter retained an old filename when page number/count were unchanged");
@@ -519,7 +524,8 @@ internal static partial class Program
                     InvokeNativeButton(NativeDialogButton(dialog, "PrimaryButton")!);
                 });
                 await Task.Delay(100); Require(state.CurrentFile?.Name != "page 10.png" && state.Reader.Pages.Count == 3, "Stale dialog published a removed image");
-                state.ReplaceFiles(files); await WaitUntil(LoadedImage); previous = state.CurrentFile;
+                state.ReplaceFiles(files); await WaitUntil(() => LoadedImage() && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")! &&
+                    browse.ReaderPageIndex >= 0 && state.CurrentFile == state.Reader.Pages[browse.ReaderPageIndex]); previous = state.CurrentFile;
                 await DriveContentDialogAsync("Go to Reader page", Prompt, (_, dialog) =>
                 {
                     ((Microsoft.UI.Xaml.Controls.StackPanel)dialog.Content).Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().Single().Text = "8";
@@ -589,6 +595,39 @@ internal static partial class Program
                     "Empty reader filtered the shared folder or lacks an empty state");
                 navigation.SelectDestination("Browse"); Require(!Reader().IsActive && browse.IsBrowse, "Browse handoff retained active reader");
             });
+            await RunFolderClickChecksAsync(window, state, browse, navigation);
+            await Check("Reader external toolbar and shortcuts open only the active page without Browse work", async () =>
+            {
+                navigation.SelectDestination("Reader"); browse.JumpReaderPage(1);
+                await WaitUntil(() => state.CurrentFile == state.Reader.Pages[1] && !(bool)Field(Reader(), "_restore")!);
+                var expected = state.CurrentFile!;
+                var group = Field(toolbar, "_externalToolbar")!;
+                var open = (Microsoft.UI.Xaml.Controls.AppBarButton)group.GetType().GetProperty("OpenButton")!.GetValue(group)!;
+                var choose = (Microsoft.UI.Xaml.Controls.AppBarButton)group.GetType().GetProperty("ChooseButton")!.GetValue(group)!;
+                await WaitUntil(() => open.IsEnabled && choose.IsEnabled);
+                var before = readerExternal.Calls.Count;
+                InvokeReaderToolbarButton(open); await WaitUntil(() => readerExternal.Calls.Count == before + 1 && !browse.ExternalOpenState.Busy);
+                InvokeReaderToolbarButton(choose); await WaitUntil(() => readerExternal.Calls.Count == before + 2 && !browse.ExternalOpenState.Busy);
+                var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                Require((bool)shortcut.Invoke(window, [System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control, false])!, "Ctrl+Enter ignored in Reader");
+                await WaitUntil(() => readerExternal.Calls.Count == before + 3);
+                Require((bool)shortcut.Invoke(window, [System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift, false])!, "Ctrl+Shift+Enter ignored in Reader");
+                await WaitUntil(() => readerExternal.Calls.Count == before + 4);
+                Require(readerExternal.Calls.Skip(before).All(call => call.Path == expected.FullPath && call.Owner != 0) &&
+                    readerExternal.Calls.Skip(before).Select(call => call.Action).SequenceEqual(new[] { ExternalFileAction.DefaultApplication,
+                        ExternalFileAction.ChooseApplication, ExternalFileAction.DefaultApplication, ExternalFileAction.ChooseApplication }) &&
+                    !(bool)Field(browse.FindName("ViewerHost"), "_active")!, "Reader launched another file or resumed Browse");
+                readerExternal.Pending = new TaskCompletionSource<ExternalFileResult>();
+                InvokeReaderToolbarButton(choose); await WaitUntil(() => browse.ExternalOpenState.Busy && !open.IsEnabled && !choose.IsEnabled);
+                var count = readerExternal.Calls.Count;
+                await browse.OpenExternallyAsync(ExternalFileAction.DefaultApplication);
+                Require(readerExternal.Calls.Count == count, "Reader allowed a duplicate launch");
+                navigation.SelectDestination("Settings");
+                readerExternal.Pending.SetResult(new(ExternalFileOutcome.Cancelled, "stale external result")); readerExternal.Pending = null;
+                await Task.Delay(100); Require(!Reader().IsActive && !browse.ExternalOpenState.Visible, "External completion reactivated Reader");
+                navigation.SelectDestination("Reader"); await WaitUntil(() => !browse.ExternalOpenState.Busy);
+            });
+            await RunReaderMutationChecksAsync(window, state, browse, navigation, toolbar, monitor);
         }
         finally { window.Close(); }
     }
@@ -600,6 +639,17 @@ internal static partial class Program
     private static extern nint SendReaderPointerMessage(nint window, int message, nint wParam, nint lParam);
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "GetWindow")]
     private static extern nint ReaderInputChild(nint window, uint command);
+
+    private sealed class RecordingReaderExternal : IExternalFileService
+    {
+        public List<(string Path, ExternalFileAction Action, nint Owner)> Calls { get; } = [];
+        public TaskCompletionSource<ExternalFileResult>? Pending;
+        public Task<ExternalFileResult> OpenAsync(string path, ExternalFileAction action, nint ownerWindow, CancellationToken cancellationToken = default)
+        {
+            Calls.Add((path, action, ownerWindow));
+            return Pending?.Task ?? Task.FromResult(new ExternalFileResult(ExternalFileOutcome.Opened, "Opened by test service"));
+        }
+    }
 
     private sealed class RecordingReaderImages : IReaderImageService
     {

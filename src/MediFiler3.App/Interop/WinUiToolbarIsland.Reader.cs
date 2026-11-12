@@ -38,13 +38,13 @@ public sealed partial class WinUiToolbarIsland
             foreach (var command in new AppBarButton?[] { _readerPrevious, _readerNext, _readerJump, _readerBrowse })
                 if (command is not null) command.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
             foreach (var command in new AppBarButton?[] { _renameFileButton, _deleteFileButton, _undoButton, _redoButton })
-                if (command is not null) command.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+                if (command is not null) command.Visibility = Xaml.Visibility.Visible;
             if (_externalToolbar is not null)
             {
-                _externalToolbar.OpenButton.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
-                _externalToolbar.ChooseButton.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+                _externalToolbar.OpenButton.Visibility = Xaml.Visibility.Visible;
+                _externalToolbar.ChooseButton.Visibility = Xaml.Visibility.Visible;
             }
-            foreach (var separator in _readerFileSeparators) separator.Visibility = visible ? Xaml.Visibility.Collapsed : Xaml.Visibility.Visible;
+            foreach (var separator in _readerFileSeparators) separator.Visibility = Xaml.Visibility.Visible;
             if (_readerNavigationDivider is not null) _readerNavigationDivider.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
             if (_readerWidthButton is not null) _readerWidthButton.IsChecked = options.Scaling == ReaderScalingMode.FitWidth;
             if (_readerHeightButton is not null) _readerHeightButton.IsChecked = options.Scaling == ReaderScalingMode.FitHeight;

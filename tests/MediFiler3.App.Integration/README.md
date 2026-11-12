@@ -157,3 +157,19 @@ Grid clarification final verification: clean build; 359 unit/filesystem tests an
 
 
 Simple Go/tree follow-up supersedes the grid probe: 10,000 pages exercise one TextBox, number/range/length limits, rejected edits, empty input and Go/Cancel/stale context. A native outer-window region probe verifies rounded corners and resize tracking. A 10,102-node tree probe verifies bounded recycled controls, pixel scrolling, fullscreen/reveal layout, retained expansion, shallow child-collapse semantics and identity/counters; it writes tree-scale.json. Build clean; 360 unit/filesystem and 211 full native checks passed, zero failures/skips (17 Reader checks). Full evidence `%TEMP%\MediFiler3Integration-680f0579996c47da817dba77bc530702`; log `%TEMP%\MediFiler3Reader-tree-full.log`. Physical display/input acceptance remains open.
+
+
+## Reader slice 5
+
+The Reader runner now includes six organization/live-change checks (23 Reader checks total). The hidden MainWindow uses real SQLite journals, identity verification, overwrite backups and Windows Recycle Bin restoration, plus a deterministic monitor for event delivery. Checks exercise rename/Undo/Redo with fractional anchors and surviving image objects; move/recycle with image-only neighbors and both tree counters; Cancel/numbered Rename/explicit Overwrite plus backup Undo; native-page and mode changes during rename/collision answers; same-folder no-op moves; insertion/removal, same-size/timestamp corruption and recovery, offline return, overflow-style rescan; and ancestor-folder rename plus empty-projection guards. Existing source pixel/job/cache bounds, F3/F4, sizing, navigation, owned Go dialog, accessible recovery, Gallery/Browse and operation-service suites remain required.
+
+Retained-image probes wait for actual current-page publication/restore completion rather than treating a warm source as a settled new listing. External renames without verified operation mappings remain removal/insertion; no metadata-based identity inference is tested or implemented. Physical Reader input, Narrator, mixed-DPI/fullscreen and real-library/remote-file acceptance remain slice 6.
+
+
+Slice 5 final verification: build zero warnings/errors; 362 unit/filesystem tests and 217 full native checks passed, zero failures/skips, including all 23 Reader checks. Full evidence `%TEMP%\MediFiler3Integration-e155cb48f87048298f4046971075f67c`; log `%TEMP%\MediFiler3Reader-slice5-full.log`. Final page-change guards cover answers arriving before shared current-file publication; history preferences are committed atomically with a context-validated listing.
+
+
+Reader external-open/active-folder follow-up adds two checks (25 Reader-runner checks total). Routed WPF row input verifies listing reload/first-file reset across Browse, Gallery and Reader, freshly added files, retained tree nodes/counts and internal same-folder selection no-op behavior. Reader uses a recording launch service to exercise actual default/custom toolbar buttons, Ctrl+Enter/Ctrl+Shift+Enter, source path/owner, busy/duplicate guards and inactive completion, without starting other applications. The width-reflow probe explicitly navigates to its target page and awaits native restoration before requesting a fractional raw scroll; timeout diagnostics retain the anchor, actual/target offsets, extent and restore/queue flags. Assertions still require the fractional anchor and width-change preservation. Physical input/chooser behavior remains manual acceptance.
+
+
+External-open/active-folder final verification: clean build; 362 unit/filesystem tests and 219 full native checks passed, zero failures/skips (25 Reader-runner checks). Full evidence `%TEMP%\MediFiler3Integration-8d4fd8f9b03643d2859a4f4c37bf350d`; log `%TEMP%\MediFiler3Reader-open-folder-full.log`. The reflow probe explicitly requires a 20% fractional offset before the width change, retaining the original preservation assertions.

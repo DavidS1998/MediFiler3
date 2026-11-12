@@ -197,7 +197,7 @@
                           VirtualizingPanel.ScrollUnit="Pixel">
                     <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <Grid MinHeight="28" HorizontalAlignment="Stretch">
+                        <Grid MinHeight="28" HorizontalAlignment="Stretch" PreviewMouseLeftButtonDown="OnFolderRowPreviewMouseLeftButtonDown">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="28" />

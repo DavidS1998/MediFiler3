@@ -333,13 +333,13 @@ public partial class MainWindow : Window
         var token = _historyAvailabilityCancellation.Token;
         var root = _navigationState.ActiveRoot;
         ToolbarIsland.SetHistoryAvailability(false, false);
-        if (root is null || PageContent.Content != _browseView || _browseView.IsReader) return;
+        if (root is null || PageContent.Content != _browseView) return;
         try
         {
             var operations = await _fileOrganizationService.ForRootAsync(root.Path, token);
             var undo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo, token);
             var redo = await operations.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo, token);
-            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView || _browseView.IsReader) return;
+            if (request != _historyRequest || !ReferenceEquals(root, _navigationState.ActiveRoot) || PageContent.Content != _browseView) return;
             ToolbarIsland.SetHistoryAvailability(undo is not null, redo is not null, undo, redo);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -353,7 +353,7 @@ public partial class MainWindow : Window
 
     private void UpdateFileActionAvailability()
     {
-        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && !_browseView.IsReader && (_browseView.IsGallery ? _navigationState.GallerySelection.Count > 0 : _navigationState.CurrentFile is not null), _browseView.IsGallery, !_browseView.IsGallery || _navigationState.GallerySelection.Count == 1);
+        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && (_browseView.IsGallery ? _navigationState.GallerySelection.Count > 0 : _navigationState.CurrentFile is not null && (!_browseView.IsReader || ReaderSessionState.Supports(_navigationState.CurrentFile))), _browseView.IsGallery, !_browseView.IsGallery || _navigationState.GallerySelection.Count == 1);
         ToolbarIsland.SetRefreshEnabled(PageContent.Content == _browseView && _navigationState.Roots.Count > 0);
     }
 
@@ -379,6 +379,8 @@ public partial class MainWindow : Window
         {
             if (ReaderIsActive && key == Key.G && modifiers == ModifierKeys.Control) action = PromptReaderJumpAsync;
             else if (ReaderIsActive && key == Key.Enter && modifiers == ModifierKeys.None) action = () => { _browseView.OpenReaderInBrowse(); return Task.CompletedTask; };
+            else if (ReaderIsActive && key == Key.Enter && modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift))
+                action = () => _browseView.OpenExternallyAsync(modifiers == ModifierKeys.Control ? ExternalFileAction.DefaultApplication : ExternalFileAction.ChooseApplication);
             else if (pinTree) action = () => { _browseView.ToggleFolderPinned(); return Task.CompletedTask; };
             else if (key == Key.F5 && modifiers == ModifierKeys.None) action = RefreshBrowseAsync;
             else if (key == Key.Z && modifiers == ModifierKeys.Control) action = _browseView.UndoLastOperationAsync;
@@ -433,7 +435,7 @@ public partial class MainWindow : Window
         PageContent.Content == _browseView && _browseView.IsBrowse && _navigationState.CurrentFile is not null
             ? _browseView.ViewerCapabilities : MediFiler3.Application.Viewing.ViewerCapabilities.None, _browseView.CanZoom);
         var external = _browseView.ExternalOpenState;
-        ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView && _browseView.IsBrowse ? external : external with { Visible = false });
+        ToolbarIsland.SetExternalOpenState(PageContent.Content == _browseView && (_browseView.IsBrowse || _browseView.IsReader) ? external : external with { Visible = false });
         ToolbarIsland.SetTextViewerState(_browseView.IsTextInteraction,
             _browseView.CanReadPreviousTextWindow, _browseView.CanReadNextTextWindow);
         ToolbarIsland.SetMediaPlaybackState(_browseView.PlaybackState);

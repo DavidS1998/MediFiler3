@@ -56,18 +56,38 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         QueueUpdate();
     }
 
+    private readonly List<(string OldPath, string NewPath)> _pendingPathMappings = [];
+    public void MapPaths(IReadOnlyList<(string OldPath, string NewPath)> mappings)
+    {
+        if (mappings.Count == 0) return;
+        if (_active && _scroll is not null && !_restore) session.Capture(_scroll.VerticalOffset);
+        // Apply mappings atomically with the replacement projection. The native dispatcher
+        // can render while its listing is awaited, so never expose a mapped anchor to old pages.
+        _pendingPathMappings.AddRange(mappings); _interactionVersion++;
+    }
+
     public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent)
     {
         if (_active && _scroll is not null && !preferCurrent && !_restore) session.Capture(_scroll.VerticalOffset);
         var previous = session.Pages.ToArray();
+        var explicitPath = _explicitPage?.FullPath;
+        foreach (var (oldPath, newPath) in _pendingPathMappings)
+        {
+            if (StringComparer.OrdinalIgnoreCase.Equals(explicitPath, oldPath)) explicitPath = newPath;
+            else if (explicitPath?.StartsWith(System.IO.Path.TrimEndingDirectorySeparator(oldPath) + System.IO.Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase) == true) explicitPath = newPath + explicitPath[System.IO.Path.TrimEndingDirectorySeparator(oldPath).Length..];
+        }
+        session.MapPaths(_pendingPathMappings); _pendingPathMappings.Clear();
         session.SetFiles(folder, files, current, preferCurrent);
         if (!previous.SequenceEqual(session.Pages))
         {
-            _interactionVersion++; _explicitPage = null; _endRequested = false;
-            StopRows();
+            _interactionVersion++; _endRequested = false;
+            _explicitPage = session.Pages.FirstOrDefault(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, explicitPath));
+            foreach (var row in _rows.Values.Where(row => !session.Pages.Contains(row.File)).ToArray()) RemoveRow(row);
             foreach (var item in _cache.ToArray()) if (!session.Pages.Contains(item.File)) RemoveCache(item);
         }
-        if (preferCurrent) { _reported = null; _explicitPage = null; _endRequested = false; }
+        _reported = null;
+        if (preferCurrent) { _reported = null; _explicitPage = session.Pages.FirstOrDefault(file => file == current); _endRequested = false; }
         _restore = true; QueueUpdate();
     }
 
@@ -166,6 +186,8 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                     _rows.Add(file, row); _canvas.Children.Add(border);
                     _ = LoadRowAsync(row);
                 }
+                Xaml.Automation.AutomationProperties.SetName(row.Root, $"Page {index + 1} of {session.Pages.Count}: {file.Name}");
+                Xaml.Automation.AutomationProperties.SetName(row.Image, $"Page {index + 1} of {session.Pages.Count}: {file.Name}");
                 row.Root.Width = pageWidth; row.Root.Height = session.Height(index);
                 Canvas.SetLeft(row.Root, _inset + 16 + (width - pageWidth) / 2); Canvas.SetTop(row.Root, session.Top(index));
             }
@@ -190,10 +212,10 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                 .RaiseAutomationEvent(Xaml.Automation.Peers.AutomationEvents.LiveRegionChanged);
         }
         if (index < 0 || session.Pages[index] == _reported) return;
-        var file = _reported = session.Pages[index];
+        var file = _reported = session.Pages[index]; var version = _interactionVersion;
         Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (_active && _reported == file && session.Pages.Contains(file)) CurrentPageChanged?.Invoke(file);
+            if (_active && version == _interactionVersion && _reported == file && session.Pages.Contains(file)) CurrentPageChanged?.Invoke(file);
         }));
     }
     private bool Live(Row row) => _active && !row.Stop.IsCancellationRequested && _rows.TryGetValue(row.File, out var current) && ReferenceEquals(row, current);

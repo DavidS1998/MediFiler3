@@ -37,13 +37,13 @@ public partial class BrowseView
             _reader = new WinUiReaderIsland(_navigationState.Reader, _readerImages);
             _reader.CurrentPageChanged += file =>
             {
-                if (!IsReader || !_viewerActive || !_navigationState.ContainsFile(file)) return;
+                if (!IsReader || !_viewerActive || _readerReconciliationDepth > 0 || !_navigationState.ContainsFile(file)) return;
                 _lastReaderCurrent = file.FullPath;
                 _navigationState.SetCurrentFile(file);
             };
             _reader.OpenInBrowseRequested += file =>
             {
-                if (!IsReader || !_viewerActive || !_navigationState.ContainsFile(file)) return;
+                if (!IsReader || !_viewerActive || _readerReconciliationDepth > 0 || !_navigationState.ContainsFile(file)) return;
                 if (_navigationState.CurrentFile != file) _reader.JumpToPage(_navigationState.Reader.Pages.ToList().IndexOf(file));
                 _lastReaderCurrent = file.FullPath;
                 _navigationState.SetCurrentFile(file);
@@ -58,11 +58,25 @@ public partial class BrowseView
             _reader.SetTreeInset(_folderOverlayPinned ? FolderOverlay.Width + FolderOverlay.Margin.Left : 26);
         }
         _reader?.SetActive(active);
+        UpdateReaderExternalApplication();
     }
 
+    private bool _readerPreferCurrent;
+    private int _readerReconciliationDepth;
     private void RefreshReaderFiles()
     {
-        if (IsReader && _viewerActive && _reader is not null)
-            _reader.SetFiles(_navigationState.ActiveFolder?.Path, _navigationState.Files, _navigationState.CurrentFile, false);
+        if (!IsReader || !_viewerActive || _reader is null || _readerReconciliationDepth > 0) return;
+        var prefer = _readerPreferCurrent; _readerPreferCurrent = false;
+        _reader.SetFiles(_navigationState.ActiveFolder?.Path, _navigationState.Files, _navigationState.CurrentFile, prefer);
     }
+    private IDisposable DeferReaderReconciliation()
+    {
+        _readerReconciliationDepth++;
+        return new ReaderReconciliationDeferral(this);
+    }
+    private sealed class ReaderReconciliationDeferral(BrowseView owner) : IDisposable
+    {
+        public void Dispose() { owner._readerReconciliationDepth--; owner.RefreshReaderFiles(); }
+    }
+
 }

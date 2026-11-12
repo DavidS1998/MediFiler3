@@ -20,6 +20,8 @@ public partial class BrowseView
     private void OnGalleryContextChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (_galleryMoveDrag is not null && !GalleryDragIsCurrent()) EndGalleryMoveDrag();
+        if (args.PropertyName is nameof(NavigationSessionState.CurrentFile) or nameof(NavigationSessionState.ViewingMode) or nameof(NavigationSessionState.Files))
+            UpdateReaderExternalApplication();
         if (args.PropertyName == nameof(NavigationSessionState.Files))
         {
             _galleryFilesDirty = true;
@@ -52,6 +54,7 @@ public partial class BrowseView
     {
         if (_navigationState.ViewingMode == mode) return;
         _historyCancellation?.Cancel();
+        _readerCommandCancellation?.Cancel();
         _galleryCommandCancellation?.Cancel();
         _navigationController.SwitchViewingMode(mode);
         if (mode == ViewingMode.Gallery && _navigationState.CurrentFile is { } current)

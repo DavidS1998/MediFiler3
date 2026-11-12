@@ -15,7 +15,7 @@
 
 User confirmed nested-folder dragging, edge scrolling and wheel scrolling during a drag. Final build is clean; 327 unit/filesystem and 192 full native checks passed, plus a 31-check focused Gallery repeat, all without failures/skips. Clearing 10,000 selected files measured 0.76-1.03s; keep that known scale latency and the physical/native/environment limits visible.
 
-Reader slices 1-4 are now implemented using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md). Reader organization/live reconciliation (5) and final acceptance (6) remain pending. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
+Reader slices 1-5 are now implemented using the approved MVP defaults; see [READER_HANDOVER.md](READER_HANDOVER.md). Reader organization/live reconciliation (5) is implemented; final acceptance (6) remains pending. Extra sorts/filtering and external file drag/import/export remain later scope. Bulk rename is not planned. No commit/push/deploy is implied by this closeout.
 
 ## Pinned future work: Browse/Gallery search (2026-11-12)
 

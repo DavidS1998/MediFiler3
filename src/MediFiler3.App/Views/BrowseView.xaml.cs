@@ -60,8 +60,8 @@ public partial class BrowseView : UserControl
     public event Action? OperationHistoryChanged;
     public ObservableCollection<object> CarouselItems { get; } = [];
     public double CurrentZoomLevel => ViewerHost.CurrentZoomLevel;
-    public ExternalOpenState ExternalOpenState => ViewerHost.ExternalOpenState;
-    public Task OpenExternallyAsync(ExternalFileAction action) => ViewerHost.OpenExternallyAsync(action);
+    public ExternalOpenState ExternalOpenState => IsReader ? ReaderExternalOpenState : ViewerHost.ExternalOpenState;
+    public Task OpenExternallyAsync(ExternalFileAction action) => IsReader ? OpenReaderExternallyAsync(action) : ViewerHost.OpenExternallyAsync(action);
     public MediaPlaybackState PlaybackState => ViewerHost.PlaybackState;
     public event Action? PlaybackStateChanged;
     public event Action<double, bool>? AudioSettingsChanged;
@@ -110,6 +110,9 @@ public partial class BrowseView : UserControl
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
         WicImageDecoder imageDecoder, IThumbnailService thumbnailService, IFileOrganizationService fileOrganizationService, ITextContentService textContentService, IExternalFileService externalFileService, IDefaultApplicationService defaultApplications, MediaAudioSettings? audioSettings = null, RootFolderHistoryService? rootHistory = null, IFolderChangeMonitor? changeMonitor = null, IReaderImageService? readerImages = null)
     {
+        _readerExternalFiles = externalFileService;
+        _readerDefaultApplication = new DefaultApplicationResolver(defaultApplications);
+        _readerDefaultApplication.Changed += () => PresentationChanged?.Invoke();
         _readerImages = readerImages;
         _changeMonitor = changeMonitor;
         _rootHistory = rootHistory;
@@ -221,10 +224,25 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null, int preferredFileIndex = 0)
+    private Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null, int preferredFileIndex = 0) =>
+        ActivateFolderCoreAsync(folder, preferredFilePath, preferredFileIndex, reloadCurrent: false);
+
+    private async void OnFolderRowPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled || e.ChangedButton != MouseButton.Left || e.ClickCount != 1 ||
+            FindAncestor<System.Windows.Controls.Primitives.ButtonBase>(e.OriginalSource as DependencyObject) is not null ||
+            sender is not FrameworkElement { DataContext: FolderTreeEntry folder } || !ReferenceEquals(folder, _navigationState.ActiveFolder) ||
+            !_viewerActive || _historyBusy || _readerCommandCancellation is not null || _galleryCommandCancellation is not null || IsGalleryMoveDragActive) return;
+        e.Handled = true;
+        _navigationController.CancelPendingNavigation();
+        await ActivateFolderCoreAsync(folder, null, 0, reloadCurrent: true);
+    }
+
+    private async Task ActivateFolderCoreAsync(FolderTreeEntry folder, string? preferredFilePath, int preferredFileIndex, bool reloadCurrent)
     {
         using var reconciliationDeferral = DeferReconciliation();
-        if (ReferenceEquals(_navigationState.ActiveFolder, folder))
+        using var readerDeferral = reloadCurrent ? DeferReaderReconciliation() : null;
+        if (!reloadCurrent && ReferenceEquals(_navigationState.ActiveFolder, folder))
         {
             return;
         }
@@ -234,6 +252,11 @@ public partial class BrowseView : UserControl
         _fileLoadCancellation = new CancellationTokenSource();
         var cancellationToken = _fileLoadCancellation.Token;
         _navigationState.SetActiveFolder(folder);
+        if (reloadCurrent)
+        {
+            _navigationState.GallerySelection.Clear();
+            _navigationState.ReplaceFiles([]);
+        }
         ClearActivePresentation($"Loading files in {folder.Name}...", folder.Path);
         StatusChanged?.Invoke($"Loading files in {folder.Name}...");
 
@@ -254,6 +277,11 @@ public partial class BrowseView : UserControl
                 if (preferredFile is not null) _navigationState.SetCurrentFile(preferredFile);
                 else if (result.Files.Count > 0)
                     _navigationState.SetCurrentFile(result.Files[Math.Clamp(preferredFileIndex, 0, result.Files.Count - 1)]);
+            }
+            if (reloadCurrent)
+            {
+                _readerPreferCurrent = IsReader;
+                if (IsGallery) _gallery?.RevealCurrentFile(_navigationState.CurrentFile, preserveSelection: true);
             }
             EmptyFilesNotice.Visibility = result.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _ = RefreshCarouselAsync();
@@ -450,7 +478,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
-        if (IsReader) return;
+        if (IsReader) { await RunReaderFileCommandAsync(destination); return; }
         if (IsGallery) { await RunGalleryFileCommandAsync(destination); return; }
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -489,18 +517,20 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
-        if (IsReader) return;
-        if (_galleryCommandCancellation is not null || _historyBusy) return;
+        if (_galleryCommandCancellation is not null || _readerCommandCancellation is not null || _historyBusy) return;
         using var reconciliationDeferral = DeferReconciliation();
+        using var readerDeferral = DeferReaderReconciliation();
         var root = _navigationState.ActiveRoot;
         var folder = _navigationState.ActiveFolder;
         var gallery = IsGallery;
+        var mode = _navigationState.ViewingMode;
         var revision = _commandRevision;
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var selected = _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files);
         var currentFile = gallery ? selected.Count == 1 ? selected[0] : null : _navigationState.CurrentFile;
-        if (currentFile is null) return;
-        bool Current() => _viewerActive && gallery == IsGallery && revision == _commandRevision &&
+        if (currentFile is null || IsReader && (!MediFiler3.Application.Navigation.ReaderSessionState.Supports(currentFile) ||
+            _navigationState.Reader.Pages.ElementAtOrDefault(ReaderPageIndex) != currentFile)) return;
+        bool Current() => _viewerActive && mode == _navigationState.ViewingMode && (!IsReader || _navigationState.CurrentFile == currentFile && _navigationState.Reader.Pages.ElementAtOrDefault(ReaderPageIndex) == currentFile) && revision == _commandRevision &&
             ReferenceEquals(root, _navigationState.ActiveRoot) && ReferenceEquals(folder, _navigationState.ActiveFolder) &&
             _navigationState.ContainsFile(currentFile) && (!gallery || _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files).SequenceEqual(new[] { currentFile }));
         var name = await RequireDialogService().PromptTextAsync(
@@ -508,7 +538,7 @@ public partial class BrowseView : UserControl
         if (string.IsNullOrWhiteSpace(name) || !Current()) return;
         try
         {
-            var service = await GetRootOperationsAsync(root, requireActive: true, allowGallery: gallery, scopeIsCurrent: Current);
+            var service = await GetRootOperationsAsync(root, requireActive: true, allowGallery: gallery, scopeIsCurrent: Current, allowReader: mode == MediFiler3.Application.Navigation.ViewingMode.Reader);
             if (!Current()) return;
             var result = await service.RenameFileAsync(currentFile.FullPath,
                 FileRenameName.CompleteName(currentFile.Name, name));
@@ -520,6 +550,7 @@ public partial class BrowseView : UserControl
             }
 
             if (!Current()) return;
+            if (IsReader && result.AffectedPath is { } mappedPath) _reader?.MapPaths([(currentFile.FullPath, mappedPath)]);
             ShowOperationNotice($"Renamed file to {Path.GetFileName(result.AffectedPath ?? name)}.");
             await ReloadFilesInActiveFolderAsync(result.AffectedPath, Current);
             if (gallery && result.AffectedPath is { } renamedPath && IsGallery && ReferenceEquals(folder, _navigationState.ActiveFolder))
@@ -542,7 +573,7 @@ public partial class BrowseView : UserControl
 
     public async Task SendCurrentFileToRecycleBinAsync()
     {
-        if (IsReader) return;
+        if (IsReader) { await RunReaderFileCommandAsync(null); return; }
         if (IsGallery) { await RunGalleryFileCommandAsync(null); return; }
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -577,9 +608,9 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
-        if (IsReader) return;
-        if (_historyBusy || _galleryCommandCancellation is not null) return;
+        if (_historyBusy || _galleryCommandCancellation is not null || _readerCommandCancellation is not null) return;
         using var reconciliationDeferral = DeferReconciliation();
+        using var readerDeferral = DeferReaderReconciliation();
         using var playbackRelease = ViewerHost.SuspendMediaForFileOperation();
         var activePath = _navigationState.ActiveFolder?.Path;
         var previousFileIndex = Math.Max(0, _navigationState.CurrentFilePosition - 1);
@@ -596,7 +627,7 @@ public partial class BrowseView : UserControl
         _navigationState.PropertyChanged += OnContextChanged;
         try
         {
-            var operations = await GetRootOperationsAsync(root, requireActive: true, cancellation.Token, allowGallery: true, scopeIsCurrent: () => !cancellation.IsCancellationRequested && historyMode == _navigationState.ViewingMode);
+            var operations = await GetRootOperationsAsync(root, requireActive: true, cancellation.Token, allowGallery: true, scopeIsCurrent: () => !cancellation.IsCancellationRequested && historyMode == _navigationState.ViewingMode, allowReader: true);
             var result = undo
                 ? await operations.UndoAsync(cancellation.Token)
                 : await operations.RedoAsync(cancellation.Token);
@@ -621,18 +652,21 @@ public partial class BrowseView : UserControl
             var preferredFilePath = result.Results.Where(item => item.Succeeded).Select(item => item.AffectedPath)
                 .FirstOrDefault(path => path is not null && File.Exists(path) &&
                     PathsEqual(Path.GetDirectoryName(path) ?? string.Empty, preferredPath ?? string.Empty));
+            if (IsReader) _reader?.MapPaths(pathMappings);
             RememberKnownFileMoves(result.Results);
             await RefreshOperationCountsAsync(result.Results);
             if (PathsEqual(preferredPath ?? "", activePath ?? "") && result.Results.Where(item => item.Succeeded)
                 .SelectMany(item => new[] { item.PreviousPath, item.AffectedPath }).Where(path => path is not null)
                 .All(path => FindFolder(_navigationState.Roots, path) is null && !Directory.Exists(path)))
             {
+                var preferReaderCurrent = IsReader && (preferredFilePath is null || _navigationState.CurrentFile is not { } readerFile ||
+                    !pathMappings.Any(mapping => PathsEqual(mapping.OldPath, readerFile.FullPath) && PathsEqual(mapping.NewPath, preferredFilePath)));
                 await ReloadFilesInActiveFolderAsync(IsGallery
                         ? _navigationState.CurrentFile?.FullPath ?? preferredFilePath
                         : preferredFilePath ?? _navigationState.CurrentFile?.FullPath,
                     () => _viewerActive && historyMode == _navigationState.ViewingMode && ReferenceEquals(root, _navigationState.ActiveRoot) &&
                         PathsEqual(activePath ?? "", _navigationState.ActiveFolder?.Path ?? ""),
-                    preferredFileIndex: IsGallery ? 0 : previousFileIndex);
+                    preferredFileIndex: IsGallery ? 0 : previousFileIndex, preferReaderCurrent: preferReaderCurrent);
                 return;
             }
             await RefreshFolderTreeAsync(preferredPath, pathMappings: pathMappings, preferredFilePath: preferredFilePath,
@@ -715,6 +749,13 @@ public partial class BrowseView : UserControl
         int preferredFileIndex = 0)
     {
         using var reconciliationDeferral = DeferReconciliation();
+        using var readerDeferral = DeferReaderReconciliation();
+        if (IsReader)
+        {
+            var mappings = (pathMappings ?? []).ToList();
+            if (oldPath is not null && newPath is not null) mappings.Add((oldPath, newPath));
+            _reader?.MapPaths(mappings);
+        }
         _navigationController.CancelPendingNavigation();
         _fileLoadCancellation?.Cancel();
         CancelFolderCounts();
@@ -811,7 +852,7 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0)
+    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0, bool preferReaderCurrent = false)
     {
         var folder = _navigationState.ActiveFolder;
         if (folder is null) return;
@@ -826,6 +867,8 @@ public partial class BrowseView : UserControl
                 var preferred = listing.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
                 _navigationState.SetCurrentFile(preferred ?? listing.Files.ElementAtOrDefault(Math.Clamp(preferredFileIndex, 0, Math.Max(0, listing.Files.Count - 1))));
             }
+            // Commit the preference only with a listing that passed its context guard.
+            _readerPreferCurrent |= IsReader && preferReaderCurrent;
             EmptyFilesNotice.Visibility = listing.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _ = RefreshCarouselAsync();
             _ = LoadCurrentImageAsync(clearCurrentImage: true);
@@ -947,6 +990,8 @@ public partial class BrowseView : UserControl
     public void StopBackgroundFolderCounts()
     {
         StopWatching();
+        _readerDefaultApplication.Dispose();
+        _readerCommandCancellation?.Cancel();
         _historyCancellation?.Cancel();
         _viewerActive = false;
         _navigationState.PropertyChanged -= OnGalleryContextChanged;
@@ -1561,6 +1606,7 @@ public partial class BrowseView : UserControl
         if (!active)
         {
             _galleryCommandCancellation?.Cancel();
+            _readerCommandCancellation?.Cancel();
             _historyCancellation?.Cancel(); StopWatching();
             _carouselRefreshVersion++;
             _carouselLoadCancellation?.Cancel();
@@ -1573,15 +1619,15 @@ public partial class BrowseView : UserControl
     }
 
     private async Task<IFileOrganizationService> GetRootOperationsAsync(FolderTreeEntry? root,
-        bool requireActive = false, CancellationToken token = default, bool allowGallery = false, Func<bool>? scopeIsCurrent = null)
+        bool requireActive = false, CancellationToken token = default, bool allowGallery = false, Func<bool>? scopeIsCurrent = null, bool allowReader = false)
     {
         if (root is null) throw new InvalidOperationException("Select a folder in a loaded root first.");
-        if (requireActive && IsReader) throw new InvalidOperationException("Reader file commands are not enabled in this slice.");
+        if (requireActive && IsReader && !allowReader) throw new InvalidOperationException("This command is not available in Reader.");
         var service = await _fileOrganizationService.ForRootAsync(root.Path, token);
-        if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive || IsGallery && !allowGallery)))
+        if (!_navigationState.Roots.Contains(root) || (requireActive && (!ReferenceEquals(root, _navigationState.ActiveRoot) || !_viewerActive || IsGallery && !allowGallery || IsReader && !allowReader)))
             throw new InvalidOperationException("The active root changed before the command could run.");
         return DialogService is null ? service : service.WithCollisionResolver(new BrowseCollisionResolver(Dispatcher, DialogService,
-            () => _viewerActive && _navigationState.Roots.Contains(root) && (!requireActive || (!IsGallery || allowGallery) && ReferenceEquals(root, _navigationState.ActiveRoot)) && (scopeIsCurrent?.Invoke() ?? true)));
+            () => _viewerActive && _navigationState.Roots.Contains(root) && (!requireActive || (!IsGallery || allowGallery) && (!IsReader || allowReader) && ReferenceEquals(root, _navigationState.ActiveRoot)) && (scopeIsCurrent?.Invoke() ?? true)));
     }
 
     private void ClearActivePresentation(string message, string detail)

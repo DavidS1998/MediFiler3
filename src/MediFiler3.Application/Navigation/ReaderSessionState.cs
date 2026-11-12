@@ -10,6 +10,7 @@ public sealed class ReaderSessionState
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".jfif", ".png", ".bmp", ".gif", ".tif", ".tiff", ".webp" };
     private readonly Dictionary<FileEntry, double> _ratios = [];
+    private readonly Dictionary<string, double> _mappedRatios = new(StringComparer.OrdinalIgnoreCase);
     private double[] _tops = [0];
     private double _width = 1, _viewportHeight = 1;
     private double[] _heights = [];
@@ -27,19 +28,47 @@ public sealed class ReaderSessionState
 
     public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent)
     {
+        var previousPages = Pages;
+        var previousIndex = Anchor is null ? -1 : Pages.ToList().FindIndex(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, Anchor.Path));
         var sameFolder = StringComparer.OrdinalIgnoreCase.Equals(_folder, folder);
         _folder = folder;
         if (!sameFolder) { Anchor = null; _ratios.Clear(); }
         Pages = files.Where(Supports).ToArray();
+        foreach (var file in Pages) if (_mappedRatios.TryGetValue(file.FullPath, out var ratio)) _ratios[file] = ratio;
+        _mappedRatios.Clear();
         var members = Pages.ToHashSet();
         foreach (var key in _ratios.Keys.Where(key => !members.Contains(key)).ToArray()) _ratios.Remove(key);
         if (preferCurrent || Anchor is null || !Pages.Any(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, Anchor.Path)))
         {
             var index = current is null ? 0 : Math.Max(0, files.ToList().FindIndex(file => file == current));
-            var page = files.Skip(index).FirstOrDefault(Supports) ?? files.Take(index).LastOrDefault(Supports) ?? Pages.FirstOrDefault();
+            var byPath = Pages.ToDictionary(file => file.FullPath, StringComparer.OrdinalIgnoreCase);
+            var survivor = sameFolder && !preferCurrent && previousIndex >= 0
+                ? previousPages.Skip(previousIndex + 1).Concat(previousPages.Take(previousIndex).Reverse())
+                    .Select(old => byPath.GetValueOrDefault(old.FullPath)).FirstOrDefault(file => file is not null)
+                : null;
+            var page = survivor ?? files.Skip(index).FirstOrDefault(Supports) ?? files.Take(index).LastOrDefault(Supports) ?? Pages.FirstOrDefault();
             Anchor = page is null ? null : new(page.FullPath, 0);
         }
         Arrange(_width, _viewportHeight);
+    }
+
+    public void MapPaths(IEnumerable<(string OldPath, string NewPath)> mappings)
+    {
+        foreach (var (oldPath, newPath) in mappings)
+        {
+            string? Map(string? path) => path is null ? null : StringComparer.OrdinalIgnoreCase.Equals(path, oldPath) ? newPath :
+                path.StartsWith(System.IO.Path.TrimEndingDirectorySeparator(oldPath) + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    ? newPath + path[System.IO.Path.TrimEndingDirectorySeparator(oldPath).Length..] : path;
+            foreach (var key in _mappedRatios.Keys.ToArray())
+            {
+                var mapped = Map(key)!;
+                if (mapped != key) { var ratio = _mappedRatios[key]; _mappedRatios.Remove(key); _mappedRatios[mapped] = ratio; }
+            }
+            foreach (var (file, ratio) in _ratios)
+                if (Map(file.FullPath) is { } mapped && mapped != file.FullPath) _mappedRatios[mapped] = ratio;
+            _folder = Map(_folder);
+            if (Anchor is not null) Anchor = Anchor with { Path = Map(Anchor.Path)! };
+        }
     }
 
     private double ColumnWidth => Options.Scaling == ReaderScalingMode.FitWidth ? _width * Options.WidthPercent / 100d : _width;

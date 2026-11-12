@@ -2,19 +2,21 @@
 
 Updated 2026-11-12. **Phase 5.5 is complete for the approved Gallery MVP**, including internal Gallery-to-tree drag/drop. The [Phase 5 acceptance report](PHASE5_ACCEPTANCE.md) records fresh verification, two scale samples, user-confirmed nested-folder dragging/edge/wheel scrolling and the remaining physical/native/environment limits.
 
-## Continuous Reader slices 1-4
+## Continuous Reader slices 1-5
 
-The user approved the proposed MVP defaults. Shared Reader navigation/projection and a native virtualized continuous image surface are implemented; see [READER_HANDOVER.md](READER_HANDOVER.md) for behavior, resource bounds, code map, remaining slices and verification limits. The top-right Reader toolbar now offers Switch/Sort glyph buttons for Resize to width / Resize to height, with a persisted 10-100% slider in width mode (default 100%). Settings retains page spacing (0-64 px, step 4), upcoming preload (0-6) and counter visibility; defaults remain fit width / 100% / spacing 0 / preload 2 / counter on. Reader counter shares Gallery's bottom-right outlined white semibold style. The sidebar uses ReadingMode and separates Home from file views; F3 toggles the existing tree pin action in Browse/Gallery/Reader across control focus. Reader slice 4 adds previous/next image, owned numeric page jumps, view-scoped keyboard navigation and accessible retry recovery. Open in Browse and Enter handoff are available; only external-application buttons are hidden in Reader. Reader file mutations/history remain disabled. The Gallery closeout evidence below describes the preceding baseline, not completion of the entire Reader feature.
+The user approved the proposed MVP defaults. Shared Reader navigation/projection and a native virtualized continuous image surface are implemented; see [READER_HANDOVER.md](READER_HANDOVER.md) for behavior, resource bounds, code map, remaining slices and verification limits. The top-right Reader toolbar now offers Switch/Sort glyph buttons for Resize to width / Resize to height, with a persisted 10-100% slider in width mode (default 100%). Settings retains page spacing (0-64 px, step 4), upcoming preload (0-6) and counter visibility; defaults remain fit width / 100% / spacing 0 / preload 2 / counter on. Reader counter shares Gallery's bottom-right outlined white semibold style. The sidebar uses ReadingMode and separates Home from file views; F3 toggles the existing tree pin action in Browse/Gallery/Reader across control focus. Reader slice 4 adds previous/next image, owned numeric page jumps, view-scoped keyboard navigation and accessible retry recovery. Open in Browse and Enter handoff remain available; Reader also restores Open in default application and Choose an application, including Ctrl+Enter / Ctrl+Shift+Enter, without resuming Browse presentation. Reader slice 5 enables single-page rename/recycle/tree-destination move and root-scoped Undo/Redo, with operation-aware anchors, retained unaffected pixels and shared live-change reconciliation. The Gallery closeout evidence below describes the preceding baseline, not completion of the entire Reader feature.
+
+Explicit left-click on the active folder row reloads only that folder listing and starts at its first file (first image in Reader), clearing Gallery selection and retaining tree nodes/counters. Menu/expander gestures and internal refresh/selection notifications do not request that reset.
 
 Reader Go uses a single focused page-number field, limited to 1 through the current image-page count, with Go and Cancel. The previous list/grid designs are superseded. Dialog hosts clip their outer native window to the rounded silhouette. Folder trees recycle visible containers with pixel scrolling; fullscreen no longer lays out the whole expanded hierarchy. Folder menus offer Collapse child folders, which toggles only direct children and retains deeper expansion state. Browse/Gallery search is pinned as [future work](DEVELOPMENT_PLAN.md). The Browse F4 crash is fixed by assigning a routed event to forwarded key arguments; [crash evidence](verification/f4-crash-2026-11-12.txt) records the cause.
 
 ## Reader verification (2026-11-12)
 
 - Build: zero warnings/errors.
-- Full unit/filesystem suite: **360 passed**, zero failures/skips.
-- Full native suite with supplied codec/media fixtures: **211 passed**, zero failures/skips, including all **17 Reader checks**.
-- Full native evidence: `%TEMP%\MediFiler3Integration-680f0579996c47da817dba77bc530702`; log `%TEMP%\MediFiler3Reader-tree-full.log`.
-- A 10,102-node synthetic expanded tree realized 22 containers initially and 102 after distant pixel scrolling. Fullscreen entry/reveal/layout measured 92.66 ms and exit/layout 28.15 ms in this sample. Root/node identity, expansion state, counters and shallow collapse semantics passed. See [sample](verification/tree-fullscreen-2026-11-12.json); this is a structural/performance probe, not physical/real-library acceptance.
+- Full unit/filesystem suite: **362 passed**, zero failures/skips.
+- Full native suite with supplied codec/media fixtures: **219 passed**, zero failures/skips, including all **25 Reader-runner checks**.
+- Full native evidence: `%TEMP%\MediFiler3Integration-8d4fd8f9b03643d2859a4f4c37bf350d`; log `%TEMP%\MediFiler3Reader-open-folder-full.log`.
+- The preceding tree follow-up measured a 10,102-node synthetic expanded tree that realized 22 containers initially and 102 after distant pixel scrolling. Fullscreen entry/reveal/layout measured 92.66 ms and exit/layout 28.15 ms in this sample. Root/node identity, expansion state, counters and shallow collapse semantics passed. See [sample](verification/tree-fullscreen-2026-11-12.json); this is a structural/performance probe, not physical/real-library acceptance.
 - Native corner checks verify the outer window region excludes rounded corners and follows resizing. Existing modal, cancel, rename, collision, Gallery preview/drag/hover/edge/wheel checks pass.
 - Reader image-worker crash follow-up replaces the prematurely closed SoftwareBitmap handoff with XAML-owned pixels, removes image tooltips and preserves anchors during asynchronous native scroll restoration. See [investigation evidence](verification/reader-crash-2026-11-11.txt).
 - User reports the Reader crash appears fixed. Slice 3 tests cover persisted settings, anchored reflow, bounded preload, counter styling/visibility and unchanged image identity.
@@ -39,8 +41,8 @@ Reader Go uses a single focused page-number field, limited to 1 through the curr
 | 5.1-5.4 | Gallery/session/UI/selection/safe grouped operations implemented |
 | Approved Gallery drag/drop follow-ups | Implemented; nested-folder, edge and wheel behavior physically confirmed |
 | 5.5 | Regression, scale characterization and targeted acceptance complete with recorded limits |
-| Reader slices 1-4 | Shared image projection/anchor, bounded scrolling, persisted settings and keyboard/page/file/recovery navigation implemented |
-| Later scope | Reader slices 5-6, additional sorts/filtering and external file drag/import/export; scope separately |
+| Reader slices 1-5 | Shared image projection/anchor, bounded scrolling, settings/navigation/recovery, safe single-page operations/history and live reconciliation implemented |
+| Later scope | Reader slice 6 acceptance, additional sorts/filtering and external file drag/import/export; scope separately |
 
 ## Phase 5.5 closeout verification (preceding baseline)
 
