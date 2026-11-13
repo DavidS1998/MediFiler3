@@ -1,4 +1,4 @@
-﻿Use C# and WPF.
+﻿Use C# and WPF/WinUI through XAML Islands.
 
 
 
