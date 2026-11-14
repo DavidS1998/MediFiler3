@@ -114,6 +114,9 @@ internal static partial class Program
                 KeyPress(Key.F11); StopFullscreenTimer();
                 await Task.Delay(50);
                 Require(window.IsFullscreen && window.WindowStyle == WindowStyle.None, "F11 did not enter borderless fullscreen");
+                var hiddenRevealBounds = browse.FolderRevealBounds;
+                Require(hiddenRevealBounds.Left == 0 && hiddenRevealBounds.Right == 56 + ((FrameworkElement)browse.FindName("FolderOverlay")).Width,
+                    "Fullscreen hidden reveal does not span the sidebar and pinned tree width");
                 Require(((FrameworkElement)window.FindName("ToolbarFrame")).Visibility == Visibility.Collapsed && ((FrameworkElement)window.FindName("Sidebar")).Visibility == Visibility.Collapsed,
                     "Fullscreen chrome remains visible");
                 // A pre-existing hover animation can still be settling after the 50 ms shell check.
@@ -128,6 +131,8 @@ internal static partial class Program
                 Require(window.WindowStyle == WindowStyle.SingleBorderWindow, "Top reveal omitted native title bar");
                 Require((bool)Field(browse, "_folderOverlayVisible")! && ((FrameworkElement)browse.FindName("FolderOverlay")).Margin.Left == 56,
                     "Left reveal did not show tree beside sidebar");
+                Require(browse.FolderRevealBounds.Left == hiddenRevealBounds.Left && browse.FolderRevealBounds.Width == hiddenRevealBounds.Width,
+                    "Opening the tree changed the reveal width");
                 var move = new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseLeaveEvent };
                 typeof(BrowseView).GetMethod("OnBrowseSurfaceMouseLeave", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse, [browse, move]);
                 Require((bool)Field(browse, "_folderOverlayVisible")!, "Crossing into native sidebar hid tree");

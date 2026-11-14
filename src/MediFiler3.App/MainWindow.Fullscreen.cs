@@ -107,8 +107,11 @@ public partial class MainWindow
         var handle = new WindowInteropHelper(this).Handle;
         var inside = GetFullscreenWindowRect(handle, out var bounds) && cursor.X >= bounds.Left && cursor.X < bounds.Right && cursor.Y >= bounds.Top && cursor.Y < bounds.Bottom;
         var popup = ToolbarIsland.HasOpenPopup;
+        var folderHover = _browseView.IsVisible
+            ? _browseView.FolderRevealBounds.Contains(_browseView.PointFromScreen(new Point(cursor.X, cursor.Y)))
+            : point.X <= (_fullscreenSidebarVisible ? CompactSidebarWidth + 12 : 8);
         SetFullscreenChrome(popup || inside && point.Y <= (_fullscreenToolbarVisible ? 60 : 8),
-            inside && point.X <= (_fullscreenSidebarVisible ? CompactSidebarWidth + Math.Max(12, _browseView.IsVisible ? _browseView.FullscreenFolderRevealWidth : 0) : 8));
+            inside && folderHover);
     }
 
     private void SetFullscreenChrome(bool toolbar, bool sidebar)

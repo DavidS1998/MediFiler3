@@ -28,7 +28,7 @@ public sealed class ThumbnailViewerHandler(IThumbnailService thumbnails) : IFile
     public ViewerCapabilities Capabilities => ViewerCapabilities.None;
     public async Task<ViewerContent<ViewerPresentation>> LoadAsync(FileEntry file, int width, int height, CancellationToken cancellationToken)
     {
-        var bytes = await thumbnails.GetThumbnailPngAsync(file, width, height, cancellationToken);
+        var bytes = await thumbnails.GetDefaultThumbnailPngAsync(file, cancellationToken);
         var source = bytes is null ? null : await Task.Run(() => DecodePng(bytes), cancellationToken);
         return new(source is null ? null : new BitmapPresentation(source), new ViewerMetadata(file.Size), IsThumbnailFallback: true);
     }

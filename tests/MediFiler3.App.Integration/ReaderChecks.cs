@@ -68,7 +68,7 @@ internal static partial class Program
                 Require(state.Reader.Pages.Select(file => file.Name).SequenceEqual(Enumerable.Range(1, 12).Select(i => $"page {i}.png")), "Reader lost natural order or included media/text");
                 Require(!(bool)Field(browse.FindName("ViewerHost"), "_active")! && ((FrameworkElement)browse.FindName("CarouselOverlay")).Visibility == Visibility.Collapsed,
                     "Reader started Browse presentation");
-                Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled &&
+                Require(!((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_deleteFileButton")!).IsEnabled &&
                     ((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_renameFileButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
                     "Reader underlying page actions or hidden chrome changed");
                 await WaitUntil(() => state.CurrentFile?.Name == "page 5.png" &&
@@ -268,6 +268,7 @@ internal static partial class Program
             });
             await Check("Reader toolbar scopes scaling and a persisted centered 10-100 percent width without losing the anchor", async () =>
             {
+                using var diagnostics = new ReaderReflowDiagnostics(Reader(), state.Reader);
                 SelectScaling(false);
                 var widthButton = (Microsoft.UI.Xaml.Controls.AppBarToggleButton)Field(toolbar, "_readerWidthButton")!;
                 var heightButton = (Microsoft.UI.Xaml.Controls.AppBarToggleButton)Field(toolbar, "_readerHeightButton")!;
@@ -287,17 +288,24 @@ internal static partial class Program
                 Require(group.Visibility == Microsoft.UI.Xaml.Visibility.Visible && group.HorizontalAlignment == Microsoft.UI.Xaml.HorizontalAlignment.Right &&
                     slider.Minimum == 10 && slider.Maximum == 100 && slider.Value == 100, "Reader width toolbar has incorrect context/default/range");
                 SelectScaling(false);
+                diagnostics.Mark("jump.request", "index=3");
                 Require(browse.JumpReaderPage(3), "Could not prepare the width-reflow anchor page");
                 await WaitUntil(() => LoadedImage() && state.CurrentFile == state.Reader.Pages[3] &&
                     !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
-                Scroll().ChangeView(null, state.Reader.Top(3) + state.Reader.Height(3) * .2, null, true);
+                diagnostics.Mark("jump.ready");
+                var probeTarget = state.Reader.Top(3) + state.Reader.Height(3) * .2;
+                diagnostics.Mark("probe.request", $"target={probeTarget}");
+                var probeAccepted = Scroll().ChangeView(null, probeTarget, null, true);
+                diagnostics.Mark("probe.return", $"accepted={probeAccepted}; target={probeTarget}");
                 try { await WaitUntil(() => state.Reader.Anchor?.Path == state.Reader.Pages[3].FullPath && Math.Abs(state.Reader.Anchor.Fraction - .2) < .03); }
                 catch (TimeoutException exception) { throw new InvalidOperationException($"Reader width probe scroll did not settle: anchor={state.Reader.Anchor}; offset={Scroll().VerticalOffset}; target={state.Reader.Top(3) + state.Reader.Height(3) * .2}; extent={Scroll().ScrollableHeight}; restore={Field(Reader(), "_restore")}; queued={Field(Reader(), "_queued")}", exception); }
                 await Task.Delay(100); var anchor = state.Reader.Anchor!;
+                diagnostics.Mark("width.change", "percent=50");
                 slider.Value = 50;
                 await WaitUntil(() => LoadedImage() && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
                 Require(state.Reader.Anchor?.Path == anchor.Path && Math.Abs(state.Reader.Anchor.Fraction - anchor.Fraction) < .03,
                     "Reader width reflow lost the image anchor");
+                diagnostics.Mark("width.change", "percent=10");
                 slider.Value = 10;
                 await WaitUntil(() => LoadedImage() && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
                 var available = (double)Field(Reader(), "_width")!;
@@ -713,6 +721,7 @@ internal static partial class Program
             await RunReaderAcceptanceChecksAsync(window, state, browse, navigation, readerImages);
         }
         finally { window.Close(); }
+        await RunReaderRestorationChecksAsync();
     }
     private static void InvokeReaderToolbarButton(Microsoft.UI.Xaml.Controls.AppBarButton button) =>
         ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(button)

@@ -28,7 +28,6 @@ internal static partial class Program
         await WaitUntil(() => state.Files.Count == 5 && state.Roots[0].Children.Any(child => child.Path == target));
         navigation.SelectDestination("Reader"); browse.SetReaderOptions(new());
         WinUiReaderIsland Reader() => (WinUiReaderIsland)Field(browse, "_reader")!;
-        Microsoft.UI.Xaml.Controls.ScrollViewer Scroll() => (Microsoft.UI.Xaml.Controls.ScrollViewer)Field(Reader(), "_scroll")!;
         async Task Jump(string name)
         {
             await WaitUntil(() => state.Reader.Pages.Any(file => file.Name == name));
@@ -49,87 +48,31 @@ internal static partial class Program
         var originalDialogs = browse.DialogService; var dialogs = new CollisionDialogs(window.Dispatcher); browse.DialogService = dialogs;
         try
         {
-            await Check("Reader rename and history retain fractional anchors and unrelated native pixels", async () =>
+            await Check("Reader rejects file moves rename recycle Undo and Redo while folder commands remain available", async () =>
             {
                 await Jump("b.png");
-                await WaitUntil(() => Source("a.png") is not null && Source("b.png") is not null && !(bool)Field(Reader(), "_restore")! && !(bool)Field(Reader(), "_queued")!);
-                await Task.Delay(100);
-                Scroll().ChangeView(null, state.Reader.Top(1) + state.Reader.Height(1) * .3, null, true);
-                await WaitUntil(() => Math.Abs(state.Reader.Anchor!.Fraction - .3) < .03);
-                var anchor = state.Reader.Anchor!; var surviving = Source("a.png");
-                dialogs.Name = "b-renamed";
-                await browse.PromptRenameCurrentFileAsync(); await Settled("b-renamed.png");
-                Require(Math.Abs(state.Reader.Anchor!.Fraction - anchor.Fraction) < .03 && ReferenceEquals(surviving, Source("a.png")), "Rename reset anchor or unrelated pixels");
-                Require(dialogs.InitialName == "b" && File.Exists(Path.Combine(directory, "b-renamed.png")), "Rename lost extension/name behavior");
-                await browse.UndoLastOperationAsync(); await Settled("b.png");
-                await browse.RedoLastOperationAsync(); await Settled("b-renamed.png");
-                await browse.UndoLastOperationAsync(); await Settled("b.png");
-                Require(((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_undoButton")!).Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
-                    "Reader history toolbar should remain hidden while APIs work");
-            });
-            await Check("Reader move recycle Undo and Redo select image neighbors and retain tree counters", async () =>
-            {
-                var root = state.Roots[0]; var destination = root.Children.Single(child => child.Path == target);
-                foreach (var recycle in new[] { false, true })
-                {
-                    await Jump("b.png");
-                    var confirmations = 0; dialogs.OnConfirm = () => confirmations++;
-                    if (recycle) await browse.SendCurrentFileToRecycleBinAsync(); else await Move();
-                    await Settled("c.png");
-                    Require(confirmations == 0 && state.Files.All(file => file.Name != "b.png"), "Single-page removal prompted or remained listed");
-                    await browse.UndoLastOperationAsync(); await Settled("b.png");
-                    await browse.RedoLastOperationAsync(); await Settled("c.png");
-                    await browse.UndoLastOperationAsync(); await Settled("b.png");
-                    Require(ReferenceEquals(root, state.Roots[0]) && root.DirectFileCount == 5 && destination.DirectFileCount == 0, "Reader history reset nodes or counters");
-                }
-                await Jump("d.png"); await Move(); await Settled("c.png");
-                await browse.UndoLastOperationAsync(); await Settled("d.png");
-                await browse.RedoLastOperationAsync(); await Settled("c.png");
-                await browse.UndoLastOperationAsync(); await Settled("d.png");
-                dialogs.OnConfirm = null;
-            });
-            await Check("Reader collision cancellation rename and explicit overwrite use existing safe history", async () =>
-            {
-                await Jump("b.png");
-                var blocker = Path.Combine(target, "b.png"); File.WriteAllText(blocker, "blocker");
-                dialogs.Resolution = new(FileCollisionChoice.Cancel);
-                await Move(); await Settled("b.png");
-                Require(File.ReadAllText(blocker) == "blocker" && File.Exists(Path.Combine(directory, "b.png")), "Cancelled collision changed files");
-                dialogs.Resolution = new(FileCollisionChoice.Rename, "b (1).png");
-                await Move(); await Settled("c.png");
-                Require(Directory.GetFiles(target).Length == 2 && File.ReadAllText(blocker) == "blocker", "Collision rename overwrote destination");
-                await browse.UndoLastOperationAsync(); await Settled("b.png");
-                dialogs.Resolution = new(FileCollisionChoice.Overwrite);
-                await Move(); await Settled("c.png");
-                await browse.UndoLastOperationAsync(); await Settled("b.png");
-                Require(File.ReadAllText(blocker) == "blocker", "Overwrite Undo lost destination backup");
-                File.Delete(blocker);
-            });
-            await Check("Reader stale rename and collision answers cannot mutate another view or root", async () =>
-            {
-                await Jump("b.png");
-                var source = Path.Combine(directory, "b.png"); var blocker = Path.Combine(target, "b.png");
-                var scoped = new ReaderScopedDialogs(); browse.DialogService = scoped;
-                scoped.OnPrompt = () => { browse.JumpReaderPage(state.Reader.Pages.ToList().FindIndex(file => file.Name == "c.png")); return "stale-name"; };
+                navigation.SelectDestination("Browse");
+                dialogs.Name = "b-history";
                 await browse.PromptRenameCurrentFileAsync();
-                Require(File.Exists(source) && !File.Exists(Path.Combine(directory, "stale-name.png")), "Native page change did not reject stale rename");
-                await Jump("b.png");
-                scoped.OnPrompt = () => { navigation.SelectDestination("Gallery"); return "stale-name"; };
-                await browse.PromptRenameCurrentFileAsync();
-                Require(File.Exists(source) && !File.Exists(Path.Combine(directory, "stale-name.png")), "Stale rename mutated source");
-                navigation.SelectDestination("Reader"); await Jump("b.png"); File.WriteAllText(blocker, "blocker");
-                scoped.OnCollision = () => { browse.JumpReaderPage(state.Reader.Pages.ToList().FindIndex(file => file.Name == "c.png")); return new(FileCollisionChoice.Overwrite); };
-                await Move();
-                Require(File.Exists(source) && File.ReadAllText(blocker) == "blocker", "Native page change did not reject stale collision answer");
-                await Jump("b.png");
-                scoped.OnCollision = () => { navigation.SelectDestination("Settings"); return new(FileCollisionChoice.Overwrite); };
-                await Move();
-                Require(File.Exists(source) && File.ReadAllText(blocker) == "blocker" && !Reader().IsActive, "Stale collision answer changed files");
-                File.Delete(blocker); browse.DialogService = dialogs;
+                navigation.SelectDestination("Reader"); await Jump("b-history.png");
+                await browse.UndoLastOperationAsync();
+                Require(File.Exists(Path.Combine(directory, "b-history.png")), "Reader replayed Undo");
+                navigation.SelectDestination("Browse"); await browse.UndoLastOperationAsync();
                 navigation.SelectDestination("Reader"); await Jump("b.png");
-                var snapshot = state.Files.ToArray();
-                await (Task)typeof(BrowseView).GetMethod("MoveCurrentFileToFolderAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse, [state.Roots[0]])!;
-                await Settled("b.png"); Require(snapshot.SequenceEqual(state.Files), "Same-folder no-op advanced Reader");
+                var snapshot = state.Files.ToDictionary(file => file.FullPath, file => File.ReadAllBytes(file.FullPath));
+                var prompts = 0;
+                browse.DialogService = new ReaderScopedDialogs { OnPrompt = () => { prompts++; return "forbidden"; } };
+                try
+                {
+                    await Move();
+                    await browse.PromptRenameCurrentFileAsync();
+                    await browse.SendCurrentFileToRecycleBinAsync();
+                    await browse.RedoLastOperationAsync();
+                    Require(prompts == 0 && !Directory.EnumerateFiles(target).Any(), "Reader prompted or moved a file");
+                    Require(snapshot.All(pair => File.Exists(pair.Key) && File.ReadAllBytes(pair.Key).SequenceEqual(pair.Value)) &&
+                        snapshot.Keys.Order().SequenceEqual(state.Files.Select(file => file.FullPath).Order()), "Reader modified files or replayed history");
+                }
+                finally { browse.DialogService = dialogs; }
             });
             await Check("Reader live insertion removal and same-metadata content changes preserve surviving pages", async () =>
             {
@@ -188,10 +131,9 @@ internal static partial class Program
     private sealed class ReaderScopedDialogs : IWinUiDialogService
     {
         public Func<string?>? OnPrompt;
-        public Func<FileCollisionResolution>? OnCollision;
         public Task<string?> PromptTextAsync(string title, string message, string initialValue = "", string primaryAction = "OK") => Task.FromResult(OnPrompt?.Invoke());
         public Task<bool> ConfirmAsync(string title, string message, string confirmAction) => Task.FromResult(false);
-        public Task<FileCollisionResolution> ResolveCollisionAsync(FileCollision collision) => Task.FromResult(OnCollision?.Invoke() ?? new(FileCollisionChoice.Cancel));
+        public Task<FileCollisionResolution> ResolveCollisionAsync(FileCollision collision) => Task.FromResult(new FileCollisionResolution(FileCollisionChoice.Cancel));
     }
 
 }

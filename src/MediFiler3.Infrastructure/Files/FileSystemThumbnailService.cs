@@ -156,10 +156,11 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
                 : await item.GetThumbnailAsync(ThumbnailMode.SingleItem,
                     (uint)Math.Max(width, height), ThumbnailOptions.ResizeThumbnail).AsTask(token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            // Preserve the existing thumbnail-only contract: file icons are placeholders, not previews.
-            if (thumbnail is null || thumbnail.Type != ThumbnailType.Image || thumbnail.Size == 0)
+            // Miscellaneous files may have only Explorer's generic/type icon. Keep that
+            // usable visual; supported images still prefer decoded source pixels to icons.
+            if (thumbnail is null || thumbnail.Size == 0 || thumbnail.Type != ThumbnailType.Image && ImageExtensions.Contains(file.Extension))
             {
-                if (!ImageExtensions.Contains(file.Extension)) return null;
+                if (!ImageExtensions.Contains(file.Extension)) return await GenerateFileIconAsync(file, token).ConfigureAwait(false);
                 // Keep supported image previews available if Windows supplies only an icon.
                 using var source = await item.OpenAsync(FileAccessMode.Read).AsTask(token).ConfigureAwait(false);
                 return await EncodeThumbnailPngAsync(source, fallbackWidth, fallbackHeight, token).ConfigureAwait(false);
@@ -170,8 +171,23 @@ public sealed partial class FileSystemThumbnailService : IThumbnailService, IThu
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or COMException or
             ArgumentException or InvalidOperationException or NotSupportedException or System.Security.SecurityException)
         {
-            return null;
+            return ImageExtensions.Contains(file.Extension) ? null : await GenerateFileIconAsync(file, token).ConfigureAwait(false);
         }
+    }
+
+    private static async Task<byte[]?> GenerateFileIconAsync(FileEntry file, CancellationToken token)
+    {
+        try
+        {
+            var item = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(file.FullPath)).AsTask(token).ConfigureAwait(false);
+            // ListView requests the Shell file/type icon even when the preview provider
+            // cannot produce a SingleItem thumbnail (for example a PSD without a codec).
+            using var icon = await item.GetThumbnailAsync(ThumbnailMode.ListView, 96, ThumbnailOptions.UseCurrentScale).AsTask(token).ConfigureAwait(false);
+            return icon is null || icon.Size == 0 ? null : await EncodeThumbnailPngAsync(icon, 0, 0, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or COMException or
+            ArgumentException or InvalidOperationException or NotSupportedException or System.Security.SecurityException) { return null; }
     }
 
     private static async Task<byte[]> EncodeThumbnailPngAsync(IRandomAccessStream source, int width, int height, CancellationToken token)

@@ -62,6 +62,14 @@ internal static partial class Program
                 {
                     Directory.CreateDirectory(Root); MakeFixtures(); await RunReaderChecksAsync();
                 }
+                else if (args.Length == 1 && args[0] == "--browse-fallback-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures(); await RunBrowseFallbackChecksAsync();
+                }
+                else if (args.Length == 1 && args[0] == "--reader-restoration-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures(); await RunReaderRestorationChecksAsync();
+                }
                 else if (args.Length == 1 && args[0] == "--gallery-resume-only")
                 {
                     Directory.CreateDirectory(Root); MakeFixtures();
@@ -318,6 +326,13 @@ internal static partial class Program
             }
             finally { Thumbs.Image = null; }
         });
+        await Check("Windows generic file icon is retained for miscellaneous Browse fallback", async () =>
+        {
+            var result = await new ThumbnailViewerHandler(NativeThumbnails).LoadAsync(Fixtures[".unknown"], 256, 256, default);
+            Require(result.IsThumbnailFallback && result.Presentation is BitmapPresentation { Source.PixelWidth: > 0 },
+                "Windows file icon was discarded instead of displayed as fallback");
+        });
+        await RunBrowseFallbackChecksAsync();
         await Check("missing file has a usable fallback", async () =>
         {
             var missing = new FileEntry(Path.Combine(Root, "missing.png"), "missing.png", 1, DateTime.UtcNow);

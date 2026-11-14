@@ -89,6 +89,6 @@ public partial class BrowseView
         var drag = _galleryMoveDrag; _galleryMoveDrag = null;
         drag?.Deferral.Dispose();
         if (drag is not null) _gallery?.ClearMoveDragVisual();
-        if (drag is not null) SetFolderOverlayVisible(_folderOverlayPinned || _sidebarFolderReveal);
+        if (drag is not null) SetFolderOverlayVisible(_folderOverlayPinned || _folderHoverReveal);
     }
 }

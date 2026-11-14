@@ -78,6 +78,16 @@ public sealed partial class WinUiReaderIsland
         // Actual scroll changes are detected in ViewChanged, including UIA scroll requests.
         if (pending) { _explicitPage = null; PublishCurrent(); }
     }
+    private void OnReaderViewChanging(double offset)
+    {
+        if (!_active || _restore || _updating || _scroll is null || Math.Abs(offset - _scroll.VerticalOffset) <= .5) return;
+        // A native/UIA scroll can be accepted before its offset arrives in ViewChanged.
+        // Capture its anchor against the current geometry now: a late source dimension
+        // can otherwise restore the old anchor during that scroll's native layout pass.
+        // Our own restoration requests run with _restore/_updating and must not recapture.
+        session.Capture(offset);
+        _explicitPage = null; _endRequested = false;
+    }
     private void OnReaderViewChanged()
     {
         if (!_active || _updating || _scroll is null) return;

@@ -364,6 +364,7 @@ public partial class BrowseView : UserControl
 
     private async void OnFolderTreePreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsReader) return;
         var item = FindAncestor<TreeViewItem>(e.OriginalSource as DependencyObject);
         if (item?.DataContext is not FolderTreeEntry destination) return;
         e.Handled = true;
@@ -478,7 +479,7 @@ public partial class BrowseView : UserControl
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {
-        if (IsReader) { await RunReaderFileCommandAsync(destination); return; }
+        if (IsReader) return;
         if (IsGallery) { await RunGalleryFileCommandAsync(destination); return; }
         using var reconciliationDeferral = DeferReconciliation();
         var root = _navigationState.ActiveRoot;
@@ -517,6 +518,7 @@ public partial class BrowseView : UserControl
 
     public async Task PromptRenameCurrentFileAsync()
     {
+        if (IsReader) return;
         if (_galleryCommandCancellation is not null || _readerCommandCancellation is not null || _historyBusy) return;
         using var reconciliationDeferral = DeferReconciliation();
         using var readerDeferral = DeferReaderReconciliation();
@@ -608,6 +610,7 @@ public partial class BrowseView : UserControl
 
     private async Task ApplyHistoryOperationAsync(bool undo)
     {
+        if (IsReader) return;
         if (_historyBusy || _galleryCommandCancellation is not null || _readerCommandCancellation is not null) return;
         using var reconciliationDeferral = DeferReconciliation();
         using var readerDeferral = DeferReaderReconciliation();
@@ -1190,19 +1193,15 @@ public partial class BrowseView : UserControl
     private void OnBrowseSurfaceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
     {
         var point = e.GetPosition(BrowseSurface);
-        _sidebarFolderReveal = SidebarHoverProbe?.Invoke() == true;
-        var showFolder = _folderOverlayPinned || _fullscreenFolderReveal || _sidebarFolderReveal || !_fullscreenCarousel &&
-                         (_folderOverlayVisible && point.X <= FolderOverlay.Width);
+        UpdateShellFolderHover(FolderHoverPositionProbe?.Invoke() ?? point);
         var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
                            (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
-        SetFolderOverlayVisible(showFolder);
         SetCarouselOverlayVisible(showCarousel);
     }
 
     private void OnBrowseSurfaceMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        _sidebarFolderReveal = SidebarHoverProbe?.Invoke() == true;
-        SetFolderOverlayVisible(_folderOverlayPinned || _sidebarFolderReveal);
+        UpdateShellFolderHover(FolderHoverPositionProbe?.Invoke());
         SetCarouselOverlayVisible(false);
     }
 
@@ -1230,10 +1229,8 @@ public partial class BrowseView : UserControl
         if (width <= 0 || height <= 0) return;
         var folderWidth = Math.Clamp(FolderOverlay.ActualWidth + FolderOverlayTransform.X + FolderOverlay.Margin.Left, 0, width);
         var carouselHeight = Math.Clamp(CarouselOverlay.ActualHeight - CarouselOverlayTransform.Y, 0, height);
-        var exclusions = new List<Rect>
-        {
-            new(0, 0, Math.Max(26, folderWidth), height)
-        };
+        var exclusions = new List<Rect>();
+        if (folderWidth > 0) exclusions.Add(new Rect(0, 0, folderWidth, height));
         if (_carouselEnabled && IsBrowse) exclusions.Add(new Rect(0, Math.Max(0, height - Math.Max(26, carouselHeight)), width, Math.Max(26, carouselHeight)));
         foreach (var shellExclusion in _shellVideoExclusions) exclusions.Add(shellExclusion);
         if (OperationNotice.Visibility == Visibility.Visible)
@@ -1259,7 +1256,7 @@ public partial class BrowseView : UserControl
 
     private void SetFolderOverlayVisible(bool isVisible)
     {
-        isVisible |= _galleryMoveDrag is not null || _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel && _sidebarFolderReveal;
+        isVisible |= _galleryMoveDrag is not null || _folderOverlayPinned || _fullscreenFolderReveal || !_fullscreenCarousel && _folderHoverReveal;
         if (_folderOverlayVisible == isVisible)
         {
             return;

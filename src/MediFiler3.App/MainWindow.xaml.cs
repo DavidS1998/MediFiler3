@@ -285,6 +285,7 @@ public partial class MainWindow : Window
 
         Sidebar.Visibility = IsSidebarVisible && (!IsFullscreen || _fullscreenSidebarVisible) ? Visibility.Visible : Visibility.Collapsed;
         SidebarColumn.Width = IsSidebarVisible && !IsFullscreen ? new GridLength(CompactSidebarWidth) : new GridLength(0);
+        _browseView.SetFolderRevealSidebarWidth(IsSidebarVisible ? CompactSidebarWidth : 0);
     }
 
     private void OnNavigationSelectionChanged(string destination)
@@ -356,7 +357,7 @@ public partial class MainWindow : Window
 
     private void UpdateFileActionAvailability()
     {
-        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && (_browseView.IsGallery ? _navigationState.GallerySelection.Count > 0 : _navigationState.CurrentFile is not null && (!_browseView.IsReader || ReaderSessionState.Supports(_navigationState.CurrentFile))), _browseView.IsGallery, !_browseView.IsGallery || _navigationState.GallerySelection.Count == 1);
+        ToolbarIsland.SetFileActionsEnabled(PageContent.Content == _browseView && !_browseView.IsReader && (_browseView.IsGallery ? _navigationState.GallerySelection.Count > 0 : _navigationState.CurrentFile is not null), _browseView.IsGallery, !_browseView.IsGallery || _navigationState.GallerySelection.Count == 1);
         ToolbarIsland.SetRefreshEnabled(PageContent.Content == _browseView && _navigationState.Roots.Count > 0);
     }
 

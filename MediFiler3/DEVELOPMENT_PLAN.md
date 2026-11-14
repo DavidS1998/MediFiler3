@@ -1,6 +1,6 @@
 # Development plan
 
-Long-term milestone tracker, updated 2026-11-13. Requirements and current product decisions are in [SPECIFICATION.md](SPECIFICATION.md). Active issues/next actions belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation belongs in [ARCHITECTURE.md](ARCHITECTURE.md). A completed MVP with recorded verification limits does not imply every hardware/storage/accessibility scenario passed.
+Long-term milestone tracker, updated 2026-11-14. Requirements and current product decisions are in [SPECIFICATION.md](SPECIFICATION.md). Active issues/next actions belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation belongs in [ARCHITECTURE.md](ARCHITECTURE.md). A completed MVP with recorded verification limits does not imply every hardware/storage/accessibility scenario passed.
 
 ## 1. Milestones
 
@@ -19,10 +19,12 @@ Long-term milestone tracker, updated 2026-11-13. Requirements and current produc
 | Reader slices 1-2 | Shared image projection/anchors, lazy native source pages, bounded cache/jobs and recoverable placeholders | Complete; owned-pixel lifetime fix and source crash regression included |
 | Reader slice 3 | Persisted fit width/height, width percentage, spacing/preload/counter, shared counter style | Complete |
 | Reader slice 4 | Numeric page navigation, scoped keyboard controls, accessible retry/Browse recovery | Complete; earlier list/grid/filename picker designs superseded by bounded numeric field |
-| Reader slice 5 | Single-page organization/history, mapped anchors, retained unaffected pixels and live reconciliation | Complete; underlying APIs remain after later UI hiding |
+| Reader slice 5 | Originally delivered single-page organization/history, mapped anchors and live reconciliation | File mutation/history subsequently disabled by the read-only Reader decision; folder mapping and reconciliation retained |
 | Reader slice 6 | Fresh full regression, two actual-file resource samples and user acceptance | Closed with limits on 2026-11-12; user confirmed arrow fix after reporting rest of Reader in order |
-| Subsequent UI decisions | Reader hides seven command buttons/matching shortcuts; Gallery hides external-app pair; Browse restores shared controls; explicit active-folder click resets listing position; shallow folder-child collapse | Implemented; these are current requirements, not unfinished Reader slices |
+| Subsequent UI decisions | Reader hides seven command buttons/matching shortcuts; Gallery hides external-app pair; Browse restores shared controls; explicit active-folder click resets listing position; shallow folder-child collapse; one sidebar/full-tree-width reveal area in normal/fullscreen modes | Implemented; these are current requirements, not unfinished Reader slices |
 | Documentation consolidation | Six authoritative documents with no phase/history/runner-readme duplicates; preserve current AGENTS | Complete, 2026-11-13; docs-only build/audits passed |
+| Reader restoration follow-up | Preserve accepted native fractional scrolls through late dimension discovery; deterministic gated-source native regression | Complete, 2026-11-14; original assertion failures reproduced before fix; existing input/anchor/rendering assertions preserved |
+| Folder collision totals | Recursive file counts and summed file sizes on Incoming/Existing cards, cancellable background scanning and explicit incomplete states | Implemented, 2026-11-14; includes hidden/system files, excludes reparse traversal |
 
 Reader **slice 6** is its acceptance slice, not completion/authorization of the proposed **project Phase 6** optional refinements. No Reader implementation slice remains.
 
@@ -38,6 +40,7 @@ These are milestone baselines, not an accumulating list of every intermediate ru
 | Reader 6 closeout | Clean | 362 | 221 | Reader repeat 27; zero failures/skips; all 143 production files unchanged during that test/docs-only closeout |
 | Reader hidden-command follow-up | Clean | 362 | 221 | All 27 Reader checks included; zero failures/skips |
 | Gallery external-button follow-up | Clean | Not repeated | Not repeated | Focused repeat 27 passed; first attempt had the known Reader width-reflow timing failure, unchanged-code repeat passed |
+| Current follow-ups (2026-11-14) | Clean | 363 | 222 | Real Browse PSD/ICO rendered fallback check; final file-identity retention guard passed focused check afterward; no final failures/skips |
 
 The user confirmed Phase 3 interactive review, Phase 4 dialog appearance/root-label fix, Gallery nested/edge/wheel drag behavior, Reader crash appearing fixed and Reader arrow keys working. Reader closeout follows their report that other Reader behavior seemed in order. None of this supplies an unspecified DPI/Narrator/network/codec matrix.
 
@@ -49,6 +52,8 @@ Useful retained run identifiers (temporary directories may disappear):
 | Reader closeout focused | `%TEMP%\MediFiler3Integration-caf7ba762b904f259f8f8e627c8f6cb8`; `MediFiler3Reader-slice6-focused.log` |
 | Hidden Reader commands full | `%TEMP%\MediFiler3Integration-516e430d8ead4687b2b1da1540fd26bb`; `MediFiler3Reader-hidden-commands-full.log` |
 | Gallery visibility repeat | `%TEMP%\MediFiler3Integration-bdb55a3705f844beada871a1c15dd110`; `MediFiler3Gallery-hidden-external-focused-repeat.log` |
+| Current full | %TEMP%\MediFiler3Integration-9f7b0cacac0646a297935352c0986e14; MediFiler3BrowseFallback-full.log |
+| Tree reveal UI/Gallery focused | `%TEMP%\MediFiler3Integration-21c5b81453834420ae483e9eda39467d`; `MediFiler3TreeReveal-focused.log` |
 
 ## 3. Scale characterization retained from acceptance
 
@@ -76,7 +81,7 @@ Ready means selected source assigned and native restoration/Reader queue settled
 
 | Scenario | Retained observations | Limit |
 |---|---|---|
-| Gallery 10,000 generated records, two runs | Publish/initial realization 86-108ms; Select All 91-189ms; Clear 764-1,034ms; 28 initial tiles, 60 after distant scroll; zero requests in 100ms inactive; four disjoint Resets/no individual notifications, retained ItemsSource | Missing/generated paths, not real-thumbnail throughput. Clear can pause for about a second. Two return rounds 2.785-3.654s include fixed waits/validation. |
+| Gallery 10,000 generated records, two runs | Publish/initial realization 86-108ms; Select All 91-189ms; Clear 764-1,034ms; 28 initial tiles, 60 after distant scroll; zero requests in 100ms inactive; four disjoint Resets/no individual notifications, retained ItemsSource | Missing/generated paths, not real-thumbnail throughput. User accepted the roughly one-second clear on 2026-11-14; optimization is unnecessary. Two return rounds 2.785-3.654s include fixed waits/validation. |
 | Gallery cache sample points | 58-70 decoded entries, 475,136-573,440 bytes | Sample values, not worst-case/process memory |
 | Expanded tree 10,102 nodes | 22 initial controls, 102 after distant scroll; fullscreen entry/reveal/layout 92.66ms, exit/layout 28.15ms | One hidden-window synthetic sample, not every real tree/display |
 

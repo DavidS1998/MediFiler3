@@ -17,6 +17,7 @@ public partial class ViewerHostView : UserControl
 {
     private ViewerCoordinator<ViewerPresentation>? _coordinator;
     private FileEntry? _currentFile;
+    private FileEntry? _displayedBitmapFile;
     private ViewerMetadata? _metadata;
     private long _requestVersion;
     private bool _active = true;
@@ -197,6 +198,13 @@ public partial class ViewerHostView : UserControl
             if (result.Presentation is GifPresentation gif) { ShowGif(gif); return; }
             if (result.Presentation is null)
             {
+                // A failed refresh must not erase a usable current-file/carousel preview.
+                if (result.IsThumbnailFallback && ReferenceEquals(_displayedBitmapFile, file) && ImageViewer.Source is BitmapSource preview)
+                {
+                    ShowImagePreview(preview, file);
+                    ShowExternalFallback(file);
+                    return;
+                }
                 ShowImageMessage("No integrated viewer or thumbnail is available.", file.Name);
                 ShowExternalFallback(file);
                 return;
@@ -222,6 +230,7 @@ public partial class ViewerHostView : UserControl
             }
             TextPanel.Visibility = Visibility.Collapsed;
             ImageViewer.Source = ((BitmapPresentation)result.Presentation).Source;
+            _displayedBitmapFile = file;
             ClampPan();
             ImageViewer.Visibility = Visibility.Visible;
             ImageMessagePanel.Visibility = Visibility.Collapsed;
@@ -497,6 +506,7 @@ public partial class ViewerHostView : UserControl
     private void ShowImagePreview(BitmapSource preview, FileEntry file)
     {
         ImageViewer.Source = preview;
+        _displayedBitmapFile = file;
         ClampPan();
         ImageViewer.Visibility = Visibility.Visible;
         ImageMessagePanel.Visibility = Visibility.Collapsed;

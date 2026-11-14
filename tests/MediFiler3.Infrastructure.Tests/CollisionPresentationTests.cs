@@ -68,14 +68,37 @@ public sealed class CollisionPresentationTests
     }
 
     [Fact]
-    public async Task FolderPreviewDoesNotScanContentsOrRequestFileThumbnail()
+    public async Task FolderPreviewCountsNestedFilesAndBytesOnBothSidesWithoutRequestingThumbnails()
     {
         using var temp = new TemporaryDatabase();
         var thumbnails = new Thumbnails(false);
-        var preview = await new FileSystemCollisionPreviewService(thumbnails).LoadAsync(Path.GetDirectoryName(temp.DatabasePath)!, default);
-        Assert.True(preview.IsDirectory);
-        Assert.Null(preview.Size);
+        var parent = Path.GetDirectoryName(temp.DatabasePath)!;
+        var service = new FileSystemCollisionPreviewService(thumbnails);
+        foreach (var side in new[] { "incoming", "existing" })
+        {
+            var folder = Directory.CreateDirectory(Path.Combine(parent, side)).FullName;
+            var child = Directory.CreateDirectory(Path.Combine(folder, "child")).FullName;
+            File.WriteAllBytes(Path.Combine(folder, "a.bin"), new byte[1234]);
+            var hidden = Path.Combine(child, "b.bin"); File.WriteAllBytes(hidden, new byte[5678]);
+            File.SetAttributes(hidden, FileAttributes.Hidden);
+            var preview = await service.LoadAsync(folder, default);
+            Assert.True(preview.IsDirectory);
+            Assert.True(preview.IsComplete);
+            Assert.Equal(2, preview.FileCount);
+            Assert.Equal(6912, preview.Size);
+        }
         Assert.Null(thumbnails.File);
+    }
+
+    [Fact]
+    public async Task EmptyFolderPreviewHasZeroFilesAndBytes()
+    {
+        using var temp = new TemporaryDatabase();
+        var folder = Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(temp.DatabasePath)!, "empty")).FullName;
+        var preview = await new FileSystemCollisionPreviewService(new Thumbnails(false)).LoadAsync(folder, default);
+        Assert.Equal(0, preview.FileCount);
+        Assert.Equal(0, preview.Size);
+        Assert.True(preview.IsComplete);
     }
 
     [Fact]

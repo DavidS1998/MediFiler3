@@ -292,6 +292,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         _scroll.AddHandler(Xaml.UIElement.PointerPressedEvent, new Xaml.Input.PointerEventHandler((_, _) => OnReaderInput()), true);
         _scroll.AddHandler(Xaml.UIElement.KeyDownEvent, new Xaml.Input.KeyEventHandler((_, args) => { if (!args.Handled) OnReaderInput(); }), true);
         _scroll.SizeChanged += (_, _) => { _restore = true; QueueUpdate(); };
+        _scroll.ViewChanging += (_, args) => OnReaderViewChanging(args.NextView.VerticalOffset);
         _scroll.ViewChanged += (_, _) => OnReaderViewChanged();
         var root = new Grid { Background = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black) }; root.Children.Add(_scroll);
         WinUiViewKeyboard.Attach(root, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);

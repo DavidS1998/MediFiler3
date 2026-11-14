@@ -124,8 +124,16 @@ internal static partial class Program
             File.Copy(Fixtures[".png"].FullPath, previewSource);
             File.Copy(Fixtures[".png"].FullPath, previewTarget);
             var folderTarget = Directory.CreateDirectory(Path.Combine(b, "collision-folder")).FullName;
-            foreach (var compatible in new[] { true, false })
-                await Check(compatible ? "native collision dialog offers Rename Overwrite Cancel" : "native collision dialog disables incompatible Overwrite", async () =>
+            var folderSource = Directory.CreateDirectory(Path.Combine(a, "collision-folder")).FullName;
+            foreach (var (folder, length) in new[] { (folderSource, 13), (folderTarget, 3) })
+            {
+                File.WriteAllBytes(Path.Combine(folder, "first.bin"), new byte[length]);
+                var nested = Directory.CreateDirectory(Path.Combine(folder, "nested")).FullName;
+                File.WriteAllBytes(Path.Combine(nested, "second.bin"), new byte[length == 13 ? 7 : 5]);
+            }
+            foreach (var (compatible, directories) in new[] { (true, false), (false, false), (true, true) })
+                await Check(directories ? "native folder collision shows recursive file counts and sizes on both cards" :
+                    compatible ? "native collision dialog offers Rename Overwrite Cancel" : "native collision dialog disables incompatible Overwrite", async () =>
                 {
                     Exception? failure = null;
                     var clicked = false;
@@ -159,7 +167,14 @@ internal static partial class Program
                                 var preview = (Microsoft.UI.Xaml.Controls.Grid)card.Children[1];
                                 var image = (Microsoft.UI.Xaml.Controls.Image)preview.Children[1];
                                 var size = (Microsoft.UI.Xaml.Controls.TextBlock)card.Children[3];
-                                if (!compatible && index == 1) { Require(size.Text == "Folder", "Folder size misrepresented"); continue; }
+                                if (directories || !compatible && index == 1)
+                                {
+                                    if (size.Text == "Calculating folder totals…") return;
+                                    var bytes = directories && index == 0 ? 20 : 8;
+                                    Require(size.Text == "2 files - " + MediFiler3.Application.Viewing.ViewerMetadataFormatter.Format(
+                                        new MediFiler3.Application.Viewing.ViewerMetadata(bytes)), "Folder totals missing or incorrect: " + size.Text);
+                                    continue;
+                                }
                                 if (image.Source is null || size.Text == "Loading size…") return;
                                 Require(size.Text == MediFiler3.Application.Viewing.ViewerMetadataFormatter.Format(
                                     new MediFiler3.Application.Viewing.ViewerMetadata(new FileInfo(previewSource).Length)), "File size missing or incorrect");
@@ -175,7 +190,8 @@ internal static partial class Program
                     timer.Start();
                     try
                     {
-                        var answer = await toolbar.ResolveCollisionAsync(new(previewSource, compatible ? previewTarget : folderTarget, false, !compatible, compatible));
+                        var answer = await toolbar.ResolveCollisionAsync(new(directories ? folderSource : previewSource,
+                            directories || !compatible ? folderTarget : previewTarget, directories, directories || !compatible, compatible));
                         if (failure is not null) throw failure;
                         Require(clicked && answer.Choice == (compatible ? MediFiler3.Application.Operations.FileCollisionChoice.Overwrite
                             : MediFiler3.Application.Operations.FileCollisionChoice.Cancel), "Wrong collision dialog result");

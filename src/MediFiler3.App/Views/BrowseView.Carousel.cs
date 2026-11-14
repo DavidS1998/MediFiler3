@@ -8,16 +8,18 @@ namespace MediFiler3.Views;
 
 public partial class BrowseView
 {
-    public Func<bool>? SidebarHoverProbe { get; set; }
-    private bool _sidebarFolderReveal;
+    public Func<Point?>? FolderHoverPositionProbe { get; set; }
+    private bool _folderHoverReveal;
+    private double _folderRevealSidebarWidth;
+    public Rect FolderRevealBounds => new(_fullscreenCarousel ? 0 : -_folderRevealSidebarWidth, 0,
+        _folderRevealSidebarWidth + FolderOverlay.Width, Math.Max(0, ActualHeight));
+    public void SetFolderRevealSidebarWidth(double width) => _folderRevealSidebarWidth = width;
 
-    public void UpdateShellFolderHover(bool sidebar, Point point)
+    public void UpdateShellFolderHover(Point? point)
     {
         if (_fullscreenCarousel) return; // Fullscreen retains its coordinated shell/tree reveal.
-        _sidebarFolderReveal = sidebar;
-        var inside = point.X >= 0 && point.Y >= 0 && point.Y < ActualHeight;
-        SetFolderOverlayVisible(sidebar || _folderOverlayPinned || inside &&
-            _folderOverlayVisible && point.X <= FolderOverlay.Width);
+        _folderHoverReveal = point is { } position && FolderRevealBounds.Contains(position);
+        SetFolderOverlayVisible(_folderOverlayPinned || _folderHoverReveal);
     }
     private void OpenCarouselFileInGallery(MediFiler3.Domain.Files.FileEntry file)
     {
@@ -35,7 +37,6 @@ public partial class BrowseView
     private bool _carouselEnabled = true;
     private bool _fullscreenCarousel;
     private bool _fullscreenFolderReveal;
-    public double FullscreenFolderRevealWidth => _folderOverlayVisible ? FolderOverlay.Width : 0;
     public void SetFullscreenFolderReveal(bool reveal, double sidebarWidth)
     {
         _fullscreenFolderReveal = reveal;

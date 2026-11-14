@@ -41,7 +41,7 @@ public sealed partial class WinUiToolbarIsland
         var missingLabel = directory ? "New folder" : "File to restore";
         content.Children.Add(new TextBlock { Text = path is null ? missingLabel : Path.GetFileName(path),
             TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 1 });
-        var size = new TextBlock { Text = directory ? "Folder" : "Loading size…" };
+        var size = new TextBlock { Text = directory ? "Calculating folder totals…" : "Loading size…", TextWrapping = TextWrapping.Wrap };
         content.Children.Add(size);
         var pathText = new TextBlock { Text = path ?? "Not yet created", TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 1, Foreground = Brush(166, 170, 178) };
@@ -51,6 +51,7 @@ public sealed partial class WinUiToolbarIsland
             Background = Brush(28, 30, 34), Child = content };
         if (path is not null && CollisionPreviews is not null)
             _ = LoadCollisionCardAsync(path, image, placeholder, size, CollisionPreviews, token);
+        else if (directory) size.Text = path is null ? "0 files - 0.0 B" : "Folder totals unavailable";
         else if (!directory) { placeholder.Text = "Preview unavailable"; size.Text = "Size unavailable"; }
         return card;
     }
@@ -62,7 +63,10 @@ public sealed partial class WinUiToolbarIsland
         {
             var result = await previews.LoadAsync(path, token);
             if (token.IsCancellationRequested) return;
-            size.Text = result.IsDirectory ? "Folder" : result.Size is { } bytes
+            size.Text = result.IsDirectory ? result.FileCount is { } count && result.Size is { } total
+                ? $"{(result.IsComplete ? "" : "At least ")}{count.ToString("N0", CultureInfo.InvariantCulture)} {(count == 1 ? "file" : "files")} - " +
+                  ViewerMetadataFormatter.Format(new ViewerMetadata(total)) + (result.IsComplete ? "" : " (incomplete)")
+                : "Folder totals unavailable" : result.Size is { } bytes
                 ? ViewerMetadataFormatter.Format(new ViewerMetadata(bytes)) : "Size unavailable";
             if (result.Size is { } exact) ToolTipService.SetToolTip(size, exact.ToString("N0", CultureInfo.InvariantCulture) + " bytes");
             placeholder.Text = result.IsDirectory ? "Folder" : "Preview unavailable";
@@ -85,7 +89,7 @@ public sealed partial class WinUiToolbarIsland
         {
             if (token.IsCancellationRequested) return;
             placeholder.Text = "Preview unavailable";
-            if (size.Text == "Loading size…") size.Text = "Size unavailable";
+            if (size.Text is "Loading size…" or "Calculating folder totals…") size.Text = "Size/count unavailable";
         }
     }
 }

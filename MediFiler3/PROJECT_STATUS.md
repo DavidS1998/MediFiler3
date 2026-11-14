@@ -1,16 +1,12 @@
 # Project status
 
-Updated 2026-11-13. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
+Updated 2026-11-14. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Outstanding issues
 
 | Issue | Evidence / present position | Next action when pursued |
 |---|---|---|
-| Reader width-reflow check is timing-sensitive | Latest Gallery-visibility focused attempt left fractional scroll at page top (offset 1665 vs target 1776), although its visibility check passed. Unchanged-code/assertion repeat passed 27/27. This doesn't establish the timing issue harmless or resolved. | Capture actual/target offsets, path/fraction, native ViewChanged/restoration/queue/focus/dimension timing; retain exact fractional/pixel assertions. Don't weaken tests or change unrelated UI to conceal it. |
 | Historical native Gallery instability not conclusively eliminated | Earlier collection 0xC0000005 and later XAML transition 0xc000027b; no universal root-cause closure despite targeted fixes/successful runs. Reader's owned-pixel fix addresses a separate diagnosed lifetime defect. | On recurrence preserve WER/dumps, native stack and shared-path/disjoint/transition/input context; use ARCHITECTURE's failure knowledge. |
-| Large Gallery selection clear latency | 10,000 selected records took 0.76-1.03s synchronously in acceptance samples. | Profile if prioritized; preserve selection semantics, atomic native diffs and safety. No optimization is authorized merely by recording it here. |
-
-Latest timing evidence: failing `%TEMP%\MediFiler3Gallery-hidden-external-focused.log`; unchanged-code repeat `%TEMP%\MediFiler3Gallery-hidden-external-focused-repeat.log`, artifacts `%TEMP%\MediFiler3Integration-bdb55a3705f844beada871a1c15dd110`. Temp paths are diagnostic hints, not durable dependencies.
 
 ## Verification limits still carried
 
@@ -23,12 +19,16 @@ Latest timing evidence: failing `%TEMP%\MediFiler3Gallery-hidden-external-focuse
 
 No new feature is selected. Search is explicitly deferred to a future phase; do not treat the earlier search suggestion as an active task. Other optional work is tracked in DEVELOPMENT_PLAN. Current hidden Reader commands/hotkeys and Gallery external buttons are intentional requirements, not missing implementation to restore.
 
+The user accepted the measured roughly one-second clear of 10,000 Gallery selections on 2026-11-14. It is not an outstanding performance issue; optimization is unnecessary.
+
 ## Immediate next steps
 
-1. Follow the user's next request within the current specification. For a new feature, agree scope and slices first; do not automatically start search or a new Reader slice.
-2. If addressing the reflow/native concerns, reproduce with retained diagnostics and the documented native runner before changing behavior.
-3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. A documentation-only build is not a fresh functional regression run. Never restart the user's running app or commit/push without instruction.
+1. Follow the user's next request within the current specification. Reader file read-only guards, miscellaneous Windows icon fallback, folder collision totals and tree reveal changes are complete. Do not automatically start search or a new Reader slice.
+2. On native crash recurrence preserve diagnostics before changing behavior. Keep the documented Reader scroll/dimension regression and exact pixel/fraction assertions.
+3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
 
-The latest full functional baseline before Gallery's final visibility-only follow-up was a clean build, **362 unit/filesystem and 221 native checks**, zero failures/skips, including 27 Reader checks (`%TEMP%\MediFiler3Reader-hidden-commands-full.log`, artifacts `MediFiler3Integration-516e430d8ead4687b2b1da1540fd26bb`). That visibility follow-up had a clean build and **27 focused checks passing on repeat**, with the failure above retained; full suites were not repeated for it. Documentation consolidation does not retroactively refresh those results. Use ARCHITECTURE's commands for a fresh run; do not substitute generated focused fixtures for full supplied-codec coverage.
+Browse fallback follow-up: clean build, 363 unit/filesystem and 222 full native checks passed, zero failures/skips. Full log %TEMP%\MediFiler3BrowseFallback-full.log, artifacts MediFiler3Integration-9f7b0cacac0646a297935352c0986e14. Final matching-file retention guard and previous-file rejection were then verified by --browse-fallback-only (1 passed), log MediFiler3BrowseFallback-focused.log, artifacts MediFiler3Integration-f6875a19f8db49948c65167e0dd08aa6; full suite was not repeated for that small guard follow-up. The real WPF surface check covers PSD association fallback, actual ICO green pixels, rendered bitmap pixels, message coexistence, resize and empty-result retention. Photoshop-specific association and diverse real PSD thumbnail codecs are environment-dependent and not established by the synthetic PSD fixture. Temporary paths are diagnostic hints only.
+
+The deterministic gated-decode regression failed before the fix with tracing enabled and disabled, then passed after it and in focused/full suites. Existing waits, tolerances and pixel/fraction assertions are intact. Root cause, guard mechanics and reproduction instructions are in ARCHITECTURE; milestone evidence is in DEVELOPMENT_PLAN.

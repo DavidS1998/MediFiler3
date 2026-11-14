@@ -1,6 +1,7 @@
 namespace MediFiler3.Application.Operations;
 
-public sealed record FileCollisionPreview(bool IsDirectory, long? Size, byte[]? ThumbnailPng);
+public sealed record FileCollisionPreview(bool IsDirectory, long? Size, byte[]? ThumbnailPng,
+    long? FileCount = null, bool IsComplete = true);
 
 public interface IFileCollisionPreviewService
 {

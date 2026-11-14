@@ -21,7 +21,7 @@ Use C# with a WPF application/window host and suitable WinUI controls through Wi
 | Current title | Native title is `(position/total) filename`, using the full folder listing; application name when no current file. |
 | Counts | Prefix folders with `(direct/total) - Name`. Count unsupported files but exclude Hidden/System files and untraversed links. Unknown values show `?`; failures/incomplete discovery must not appear complete. Update both sides after moves/history. |
 
-The tree is independently scrollable and expanded as descendants first arrive, retaining later user collapse. Normal-mode unpinned reveal starts from the sidebar, stays open across sidebar/tree, and hides after leaving both. Pin state persists; pin reverses button/icon colors. Full-width rows, selected highlighting and bottom clearance keep the last row reachable above the carousel. Tree resizing/persisted user-adjustable width is **deferred**; current width is fixed.
+The tree is independently scrollable and expanded as descendants first arrive, retaining later user collapse. Unpinned reveal uses one continuous area spanning the sidebar and the tree's full pinned width, including while the tree is hidden. Use the same horizontal bounds to open and retain it in normal/fullscreen modes; hide after leaving that area. There must not be separate sidebar/content-edge reveal hitboxes. Pin state persists; pin reverses button/icon colors. Full-width rows, selected highlighting and bottom clearance keep the last row reachable above the carousel. Tree resizing/persisted user-adjustable width is **deferred**; current width is fixed.
 
 Folder menus provide New, Rename, Move to, Recycle, Collapse child folders, Refresh tree, Explorer and Properties. Collapse child folders changes only direct children's expandos, retaining the clicked folder's expando and deeper expansion state. Favorites belong in Home. Copy-path menu and further tree customization are deferred.
 
@@ -44,7 +44,7 @@ The compact icon-only sidebar contains Home, a separator, Browse, Gallery and Re
 | Previous image / Next image / numeric Go / Reader scaling | Hidden | Hidden | Available |
 | Failed-page Retry / Open in Browse recovery | Not applicable | Not applicable | Retained |
 
-Reader's hidden commands remain implemented through guarded APIs. Do not remove them, restore their toolbar buttons or re-enable their dormant shortcuts without a new request. Tree-destination moves and folder menus remain available in Reader. Gallery file-operation controls remain visible. Nonapplicable actions are disabled unless the table explicitly requires hiding them.
+Reader is read-only for files. Destination-folder right-clicks and move/rename/recycle/Undo/Redo APIs do nothing in Reader. Folder-tree folder commands remain available for consistency. External/Browse recovery remains implemented; hidden controls and dormant shortcuts must not be restored incidentally. Gallery file operations remain available.
 
 ### Keyboard contract
 
@@ -80,7 +80,7 @@ Extension routing is case-insensitive, not a universal codec guarantee. Decode f
 | Video | `.mp4`, `.m4v`, `.wmv`, `.webm`, `.mkv` | Windows-backed embedded playback, paused on open | Not projected. Installed codecs determine variants. MKV fixture coverage is only WebM/Matroska subset, not arbitrary tracks/subtitles/attachments. |
 | Audio | `.mp3`, `.wav`, `.wma`, `.m4a`, `.aac`, `.opus` | Paused playback, title/artist/artwork when available | Not projected. Verified WAV is PCM and AAC fixture is ADTS; FLAC is deferred. |
 | Text | `.txt`, `.md`, `.log`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.ini`, `.cfg`, `.config`, `.cs`, `.xaml`, `.html`, `.htm`, `.css`, `.js`, `.ts`, `.sql`, `.ps1`, `.sh`, `.srt`, `.nfo`, `.toml`; extensionless `README`, `LICENSE` | Read-only selectable plain text, no execution or syntax-specific parser | Not projected. Strict UTF-8 (optional BOM), BOM-marked UTF-16/32 LE/BE; malformed/binary-looking input errors. |
-| Other/missing/corrupt | Other extensions, failed integrated content | Windows thumbnail where available, else placeholder; filename/full path/status and external-open recovery | Missing/corrupt supported images keep Reader placeholders so the remaining sequence works. |
+| Other/missing/corrupt | Other extensions, failed integrated content | Unsupported/miscellaneous files show Windows thumbnails, including generic/type icons supplied by Explorer, alongside the no-integrated-viewer message and external-open recovery. Missing/unreadable files retain a placeholder. | Missing/corrupt supported images keep Reader placeholders so the remaining sequence works. |
 
 ### Content interaction
 
@@ -134,18 +134,18 @@ Drop on a loaded tree folder invokes safe grouped moves. Reject same-folder, sta
 - Go is a single focused/select-all numeric field limited to 1 through image count. Empty intermediate text disables Go; invalid/non-numeric/out-of-range edits are rejected. Go/Enter confirms; Cancel/Escape and stale root/folder/projection/view results do not navigate. Filename/path search, clickable grids/lists and their tooltips were rejected/superseded.
 - Keep in-memory anchor path/fraction/gap during reflow/inactive return; this is not a persisted bookmark/automatic root reopening feature. Known owned file/ancestor renames follow mappings atomically. Removing current chooses next image, then previous at end, skipping unsupported files.
 - Decode failures retain accessible named placeholders with Retry and Open in Browse recovery buttons. Loaded pages expose number/count/filename; decorative outlines are not duplicate live-region announcements. Image tooltips remain absent.
-- Single-page move/recycle/rename/history and external/Browse-handoff functions remain implemented with the shared safeguards, but the toolbar actions/shortcuts listed in section 3 are deliberately dormant. Do not re-enable them as part of unrelated work.
+- Reader is read-only for files: move, rename, recycle and Undo/Redo are rejected by both UI and callable entry points. Folder-tree folder modifications remain available. External/Browse-handoff recovery remains implemented with toolbar actions/shortcuts dormant as listed in section 3.
 
 ## 7. Safe organization and history
 
-Right-clicking a destination tree folder moves Browse's current file, Gallery's selected set, or Reader's current image. After removal select the next sensible file/image, or previous at end. Undo restores current to restored files; Redo removing current advances in order. Retain unchanged tree nodes/expansion and previews; update both folder counts. Folder menus operate on the clicked folder's owning root, not an unrelated active file.
+Right-clicking a destination tree folder moves Browse's current file or Gallery's selected set; it does nothing in Reader. After removal choose the next file or previous at end. Undo selects restored files; Redo removing current advances naturally. Retain tree nodes, expansion and previews, and update counts. Folder menus act on the clicked folder's owning root.
 
 | Operation | Required safeguards |
 |---|---|
 | File/folder rename | Edit file basename and reattach original extension; folder name fully editable. Recheck conflicts after dialogs. |
 | New/move folder | Native destination picker starts at source parent; reject unsafe ancestry, links, type mismatches and unsupported volume combinations. |
 | Recycle | Use Windows Recycle Bin; warn/confirm nonempty folder removal and multi-file removal. Never fall back to permanent deletion. Restoration is best effort. |
-| Collision | Owned WinUI comparison cards, async thumbnail/size, paths/exact bytes on hover. Rename / explicit Overwrite / Cancel, default Cancel; disable unsafe Overwrite. Folder replacement is whole-tree, never merge. |
+| Collision | Owned WinUI comparison cards, async thumbnail/size, paths/exact bytes on hover. Folder cards show recursive total file counts and summed file sizes for both Incoming and Existing, including Hidden/System files. Scan off UI with cancellation; show calculating/unavailable states and clearly label partial totals if entries are unreadable or links are skipped. Never traverse reparse points. Rename / explicit Overwrite / Cancel, default Cancel; disable unsafe Overwrite. Folder replacement is whole-tree, never merge. |
 | Collision Rename | Apply next available numbered incoming name directly, e.g. `Test (1).png`; skip file/folder collisions, continue suffixes and recheck races. No extra rename dialog. |
 | Overwrite | Preserve destination in verified same-volume managed backup storage, journal it with incoming action; one Undo restores both versions. Refuse if safe storage unavailable. No destructive overwrite shortcut. |
 | Undo/Redo | Persistent independent stacks per root filesystem identity; actual tree ancestry defines ownership, including overlapping roots. Cross-root file moves belong to source root. A new operation invalidates redo only in its root. Verify source identity/type/location before acting. |
