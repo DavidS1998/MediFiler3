@@ -125,6 +125,7 @@ public partial class BrowseView : UserControl
         _thumbnailService = thumbnailService;
         _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
+        InitializeTreeFooter();
         _folderRuleController = new FolderRuleController(_navigationState.Roots, Dispatcher,
             error => ShowOperationNotice($"Folder rules could not be applied: {error.Message}"));
         _navigationState.PropertyChanged += OnGalleryContextChanged;
@@ -994,6 +995,7 @@ public partial class BrowseView : UserControl
 
     public void StopBackgroundFolderCounts()
     {
+        StopTreeFooter();
         _folderRuleController.Dispose();
         StopWatching();
         _readerDefaultApplication.Dispose();

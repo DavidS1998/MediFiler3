@@ -234,8 +234,8 @@ internal static partial class Program
                     browse.UpdateLayout();
                     var bounds = browse.CarouselRevealBounds;
                     var tree = (TreeView)browse.FindName("FolderTree");
-                    Require(tree.TranslatePoint(new Point(0, tree.ActualHeight), browse).Y <= bounds.Top,
-                        "Tree viewport extends into the carousel hover area");
+                    Require(tree.TranslatePoint(new Point(0, tree.ActualHeight), browse).Y > bounds.Top && browse.TreeScrollClearance == panel.Height,
+                        "Tree viewport lost full height or its scrollable footer");
                     Require(bounds.Width == browse.ActualWidth && bounds.Height == panel.Height, "Carousel reveal does not span its fully shown area");
                     var upperPoint = new Point(bounds.Left + bounds.Width / 2, bounds.Top + 2);
                     Require(upperPoint.Y < browse.ActualHeight - 26, "Fixture did not test beyond the old bottom strip");
@@ -246,7 +246,7 @@ internal static partial class Program
                     browse.UpdateShellCarouselHover(new Point(upperPoint.X, bounds.Top - 1));
                     Require(!(bool)Field(browse, "_carouselOverlayVisible")!, "Leaving the full bounds did not hide the carousel");
                     browse.SetCarouselEnabled(false); browse.UpdateShellCarouselHover(upperPoint);
-                    Require(((RowDefinition)browse.FindName("TreeBottomClearance")).Height.Value == 48, "Disabled carousel retained excessive tree clearance");
+                    Require(browse.TreeScrollClearance == 48, "Disabled carousel retained excessive tree clearance");
                     Require(!(bool)Field(browse, "_carouselOverlayVisible")!, "Disabled carousel revealed");
                     browse.SetCarouselEnabled(true);
                 }
@@ -309,6 +309,14 @@ internal static partial class Program
                     "Collapse child folders reset the root, deeper expansion or node identity");
                 groups[0].IsExpanded = true;
                 Require(groups[0].Children[0].IsExpanded && root.TotalFileCount == 0, "Reopening lost deeper expansion or counters");
+                await WaitUntil(() =>
+                {
+                    scroll.ScrollToEnd(); window.UpdateLayout();
+                    var last = Visuals(tree).OfType<TreeViewItem>().FirstOrDefault(item => ReferenceEquals(item.DataContext, groups[^1]));
+                    return last is not null && last.TranslatePoint(new Point(0, last.ActualHeight), browse).Y <= browse.CarouselRevealBounds.Top + 1;
+                });
+                Require(tree.TranslatePoint(new Point(0, tree.ActualHeight), browse).Y > browse.CarouselRevealBounds.Top,
+                    "Tree footer shortened the viewport rather than extending the scrollable content");
                 var sample = new { Records = 10102, InitialContainers = initial, DistantContainers = distant, EnterFullscreenMs = enterMs, ExitFullscreenMs = exitMs };
                 var json = System.Text.Json.JsonSerializer.Serialize(sample);
                 File.WriteAllText(Path.Combine(Root, "tree-scale.json"), json); Console.WriteLine("TREE SCALE " + json);

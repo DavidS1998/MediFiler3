@@ -9,6 +9,7 @@
              MouseLeave="OnBrowseSurfaceMouseLeave">
     <UserControl.Resources>
         <views:FolderTextBrushConverter x:Key="FolderTextBrush" />
+        <views:TreeFooterMarginConverter x:Key="TreeFooterMargin" />
         <Style x:Key="SubtleScrollBarStyle" TargetType="ScrollBar">
             <Setter Property="Width" Value="7" />
             <Setter Property="MinWidth" Value="7" />
@@ -52,6 +53,12 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin">
+                <Setter.Value><MultiBinding Converter="{StaticResource TreeFooterMargin}">
+                    <Binding /><Binding Path="TreeFooterRoot" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
+                    <Binding Path="TreeScrollClearance" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
+                </MultiBinding></Setter.Value>
+            </Setter>
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
@@ -138,7 +145,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition x:Name="TreeBottomClearance" Height="175" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="8,2,4,8">
                     <Grid.ColumnDefinitions>

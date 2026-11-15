@@ -12,7 +12,7 @@ public partial class BrowseView
     private bool _folderHoverReveal;
     private double _folderRevealSidebarWidth;
     public Rect FolderRevealBounds => new(_fullscreenCarousel ? 0 : -_folderRevealSidebarWidth, 0,
-        _folderRevealSidebarWidth + FolderOverlay.Width, Math.Max(0, ActualHeight));
+        _folderRevealSidebarWidth + (IsGallery && !_folderOverlayVisible && !_fullscreenFolderReveal && !_folderOverlayPinned ? 0 : FolderOverlay.Width), Math.Max(0, ActualHeight));
     public Rect CarouselRevealBounds => new(0, Math.Max(0, ActualHeight - CarouselOverlay.Height),
         Math.Max(0, ActualWidth), Math.Min(Math.Max(0, ActualHeight), CarouselOverlay.Height));
     public void UpdateShellCarouselHover(Point? point) => SetCarouselOverlayVisible(
@@ -53,8 +53,7 @@ public partial class BrowseView
     private IReadOnlyList<Rect> _shellVideoExclusions = [];
     public bool CarouselEnabled => _carouselEnabled;
 
-    private void UpdateTreeCarouselClearance() => TreeBottomClearance.Height =
-        new GridLength(_carouselEnabled && IsBrowse ? CarouselOverlay.Height : 48);
+    private void UpdateTreeCarouselClearance() => TreeScrollClearance = _carouselEnabled && IsBrowse ? CarouselOverlay.Height : 48;
 
     public void SetCarouselEnabled(bool enabled)
     {

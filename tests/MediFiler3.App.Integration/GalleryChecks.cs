@@ -254,7 +254,7 @@ internal static partial class Program
             var root = (Microsoft.UI.Xaml.Controls.Grid)((Microsoft.UI.Xaml.Controls.GridViewItem)Grid().ContainerFromItem(file)).ContentTemplateRoot;
             Require(ReferenceEquals(state.CurrentFile, file) && root.Children[3].Visibility == Microsoft.UI.Xaml.Visibility.Visible, "Carousel target is not highlighted in Gallery");
         });
-        await Check("Unpinned tree has one full-width reveal area spanning sidebar and tree", async () =>
+        await Check("Gallery reveals the hidden tree only from sidebar and retains it over the shown tree", async () =>
         {
             browse.SetFolderPinned(false);
             var probe = browse.FolderHoverPositionProbe;
@@ -264,14 +264,15 @@ internal static partial class Program
             {
                 browse.FolderHoverPositionProbe = () => pointer;
                 var overlay = (FrameworkElement)browse.FindName("FolderOverlay");
+                Hover(null);
                 var bounds = browse.FolderRevealBounds;
-                Require(bounds.Left == -56 && bounds.Right == overlay.Width && bounds.Top == 0 && bounds.Bottom == browse.ActualHeight,
-                    "Reveal area does not cover sidebar through the pinned tree width");
+                Require(bounds.Left == -56 && bounds.Right == 0 && bounds.Top == 0 && bounds.Bottom == browse.ActualHeight,
+                    "Hidden Gallery tree reveal area is not limited to sidebar");
                 Require(browse.FindName("LeftRevealTarget") is null, "Separate legacy edge hitbox remains");
                 Hover(new Point(overlay.Width + 1, 200));
                 Require(!(bool)Field(browse, "_folderOverlayVisible")!, "Tree revealed beyond its pinned width");
                 Hover(new Point(overlay.Width - 1, 200));
-                Require((bool)Field(browse, "_folderOverlayVisible")!, "Far edge of hidden tree did not reveal it");
+                Require(!(bool)Field(browse, "_folderOverlayVisible")!, "Hovering Gallery files revealed the hidden tree");
                 Hover(new Point(-30, 200));
                 Require((bool)Field(browse, "_folderOverlayVisible")!, "Sidebar hover did not reveal tree");
                 typeof(BrowseView).GetMethod("OnBrowseSurfaceMouseLeave", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(browse,
@@ -281,8 +282,8 @@ internal static partial class Program
                 Require((bool)Field(browse, "_folderOverlayVisible")!, "Entering tree from sidebar closed it");
                 Hover(new Point(overlay.Width + 1, 200));
                 Require(!(bool)Field(browse, "_folderOverlayVisible")!, "Tree did not hide outside combined hover area");
-                Hover(new Point(5, 200));
-                Require((bool)Field(browse, "_folderOverlayVisible")!, "Left edge is disconnected from the unified reveal area");
+                Hover(new Point(-5, 200));
+                Require((bool)Field(browse, "_folderOverlayVisible")!, "Sidebar edge did not reveal tree");
                 Hover(new Point(150, -1));
                 Require(!(bool)Field(browse, "_folderOverlayVisible")!, "Reveal extends above the tree");
                 Hover(new Point(150, browse.ActualHeight + 1));

@@ -27,7 +27,7 @@ Long-term milestone tracker, updated 2026-11-15. Requirements and current produc
 | Folder collision totals | Recursive file counts and summed file sizes on Incoming/Existing cards, cancellable background scanning and explicit incomplete states | Implemented, 2026-11-14; includes hidden/system files, excludes reparse traversal |
 | Folder text depth shading | White roots/first-level folders, bounded depth palette, live persisted native Settings toggle and independent color policy | Implemented, 2026-11-15; palette strengthened to 128 at depth 5 with even interpolation; 373 unit and 33 focused checks passed on the stronger palette. Depth palette editing remains future scope |
 | Folder-name rules | Ordered literal name matching, RGB and expansion actions, native draggable priorities/editor, async cached projections and manual-state protection | Implemented, 2026-11-15; extended by count rules below |
-| Tree/carousel clearance | Tree viewport reserves the full shown carousel height in enabled Browse, normal 48px otherwise | Implemented, 2026-11-15; clean build and 43 focused native checks passed |
+| Scrollable tree footer / Gallery reveal | Full-height tree viewport with scrollable 175px/48px footer; Gallery hidden tree opens only from sidebar and retains over shown tree | Implemented, 2026-11-15; clean build, 43 focused and 233 full native checks passed |
 | Carousel full-area reveal | One full shown-panel hover rectangle for opening/retaining, WPF/native probes and fullscreen; narrow bottom target removed | Implemented, 2026-11-15; clean build and 43 focused native checks passed |
 | Browse endpoint shortcuts | Home selects first file and End last file in current folder through WPF/native forwarded routes, with no boundary crossing | Implemented, 2026-11-15; clean build, 42 focused native checks passed |
 | File name/color rules | Persisted ordered filename rules, native Files editor with live saved previews, Browse native caption backgrounds and realized Gallery filename gradients; Reader excluded | Implemented, 2026-11-15; 411 unit, 41 focused and 231 full native checks passed; zero failures/skips |
@@ -52,6 +52,7 @@ These are milestone baselines, not an accumulating list of every intermediate ru
 | Reader 6 closeout | Clean | 362 | 221 | Reader repeat 27; zero failures/skips; all 143 production files unchanged during that test/docs-only closeout |
 | Reader hidden-command follow-up | Clean | 362 | 221 | All 27 Reader checks included; zero failures/skips |
 | Gallery external-button follow-up | Clean | Not repeated | Not repeated | Focused repeat 27 passed; first attempt had the known Reader width-reflow timing failure, unchanged-code repeat passed |
+| Scrollable tree footer / Gallery reveal (2026-11-15) | Clean | Not repeated (App/UI-only) | 233 | Focused UI/Gallery 43; full-height viewport, real scroll-to-end clearance, sidebar-only hidden Gallery reveal, 10,102-node recycling and drag/Reader regressions; zero failures/skips |
 | Filename/color rules (2026-11-15) | Clean | 411 | 231 | Focused UI/Gallery 41; native editor/live previews/priority/SQLite, accepted DWM caption RGB, Gallery gradients, Reader/toolbar exclusions and retained folder/Reader checks; zero failures/skips |
 
 The user confirmed Phase 3 interactive review, Phase 4 dialog appearance/root-label fix, Gallery nested/edge/wheel drag behavior, Reader crash appearing fixed and Reader arrow keys working. Reader closeout follows their report that other Reader behavior seemed in order. None of this supplies an unspecified DPI/Narrator/network/codec matrix.
@@ -64,7 +65,7 @@ Useful retained run identifiers (temporary directories may disappear):
 | Reader closeout focused | `%TEMP%\MediFiler3Integration-caf7ba762b904f259f8f8e627c8f6cb8`; `MediFiler3Reader-slice6-focused.log` |
 | Hidden Reader commands full | `%TEMP%\MediFiler3Integration-516e430d8ead4687b2b1da1540fd26bb`; `MediFiler3Reader-hidden-commands-full.log` |
 | Gallery visibility repeat | `%TEMP%\MediFiler3Integration-bdb55a3705f844beada871a1c15dd110`; `MediFiler3Gallery-hidden-external-focused-repeat.log` |
-| Current full | %TEMP%\MediFiler3Integration-17dd9eae65094ed4b9780cdc4f9565b1; MediFiler3FileColors-full.log |
+| Current full | %TEMP%\MediFiler3Integration-6b04413995174d9da49882b0d2b0ca15; MediFiler3TreeFooter-full.log |
 | Tree reveal UI/Gallery focused | `%TEMP%\MediFiler3Integration-21c5b81453834420ae483e9eda39467d`; `MediFiler3TreeReveal-focused.log` |
 
 ## 3. Scale characterization retained from acceptance
