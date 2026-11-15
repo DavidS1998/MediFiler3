@@ -190,6 +190,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     {
         if (_active == active) return;
         _active = active; _activityVersion++;
+        if (!active) PauseFileColors();
         _hoverSelection.Reset();
         if (!active) { _selectionMenu?.Hide(); FinishMoveDrag(); }
         if (!active) CancelPendingReveal();
@@ -208,6 +209,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
                 _ = LoadThumbnailAsync(container, resumed, resumed.Stop.Token);
             }
         }
+        if (active) ResumeFileColors();
     }
 
     public void SetTreeInset(double inset)
@@ -457,6 +459,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         Xaml.Automation.AutomationProperties.SetHelpText(container, $"{file.FullPath}\n{file.Size:N0} bytes");
         var tile = new Tile(file, root, picture, placeholder, new CancellationTokenSource());
         _tiles[container] = tile;
+        PaintFileColor(tile, null); QueueFileColor(container, tile);
         SizeTile(tile);
         SetSelectionBorder(container, root);
         if (_active) _ = LoadThumbnailAsync(container, tile, tile.Stop.Token);
@@ -625,6 +628,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     }
     protected override void DestroyWindowCore(HandleRef handle)
     {
+        PauseFileColors();
         FinishMoveDrag();
         _selection.Changed -= OnSelectionChanged;
         _pendingFiles = null; _pendingCurrent = null;

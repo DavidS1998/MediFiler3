@@ -33,9 +33,9 @@ internal static partial class Program
             await WaitUntil(() => Field(island, "_folderRulesList") is Microsoft.UI.Xaml.Controls.ListView { IsLoaded: true });
             var source = (Microsoft.UI.Xaml.Hosting.DesktopWindowXamlSource)Field(island, "_xamlSource")!;
             var cards = CountRuleVisuals(source.Content).OfType<Microsoft.UI.Xaml.Controls.Border>()
-                .Where(card => card.Tag is string title && new[] { "Folder tree", "Carousel", "Continuous reader", "System" }.Contains(title)).ToArray();
-            Require(cards.Select(card => (string)card.Tag).SequenceEqual(new[] { "Folder tree", "Carousel", "Continuous reader", "System" }), "Settings groups are not four cards");
-            var systemText = CountRuleVisuals(cards[3]).OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Select(text => text.Text).ToArray();
+                .Where(card => card.Tag is string title && new[] { "Folder tree", "Files", "Carousel", "Continuous reader", "System" }.Contains(title)).ToArray();
+            Require(cards.Select(card => (string)card.Tag).SequenceEqual(new[] { "Folder tree", "Files", "Carousel", "Continuous reader", "System" }), "Settings groups are not five cards");
+            var systemText = CountRuleVisuals(cards[4]).OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Select(text => text.Text).ToArray();
             Require(systemText.Contains("Overwrite backups") && systemText.Contains("Thumbnail cache"), "System card lost maintenance controls");
             var carousel = (Microsoft.UI.Xaml.Controls.Slider)Field(island, "_slider")!;
             Require(carousel.Minimum % carousel.TickFrequency == 0 && carousel.StepFrequency == carousel.TickFrequency &&

@@ -109,6 +109,15 @@ public partial class MainWindow : Window
         _settingsView.SetFolderDepthShading(settings.Current.FolderDepthShadingEnabled);
         _browseView.SetFolderNameRules(settings.Current.GetFolderRules());
         _settingsView.SetFolderNameRules(settings.Current.GetFolderRules());
+        _fileNameRules = (settings.Current.FileNameRules ?? []).ToArray();
+        _browseView.SetFileNameRules(_fileNameRules);
+        _settingsView.SetFileNameRules(_fileNameRules);
+        _settingsView.FileNameRulesChanged += rules =>
+        {
+            _fileNameRules = rules.ToArray();
+            settings.Update(s => s with { FileNameRules = _fileNameRules });
+            _browseView.SetFileNameRules(_fileNameRules); UpdateFileRuleCaption();
+        };
         _settingsView.FolderNameRulesChanged += rules =>
         {
             var snapshot = rules.ToArray();
@@ -285,6 +294,11 @@ public partial class MainWindow : Window
         var color = solidBrush.Color;
         var colorRef = (uint)(color.R | (color.G << 8) | (color.B << 16));
         var result = DwmSetWindowAttribute(windowHandle, attribute, ref colorRef, sizeof(uint));
+        if (attribute == DwmwaCaptionColor)
+        {
+            _lastCaptionColorResult = result;
+            _lastNativeCaptionColor = result >= 0 ? colorRef : null;
+        }
         if (result < 0)
         {
             _logger.LogWarning("Windows could not apply {PropertyName}; DwmSetWindowAttribute returned 0x{HResult:X8}.", propertyName, result);
@@ -305,6 +319,7 @@ public partial class MainWindow : Window
 
     private void OnNavigationSelectionChanged(string destination)
     {
+        _fileRuleBrowseSelected = destination == "Browse";
         if (destination is "Browse" or "Gallery" or "Reader")
             _browseView.SetViewingMode(destination switch { "Gallery" => ViewingMode.Gallery, "Reader" => ViewingMode.Reader, _ => ViewingMode.Browse });
         PageContent.Content = destination switch
@@ -316,6 +331,7 @@ public partial class MainWindow : Window
             _ => _homeView
         };
         _browseView.SetViewerActive(destination is "Browse" or "Gallery" or "Reader");
+        UpdateFileRuleCaption();
         UpdateViewerControls();
         UpdateFileActionAvailability();
         UpdateToolbarContext();
@@ -324,6 +340,7 @@ public partial class MainWindow : Window
 
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(NavigationSessionState.ViewingMode)) UpdateFileRuleCaption();
         if (e.PropertyName == nameof(NavigationSessionState.ActiveRoot)) _ = UpdateHistoryAvailabilityAsync();
         if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files) or
             nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.CurrentFile))
@@ -472,6 +489,7 @@ public partial class MainWindow : Window
 
     private void UpdateWindowTitle()
     {
+        UpdateFileRuleCaption();
         var currentFile = _navigationState.CurrentFile;
         Title = currentFile is null || _navigationState.CurrentFilePosition == 0
             ? "MediFiler3"

@@ -34,7 +34,7 @@ public sealed partial class WinUiCarouselSettingsIsland
             foreach (var property in new[] { nameof(Name), nameof(Summary), nameof(PreviewBrush), nameof(ExpansionGlyph), nameof(ExpansionVisibility), nameof(ToggleName) })
                 PropertyChanged?.Invoke(this, new(property));
         }
-        public string Name => Rule.Kind == FolderRuleKind.AllFolders ? "All folders" : Rule.Kind == FolderRuleKind.Name ? (string.IsNullOrWhiteSpace(Rule.Contains) ? "New folder-name rule" : Rule.Contains) : Rule.MinimumFiles == Rule.MaximumFiles
+        public string Name => Rule.Kind == FolderRuleKind.AllFolders ? "All folders" : Rule.Kind == FolderRuleKind.Name ? (string.IsNullOrWhiteSpace(Rule.Contains) ? "New name rule" : Rule.Contains) : Rule.MinimumFiles == Rule.MaximumFiles
             ? $"{Rule.MinimumFiles} files" : Rule.MaximumFiles is null ? $"{Rule.MinimumFiles ?? 0}+ files" : $"{Rule.MinimumFiles ?? 0}–{Rule.MaximumFiles} files";
         public string ToggleName => "Enable rule: " + Name;
         public Microsoft.UI.Xaml.Media.Brush PreviewBrush

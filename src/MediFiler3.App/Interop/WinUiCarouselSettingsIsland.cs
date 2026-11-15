@@ -17,8 +17,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
 {
     public WinUiCarouselSettingsIsland()
     {
-        Unloaded += (_, _) => DetachFolderRuleSource();
-        Loaded += (_, _) => ResumeFolderRuleSource();
+        Unloaded += (_, _) => { DetachFolderRuleSource(); DetachFileRuleSource(); };
+        Loaded += (_, _) => { ResumeFolderRuleSource(); ResumeFileRuleSource(); };
     }
     private DesktopWindowXamlSource? _xamlSource;
     private Slider? _slider;
@@ -119,6 +119,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         folderPage.Children.Add(_folderDepthToggle);
         folderPage.Children.Add(Description("Roots and their immediate subfolders stay white. Deeper folders gradually become grey, stopping at depth 5."));
         AddFolderRuleSettings(folderPage);
+        AddFileRuleSettings(SettingsCard(page, "Files"));
         var carouselPage = SettingsCard(page, "Carousel");
         _carouselToggle = new ToggleSwitch { Header = "Show carousel", IsOn = _carouselEnabled };
         _carouselToggle.Toggled += (_, _) =>
@@ -192,7 +193,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
 
     protected override void DestroyWindowCore(HandleRef hwnd)
     {
-        ReleaseFolderRuleControls();
+        ReleaseFolderRuleControls(); ReleaseFileRuleControls();
         if (_xamlSource is not null)
         {
             _xamlSource.Content = null;

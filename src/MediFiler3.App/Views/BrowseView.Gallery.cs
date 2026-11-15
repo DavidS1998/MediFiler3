@@ -9,6 +9,12 @@ namespace MediFiler3.Views;
 
 public partial class BrowseView
 {
+    private MediFiler3.Application.Files.FileNameColorRule[] _fileNameRules = [];
+    public void SetFileNameRules(IReadOnlyList<MediFiler3.Application.Files.FileNameColorRule> rules)
+    {
+        MediFiler3.Application.Files.FileNameColorRule.ValidateAll(rules);
+        _fileNameRules = rules.ToArray(); _gallery?.SetFileNameRules(_fileNameRules);
+    }
     private WinUiGalleryIsland? _gallery;
     private bool _galleryRefreshQueued;
     private bool _galleryFilesDirty = true;
@@ -81,6 +87,7 @@ public partial class BrowseView
         if (gallery && _gallery is null)
         {
             _gallery = new WinUiGalleryIsland(_thumbnailService, _navigationState.GallerySelection);
+            _gallery.SetFileNameRules(_fileNameRules);
             _gallery.FileSelected += file =>
             {
                 if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;

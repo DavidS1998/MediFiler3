@@ -223,6 +223,7 @@ internal static partial class Program
                 await settings.FlushAsync();
             });
             await RunFolderNameRuleChecksAsync(window, state, browse, settingsView, settings, db, directory);
+            await RunFileNameRuleChecksAsync(window, state, browse, settingsView, settings, db, directory);
             await Check("large folder trees recycle across fullscreen and collapse only direct children", async () =>
             {
                 Destination("Browse"); browse.SetFolderPinned(true);

@@ -41,6 +41,8 @@ public partial class SettingsView : UserControl
 
     public event Action<ReaderOptions>? ReaderOptionsChanged;
     public event Action<bool>? FolderDepthShadingChanged;
+    public event Action<IReadOnlyList<FileNameColorRule>>? FileNameRulesChanged;
+    public void SetFileNameRules(IReadOnlyList<FileNameColorRule> rules) => CarouselSliderIsland.SetFileNameRules(rules);
     public event Action<IReadOnlyList<FolderNameRule>>? FolderNameRulesChanged;
     public void SetFolderNameRules(IReadOnlyList<FolderNameRule> rules) => CarouselSliderIsland.SetFolderNameRules(rules);
     public void SetFolderDepthShading(bool enabled) => CarouselSliderIsland.SetFolderDepthShading(enabled);
@@ -62,6 +64,7 @@ public partial class SettingsView : UserControl
     public SettingsView(int initialCarouselNeighborCount, bool carouselEnabled = true)
     {
         InitializeComponent();
+        CarouselSliderIsland.FileNameRulesChanged += rules => FileNameRulesChanged?.Invoke(rules);
         CarouselSliderIsland.FolderNameRulesChanged += rules => FolderNameRulesChanged?.Invoke(rules);
         CarouselSliderIsland.FolderDepthShadingChanged += enabled => FolderDepthShadingChanged?.Invoke(enabled);
         CarouselSliderIsland.SetCarouselEnabled(carouselEnabled);

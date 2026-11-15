@@ -1,5 +1,6 @@
 using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Folders;
+using MediFiler3.Application.Files;
 
 namespace MediFiler3.Application.Persistence;
 
@@ -9,7 +10,7 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     ReaderScalingMode ReaderScaling = ReaderScalingMode.FitWidth, int ReaderSpacing = 0,
     int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100,
     bool FolderDepthShadingEnabled = true, IReadOnlyList<FolderNameRule>? FolderNameRules = null,
-    bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false)
+    bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false, IReadOnlyList<FileNameColorRule>? FileNameRules = null)
 {
     public IReadOnlyList<FolderNameRule> GetFolderRules()
     {
@@ -43,6 +44,7 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     public void Validate()
     {
         FolderNameRule.ValidateAll(FolderNameRules);
+        FileNameColorRule.ValidateAll(FileNameRules);
         GetReaderOptions().Validate();
         if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(Volume));
