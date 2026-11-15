@@ -26,6 +26,8 @@ public partial class MainWindow
     private void OnFolderHoverTimer(object? sender, EventArgs args)
     {
         if (IsFullscreen) return;
-        _browseView.UpdateShellFolderHover(GetFolderHoverPosition());
+        var point = GetFolderHoverPosition();
+        _browseView.UpdateShellFolderHover(point);
+        _browseView.UpdateShellCarouselHover(point);
     }
 }

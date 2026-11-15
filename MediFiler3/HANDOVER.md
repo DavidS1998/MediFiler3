@@ -1,6 +1,12 @@
 # Handover
 
-Updated 2026-11-15. Latest task: filename/color rules for Browse native title bar and Gallery filename gradient, unused in Reader.
+Updated 2026-11-15. Latest task: tree bottom clearance above the carousel hover area.
+
+TreeBottomClearance now reserves CarouselOverlay.Height (175px) in Browse with carousel enabled, restoring the original 48px when disabled or in other modes. UpdateTreeCarouselClearance runs on mode and enabled-setting changes. Native geometry checks verify the tree viewport ends above CarouselRevealBounds in normal/fullscreen variants. Clean build and 43 focused native checks passed, zero failures/skips; %TEMP%\MediFiler3TreeClearance-focused.log, fixtures MediFiler3Integration-dcc1c65cbaff4d7e98d8569b7ae73aa0. Prior reveal behavior/evidence follows.
+
+BrowseView.CarouselRevealBounds defines the full shown panel rectangle, independent of its animated translation and reveal state. UpdateShellCarouselHover shares this opening/retention test across WPF MouseMove/Leave, the normal 40ms cursor probe and the coordinated fullscreen timer. Remove BottomRevealTarget and its hit-test plumbing; disabled/inactive/non-Browse guards remain. Video exclusions still follow visible pixels instead of blanking the enlarged hover area. Test opens from above the old 26px strip, verifies retention and exit in normal/fullscreen variants and checks disabled behavior/target removal.
+
+Clean build; 43 focused native checks passed, zero failures/skips. Log %TEMP%\MediFiler3CarouselReveal-focused.log; fixtures MediFiler3Integration-20a707feaf254caeb635bcb980226eb4. Full/unit evidence below predates this narrow change and the preceding Browse endpoint shortcut follow-up. Home selects the first file and End the last in the full current folder listing; repeated endpoints cannot cross folders and inactive/mode guards remain intact.
 
 ## Delivered behavior
 
@@ -17,4 +23,4 @@ Build clean, zero warnings/errors. 411 unit/filesystem, 41 focused and 231 full 
 
 During native test development, readiness checks needed WPF reattachment/current grid identity rather than retained native IsLoaded/old grid objects; preview property callbacks and first-row selection on source recreation were corrected. The test host rejects DwmGetWindowAttribute caption-color readback with E_INVALIDARG; the final test verifies the actual accepted DWM write and WPF brush. This is not a screenshot or exhaustive physical display/Narrator review. Earlier Gallery dwell timeout remains in PROJECT_STATUS; native reorder source/buttons are tested without moving the real pointer through OLE.
 
-Current branch master, HEAD dccfeaf (Settings), observed during this task. Filename-rule changes remain uncommitted; preserve all current work and inspect actual Git state. No commit/push or user-app restart. AGENTS unchanged: SHA-256 60bf6cfcbc3e37a3a278a9942803ce0f23b26d3420c8e006f45c91a2f08d80a3. Keep six authoritative documents; tests use isolated fixtures. No next feature selected. Search/depth-palette editing remain deferred; selection-clear latency remains accepted.
+Current branch master, HEAD a89af1f (File color settings), observed during this task. Tree clearance, carousel reveal and preceding shortcut changes remain uncommitted; preserve all current work and inspect actual Git state. No commit/push or user-app restart. AGENTS unchanged: SHA-256 60bf6cfcbc3e37a3a278a9942803ce0f23b26d3420c8e006f45c91a2f08d80a3. Keep six authoritative documents; tests use isolated fixtures. No next feature selected. Search/depth-palette editing remain deferred; selection-clear latency remains accepted.

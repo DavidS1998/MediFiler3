@@ -101,6 +101,7 @@ public partial class MainWindow
     private void OnFullscreenTimer(object? sender, EventArgs args)
     {
         if (!IsFullscreen || !IsVisible || WindowState == WindowState.Minimized || !GetCursorPos(out var cursor)) return;
+        _browseView.UpdateShellCarouselHover(_browseView.IsVisible ? _browseView.PointFromScreen(new Point(cursor.X, cursor.Y)) : null);
         var point = PointFromScreen(new Point(cursor.X, cursor.Y));
         // Native caption coordinates are above the WPF client origin. Keep the reveal
         // alive over that nonclient area, including the title and system buttons.

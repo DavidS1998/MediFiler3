@@ -71,10 +71,10 @@ public partial class BrowseView
 
     private void ApplyViewingMode()
     {
+        UpdateTreeCarouselClearance();
         var gallery = IsGallery && _viewerActive;
         ViewerHost.Visibility = !IsBrowse ? Visibility.Collapsed : Visibility.Visible;
         CarouselOverlay.Visibility = IsBrowse && _carouselEnabled ? Visibility.Visible : Visibility.Collapsed;
-        BottomRevealTarget.IsHitTestVisible = IsBrowse && _carouselEnabled;
         if (!IsBrowse)
         {
             ViewerHost.SetActive(false);

@@ -224,6 +224,55 @@ internal static partial class Program
             });
             await RunFolderNameRuleChecksAsync(window, state, browse, settingsView, settings, db, directory);
             await RunFileNameRuleChecksAsync(window, state, browse, settingsView, settings, db, directory);
+            await Check("Carousel uses its full revealed bounds for hover in normal and fullscreen modes", async () =>
+            {
+                Destination("Browse"); browse.SetCarouselEnabled(true);
+                var panel = (FrameworkElement)browse.FindName("CarouselOverlay");
+                foreach (var fullscreen in new[] { false, true })
+                {
+                    browse.SetFullscreenCarousel(fullscreen);
+                    browse.UpdateLayout();
+                    var bounds = browse.CarouselRevealBounds;
+                    var tree = (TreeView)browse.FindName("FolderTree");
+                    Require(tree.TranslatePoint(new Point(0, tree.ActualHeight), browse).Y <= bounds.Top,
+                        "Tree viewport extends into the carousel hover area");
+                    Require(bounds.Width == browse.ActualWidth && bounds.Height == panel.Height, "Carousel reveal does not span its fully shown area");
+                    var upperPoint = new Point(bounds.Left + bounds.Width / 2, bounds.Top + 2);
+                    Require(upperPoint.Y < browse.ActualHeight - 26, "Fixture did not test beyond the old bottom strip");
+                    browse.UpdateShellCarouselHover(upperPoint);
+                    Require((bool)Field(browse, "_carouselOverlayVisible")!, "Full hidden carousel area did not reveal it");
+                    browse.UpdateShellCarouselHover(upperPoint);
+                    Require((bool)Field(browse, "_carouselOverlayVisible")!, "Same bounds did not retain the revealed carousel");
+                    browse.UpdateShellCarouselHover(new Point(upperPoint.X, bounds.Top - 1));
+                    Require(!(bool)Field(browse, "_carouselOverlayVisible")!, "Leaving the full bounds did not hide the carousel");
+                    browse.SetCarouselEnabled(false); browse.UpdateShellCarouselHover(upperPoint);
+                    Require(((RowDefinition)browse.FindName("TreeBottomClearance")).Height.Value == 48, "Disabled carousel retained excessive tree clearance");
+                    Require(!(bool)Field(browse, "_carouselOverlayVisible")!, "Disabled carousel revealed");
+                    browse.SetCarouselEnabled(true);
+                }
+                browse.SetFullscreenCarousel(false); browse.UpdateShellCarouselHover(null);
+                Require(browse.FindName("BottomRevealTarget") is null, "Separate narrow reveal target remains");
+                await Task.CompletedTask;
+            });
+            await Check("Browse Home and End jump within the current folder without boundary navigation", async () =>
+            {
+                Destination("Browse");
+                Require(state.Files.Count >= 2, "Browse endpoint fixture needs multiple files");
+                var folder = state.ActiveFolder; var root = state.ActiveRoot;
+                KeyPress(Key.End);
+                Require(ReferenceEquals(state.CurrentFile, state.Files[^1]), "End did not select the last file");
+                for (var repeat = 0; repeat < 7; repeat++) KeyPress(Key.End);
+                KeyPress(Key.Home);
+                Require(ReferenceEquals(state.CurrentFile, state.Files[0]), "Home did not select the first file");
+                for (var repeat = 0; repeat < 7; repeat++) KeyPress(Key.Home);
+                Require(ReferenceEquals(folder, state.ActiveFolder) && ReferenceEquals(root, state.ActiveRoot), "Endpoint keys crossed folders");
+                Require(toolbar.ViewShortcutHandler?.Invoke(Key.End, ModifierKeys.None, false) == true && ReferenceEquals(state.CurrentFile, state.Files[^1]),
+                    "Forwarded native toolbar End did not jump to the last file");
+                browse.SetViewerActive(false);
+                Require(!browse.HandleViewShortcut(Key.Home, ModifierKeys.None) && ReferenceEquals(state.CurrentFile, state.Files[^1]), "Inactive Browse consumed Home");
+                browse.SetViewerActive(true);
+                await Task.CompletedTask;
+            });
             await Check("large folder trees recycle across fullscreen and collapse only direct children", async () =>
             {
                 Destination("Browse"); browse.SetFolderPinned(true);

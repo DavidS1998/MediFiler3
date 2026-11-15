@@ -21,7 +21,7 @@ Use C# with a WPF application/window host and suitable WinUI controls through Wi
 | Current title | Native title is `(position/total) filename`, using the full folder listing; application name when no current file. |
 | Counts | Prefix folders with `(direct/total) - Name`. Count unsupported files but exclude Hidden/System files and untraversed links. Unknown values show `?`; failures/incomplete discovery must not appear complete. Update both sides after moves/history. |
 
-The tree is independently scrollable and expanded as descendants first arrive, retaining later user collapse. Unpinned reveal uses one continuous area spanning the sidebar and the tree's full pinned width, including while the tree is hidden. Use the same horizontal bounds to open and retain it in normal/fullscreen modes; hide after leaving that area. There must not be separate sidebar/content-edge reveal hitboxes. Pin state persists; pin reverses button/icon colors. Full-width rows, selected highlighting and bottom clearance keep the last row reachable above the carousel. Tree resizing/persisted user-adjustable width is **deferred**; current width is fixed.
+The tree is independently scrollable and expanded as descendants first arrive, retaining later user collapse. Unpinned reveal uses one continuous area spanning the sidebar and the tree's full pinned width, including while the tree is hidden. Use the same horizontal bounds to open and retain it in normal/fullscreen modes; hide after leaving that area. There must not be separate sidebar/content-edge reveal hitboxes. Pin state persists; pin reverses button/icon colors. Full-width rows, selected highlighting and bottom clearance keep the last row reachable above the carousel. In Browse with the carousel enabled, reserve its full shown height (currently 175px) below the tree viewport so rows and its scrollbar stay above the hover zone. Use the normal 48px clearance in other modes or when the carousel is disabled. Tree resizing/persisted user-adjustable width is **deferred**; current width is fixed.
 
 Folder menus provide New, Rename, Move to, Recycle, Collapse child folders, Refresh tree, Explorer and Properties. Collapse child folders changes only direct children's expandos, retaining the clicked folder's expando and deeper expansion state. Favorites belong in Home. Copy-path menu and further tree customization are deferred.
 
@@ -71,7 +71,8 @@ Shortcuts apply in their view regardless of viewer/tree/toolbar focus. Modal dia
 | F2 / Delete | Rename / recycle current | Rename one / recycle selection | Dormant |
 | Ctrl+Z / Ctrl+Y | Root-scoped Undo / Redo | Same | Dormant |
 | Ctrl+A / Escape | Native/content behavior; fullscreen Escape exits | Select all / clear selection; fullscreen Escape exits | No Gallery selection behavior; fullscreen Escape exits |
-| Page Up/Down, Home/End, Space | Content interaction where defined; Space toggles playback | Native grid behavior | 90% viewport up/down; sequence start/end; Space down, Shift+Space up |
+| Home / End | First / last file in the current folder, without crossing folders; unmodified keys only | Native grid behavior | Sequence start/end |
+| Page Up/Down, Space | Content interaction where defined; Space toggles playback | Native grid behavior | 90% viewport up/down; Space down, Shift+Space up |
 | Ctrl+G / Ctrl+R | No Reader action | No Reader action | Numeric Go / retry current page |
 | F3 / F5 / F11 | Pin tree / fresh refresh / fullscreen | Same | Same |
 | F4 | Toggle text scrolling when text is current | No text action | No text action |
@@ -119,7 +120,7 @@ Browse's external actions use the selected path and owner window, prevent duplic
 
 Browse's horizontal carousel shows the sorted neighborhood around current, centered with spacers representing omitted files. It has square 150px cropped tiles, one-line names, no scrollbar, stable surviving items and direct click navigation. Double-click enters Gallery and highlights that file. Rapid navigation must not lose steps while visual updates coalesce; entering/departing edge tiles fade and honor Windows animation preference.
 
-The carousel normally peeks at one-eighth height and 65% opacity, revealing near the bottom; disable removes the carousel, peek, reveal target and its thumbnail requests without disabling Browse navigation. Density is an odd total count including current, 1-25 in steps of 2, default 11. Peek/size/reveal customization beyond current controls is deferred.
+The carousel normally peeks at one-eighth height and 65% opacity, revealing anywhere inside the full width/height it would occupy when fully shown, using the same bounds to open and retain it in normal/fullscreen modes; disable removes the carousel, peek, reveal target and its thumbnail requests without disabling Browse navigation. Density is an odd total count including current, 1-25 in steps of 2, default 11. Peek/size/reveal customization beyond current controls is deferred.
 
 ### Gallery appearance and selection
 

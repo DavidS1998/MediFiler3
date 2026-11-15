@@ -23,6 +23,12 @@ public partial class BrowseView
             else return _gallery?.HandleNavigationShortcut(key, modifiers) == true;
             return true;
         }
+        if (modifiers == ModifierKeys.None && key is Key.Home or Key.End)
+        {
+            if (_navigationState.Files.Count > 0)
+                SelectFile(key == Key.Home ? _navigationState.Files[0] : _navigationState.Files[^1]);
+            return true;
+        }
         var source = PresentationSource.FromVisual(this);
         if (source is null) return false;
         var args = new KeyEventArgs(Keyboard.PrimaryDevice, source, Environment.TickCount, key)

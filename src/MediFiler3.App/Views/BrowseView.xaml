@@ -127,7 +127,6 @@
         <Grid x:Name="GalleryHost" />
         <Grid x:Name="ReaderHost" Visibility="Collapsed" />
 
-        <Border x:Name="BottomRevealTarget" Height="26" VerticalAlignment="Bottom" Background="Transparent" IsHitTestVisible="True" />
 
         <Border x:Name="FolderOverlay" Width="300" HorizontalAlignment="Left" VerticalAlignment="Stretch"
                 Background="#E6000000" BorderBrush="#55464A52" BorderThickness="0,0,1,0" Padding="8"
@@ -139,7 +138,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="48" />
+                    <RowDefinition x:Name="TreeBottomClearance" Height="175" />
                 </Grid.RowDefinitions>
                 <Grid Grid.Row="0" Margin="8,2,4,8">
                     <Grid.ColumnDefinitions>

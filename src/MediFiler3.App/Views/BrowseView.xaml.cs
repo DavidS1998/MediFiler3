@@ -1197,15 +1197,13 @@ public partial class BrowseView : UserControl
     {
         var point = e.GetPosition(BrowseSurface);
         UpdateShellFolderHover(FolderHoverPositionProbe?.Invoke() ?? point);
-        var showCarousel = point.Y >= BrowseSurface.ActualHeight - 26 ||
-                           (_carouselOverlayVisible && point.Y >= BrowseSurface.ActualHeight - CarouselOverlay.Height);
-        SetCarouselOverlayVisible(showCarousel);
+        UpdateShellCarouselHover(point);
     }
 
     private void OnBrowseSurfaceMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
         UpdateShellFolderHover(FolderHoverPositionProbe?.Invoke());
-        SetCarouselOverlayVisible(false);
+        UpdateShellCarouselHover(FolderHoverPositionProbe?.Invoke());
     }
 
     private void OnFolderPinButtonClick(object sender, RoutedEventArgs e) => ApplyFolderPin();
