@@ -1,6 +1,6 @@
 # Development plan
 
-Long-term milestone tracker, updated 2026-11-14. Requirements and current product decisions are in [SPECIFICATION.md](SPECIFICATION.md). Active issues/next actions belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation belongs in [ARCHITECTURE.md](ARCHITECTURE.md). A completed MVP with recorded verification limits does not imply every hardware/storage/accessibility scenario passed.
+Long-term milestone tracker, updated 2026-11-15. Requirements and current product decisions are in [SPECIFICATION.md](SPECIFICATION.md). Active issues/next actions belong in [PROJECT_STATUS.md](PROJECT_STATUS.md); implementation belongs in [ARCHITECTURE.md](ARCHITECTURE.md). A completed MVP with recorded verification limits does not imply every hardware/storage/accessibility scenario passed.
 
 ## 1. Milestones
 
@@ -25,8 +25,16 @@ Long-term milestone tracker, updated 2026-11-14. Requirements and current produc
 | Documentation consolidation | Six authoritative documents with no phase/history/runner-readme duplicates; preserve current AGENTS | Complete, 2026-11-13; docs-only build/audits passed |
 | Reader restoration follow-up | Preserve accepted native fractional scrolls through late dimension discovery; deterministic gated-source native regression | Complete, 2026-11-14; original assertion failures reproduced before fix; existing input/anchor/rendering assertions preserved |
 | Folder collision totals | Recursive file counts and summed file sizes on Incoming/Existing cards, cancellable background scanning and explicit incomplete states | Implemented, 2026-11-14; includes hidden/system files, excludes reparse traversal |
+| Folder text depth shading | White roots/first-level folders, bounded depth palette, live persisted native Settings toggle and independent color policy | Implemented, 2026-11-15; palette strengthened to 128 at depth 5 with even interpolation; 373 unit and 33 focused checks passed on the stronger palette. Depth palette editing remains future scope |
+| Folder-name rules | Ordered literal name matching, RGB and expansion actions, native draggable priorities/editor, async cached projections and manual-state protection | Implemented, 2026-11-15; extended by count rules below |
+| Rule action precedence / immediate application | Per-action priority, Leave expansion unchanged fallthrough/no-op, explicit saves reapply existing tree state, compact validation/Save spacing | Implemented, 2026-11-15; 404 unit, 39 focused and 229 full native checks passed; zero failures/skips |
+| Structure actions / saved-rule previews | Root-excluded expansion/Hide, disabled All folders collapse default, committed-vs-preview isolation for every rule and scrollbar clearance | Implemented, 2026-11-15; 401 unit, 38 focused and 228 full native checks passed; zero failures/skips |
+| Rule drafts / tick alignment | Accent selected border, selected live Unsaved placeholders isolated from matching/persistence, zero-origin carousel ticks and self-describing aligned expansion control | Implemented, 2026-11-15; clean build and 227 full native checks passed |
+| Settings compact layout | Compact 480px rules list, paired editor fields, condition radios, integrated color-action header, carousel tick snapping and tick-free reader spacing | Implemented, 2026-11-15; clean build and 37 focused native checks passed |
+| Count rules / Settings cards | Mixed name/count priorities, inclusive ranges, editable empty-folder default, inline enable/color/caret previews and four Settings groups | Implemented, 2026-11-15; direct counts, unknown-count safety and persisted removal covered |
 
 Reader **slice 6** is its acceptance slice, not completion/authorization of the proposed **project Phase 6** optional refinements. No Reader implementation slice remains.
+
 
 ## 2. Verification and user acceptance evidence
 
@@ -40,7 +48,7 @@ These are milestone baselines, not an accumulating list of every intermediate ru
 | Reader 6 closeout | Clean | 362 | 221 | Reader repeat 27; zero failures/skips; all 143 production files unchanged during that test/docs-only closeout |
 | Reader hidden-command follow-up | Clean | 362 | 221 | All 27 Reader checks included; zero failures/skips |
 | Gallery external-button follow-up | Clean | Not repeated | Not repeated | Focused repeat 27 passed; first attempt had the known Reader width-reflow timing failure, unchanged-code repeat passed |
-| Current follow-ups (2026-11-14) | Clean | 363 | 222 | Real Browse PSD/ICO rendered fallback check; final file-identity retention guard passed focused check afterward; no final failures/skips |
+| Rule action precedence / immediate application (2026-11-15) | Clean | 404 | 229 | Focused UI/Gallery 39; independent action priority, unchanged fallthrough/no-op, root exclusions, immediate save/re-save actions and retained default/preview/count/Reader checks; zero failures/skips |
 
 The user confirmed Phase 3 interactive review, Phase 4 dialog appearance/root-label fix, Gallery nested/edge/wheel drag behavior, Reader crash appearing fixed and Reader arrow keys working. Reader closeout follows their report that other Reader behavior seemed in order. None of this supplies an unspecified DPI/Narrator/network/codec matrix.
 
@@ -52,7 +60,7 @@ Useful retained run identifiers (temporary directories may disappear):
 | Reader closeout focused | `%TEMP%\MediFiler3Integration-caf7ba762b904f259f8f8e627c8f6cb8`; `MediFiler3Reader-slice6-focused.log` |
 | Hidden Reader commands full | `%TEMP%\MediFiler3Integration-516e430d8ead4687b2b1da1540fd26bb`; `MediFiler3Reader-hidden-commands-full.log` |
 | Gallery visibility repeat | `%TEMP%\MediFiler3Integration-bdb55a3705f844beada871a1c15dd110`; `MediFiler3Gallery-hidden-external-focused-repeat.log` |
-| Current full | %TEMP%\MediFiler3Integration-9f7b0cacac0646a297935352c0986e14; MediFiler3BrowseFallback-full.log |
+| Current full | %TEMP%\MediFiler3Integration-9c3a7b2bb892423db1f4ee6926fab7b2; MediFiler3RuleActions-full.log |
 | Tree reveal UI/Gallery focused | `%TEMP%\MediFiler3Integration-21c5b81453834420ae483e9eda39467d`; `MediFiler3TreeReveal-focused.log` |
 
 ## 3. Scale characterization retained from acceptance

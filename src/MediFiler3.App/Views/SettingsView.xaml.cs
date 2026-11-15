@@ -1,5 +1,6 @@
 using MediFiler3.Application.Navigation;
 using MediFiler3.Application.Files;
+using MediFiler3.Application.Folders;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -39,6 +40,10 @@ public partial class SettingsView : UserControl
     }
 
     public event Action<ReaderOptions>? ReaderOptionsChanged;
+    public event Action<bool>? FolderDepthShadingChanged;
+    public event Action<IReadOnlyList<FolderNameRule>>? FolderNameRulesChanged;
+    public void SetFolderNameRules(IReadOnlyList<FolderNameRule> rules) => CarouselSliderIsland.SetFolderNameRules(rules);
+    public void SetFolderDepthShading(bool enabled) => CarouselSliderIsland.SetFolderDepthShading(enabled);
     public void SetReaderOptions(ReaderOptions options) => CarouselSliderIsland.SetReaderOptions(options);
     public event Action<int>? CarouselNeighborCountChanged;
     public event Action<bool>? CarouselEnabledChanged;
@@ -57,6 +62,8 @@ public partial class SettingsView : UserControl
     public SettingsView(int initialCarouselNeighborCount, bool carouselEnabled = true)
     {
         InitializeComponent();
+        CarouselSliderIsland.FolderNameRulesChanged += rules => FolderNameRulesChanged?.Invoke(rules);
+        CarouselSliderIsland.FolderDepthShadingChanged += enabled => FolderDepthShadingChanged?.Invoke(enabled);
         CarouselSliderIsland.SetCarouselEnabled(carouselEnabled);
         CarouselSliderIsland.ReaderOptionsChanged += options => ReaderOptionsChanged?.Invoke(options);
         CarouselSliderIsland.CarouselEnabledChanged += value => CarouselEnabledChanged?.Invoke(value);

@@ -167,6 +167,62 @@ internal static partial class Program
                     browse.StopPlayback();
                 });
             await RunGalleryChecksAsync(window, state, browse, toolbar, settings, thumbnails, directory);
+            await Check("Folder depth colors render on real tree labels and native settings persist live changes", async () =>
+            {
+                var colorsPath = Directory.CreateDirectory(Path.Combine(directory, "colors")).FullName;
+                File.WriteAllText(Path.Combine(colorsPath, "note.txt"), "color fixture");
+                var next = colorsPath;
+                for (var depth = 1; depth <= 7; depth++)
+                {
+                    next = Directory.CreateDirectory(Path.Combine(next, "level" + depth)).FullName;
+                    File.WriteAllText(Path.Combine(next, "note.txt"), "color fixture");
+                }
+                Destination("Browse"); browse.SetFolderPinned(true);
+                await LoadRestartRootsAsync(window, [colorsPath]);
+                var tree = (TreeView)browse.FindName("FolderTree");
+                IEnumerable<DependencyObject> Visuals(DependencyObject parent)
+                {
+                    yield return parent;
+                    for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+                        foreach (var child in Visuals(System.Windows.Media.VisualTreeHelper.GetChild(parent, i))) yield return child;
+                }
+                var expected = new byte[] { 255, 255, 223, 192, 160, 128, 128, 128 };
+                List<FolderTreeEntry> Chain()
+                {
+                    var chain = new List<FolderTreeEntry>();
+                    for (var folder = state.Roots.FirstOrDefault(); folder is not null; folder = folder.Children.FirstOrDefault()) chain.Add(folder);
+                    return chain;
+                }
+                bool ColorsMatch(bool shaded)
+                {
+                    window.UpdateLayout();
+                    var chain = Chain(); if (chain.Count != 8) return false;
+                    var labels = Visuals(tree).OfType<TextBlock>().ToArray();
+                    return chain.Select((folder, depth) => (folder, depth)).All(pair =>
+                        labels.FirstOrDefault(label => ReferenceEquals(label.DataContext, pair.folder) && label.Text == pair.folder.DisplayName)?.Foreground
+                            is System.Windows.Media.SolidColorBrush brush && brush.Color == System.Windows.Media.Color.FromRgb(
+                                shaded ? expected[pair.depth] : (byte)255, shaded ? expected[pair.depth] : (byte)255, shaded ? expected[pair.depth] : (byte)255));
+                }
+                await WaitUntil(() => ColorsMatch(true));
+                var originalRoot = state.Roots[0];
+                Destination("Settings");
+                var island = (WinUiCarouselSettingsIsland)settingsView.FindName("CarouselSliderIsland");
+                await WaitUntil(() => Field(island, "_folderDepthToggle") is Microsoft.UI.Xaml.Controls.ToggleSwitch);
+                ((Microsoft.UI.Xaml.Controls.ToggleSwitch)Field(island, "_folderDepthToggle")!).IsOn = false;
+                await settings.FlushAsync();
+                var restored = new ApplicationSettingsService(new SqliteApplicationStateStore(new SqliteDatabase(db.DatabasePath)));
+                await restored.InitializeAsync();
+                Require(!restored.Current.FolderDepthShadingEnabled && !browse.FolderDepthShadingEnabled,
+                    "Folder text setting did not persist/apply");
+                Destination("Browse"); await WaitUntil(() => ColorsMatch(false));
+                Require(ReferenceEquals(originalRoot, state.Roots[0]), "Changing text colors replaced the tree");
+                Destination("Settings");
+                await WaitUntil(() => Field(island, "_folderDepthToggle") is Microsoft.UI.Xaml.Controls.ToggleSwitch);
+                ((Microsoft.UI.Xaml.Controls.ToggleSwitch)Field(island, "_folderDepthToggle")!).IsOn = true;
+                Destination("Browse"); await WaitUntil(() => ColorsMatch(true));
+                await settings.FlushAsync();
+            });
+            await RunFolderNameRuleChecksAsync(window, state, browse, settingsView, settings, db, directory);
             await Check("large folder trees recycle across fullscreen and collapse only direct children", async () =>
             {
                 Destination("Browse"); browse.SetFolderPinned(true);

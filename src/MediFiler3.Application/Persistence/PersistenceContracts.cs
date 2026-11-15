@@ -1,4 +1,5 @@
 using MediFiler3.Application.Navigation;
+using MediFiler3.Application.Folders;
 
 namespace MediFiler3.Application.Persistence;
 
@@ -6,8 +7,21 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     int CarouselIconCount = 11, bool FolderTreePinned = false, bool CarouselEnabled = true,
     int GalleryThumbnailWidth = 150, int GalleryThumbnailHeight = 150,
     ReaderScalingMode ReaderScaling = ReaderScalingMode.FitWidth, int ReaderSpacing = 0,
-    int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100)
+    int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100,
+    bool FolderDepthShadingEnabled = true, IReadOnlyList<FolderNameRule>? FolderNameRules = null,
+    bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false)
 {
+    public IReadOnlyList<FolderNameRule> GetFolderRules()
+    {
+        var existing = (FolderNameRules ?? []).ToList();
+        // Separate migration markers preserve removal of each introduced default.
+        if (!FolderRulesConfigured && existing.Count < 256 && !existing.Any(rule => rule.Id == FolderNameRule.EmptyFolderRuleId))
+            existing.Add(FolderNameRule.EmptyFolderDefault());
+        if (!FolderCollapseDefaultConfigured && existing.Count < 256 && !existing.Any(rule => rule.Id == FolderNameRule.CollapseFoldersRuleId))
+            existing.Add(FolderNameRule.CollapseFoldersDefault());
+        return existing;
+    }
+
     public ReaderOptions GetReaderOptions() => new(ReaderScaling, ReaderSpacing, ReaderPreload, ReaderPageIndicator, ReaderWidthPercent);
     public ApplicationSettings WithReaderOptions(ReaderOptions options) => this with
     {
@@ -28,6 +42,7 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
 
     public void Validate()
     {
+        FolderNameRule.ValidateAll(FolderNameRules);
         GetReaderOptions().Validate();
         if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(Volume));

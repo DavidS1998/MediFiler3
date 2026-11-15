@@ -8,6 +8,7 @@
              PreviewMouseMove="OnBrowseSurfaceMouseMove"
              MouseLeave="OnBrowseSurfaceMouseLeave">
     <UserControl.Resources>
+        <views:FolderTextBrushConverter x:Key="FolderTextBrush" />
         <Style x:Key="SubtleScrollBarStyle" TargetType="ScrollBar">
             <Setter Property="Width" Value="7" />
             <Setter Property="MinWidth" Value="7" />
@@ -42,6 +43,11 @@
             </Setter>
         </Style>
         <Style x:Key="FolderTreeItemStyle" TargetType="TreeViewItem">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsHiddenByRule}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
             <Setter Property="Foreground" Value="#E7E8EA" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -202,8 +208,15 @@
                                 <ColumnDefinition Width="28" />
                             </Grid.ColumnDefinitions>
                             <Border Grid.ColumnSpan="2" HorizontalAlignment="Stretch" Padding="4,5" CornerRadius="3">
-                                <TextBlock Text="{Binding DisplayName}" Foreground="#E7E8EA" ToolTip="{Binding Path}"
-                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis">
+                                    <TextBlock.Foreground>
+                                        <MultiBinding Converter="{StaticResource FolderTextBrush}">
+                                            <Binding Path="Depth" />
+                                            <Binding Path="FolderDepthShadingEnabled" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
+                                            <Binding Path="RuleTextColor" />
+                                        </MultiBinding>
+                                    </TextBlock.Foreground>
+                                </TextBlock>
                             </Border>
                             <Button Grid.Column="1" Width="24" Height="24" Padding="0" Margin="0,2,0,2"
                                     HorizontalAlignment="Right" VerticalAlignment="Center" Content="..."

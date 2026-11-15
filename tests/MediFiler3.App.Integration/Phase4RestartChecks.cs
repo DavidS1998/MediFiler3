@@ -101,7 +101,7 @@ internal static partial class Program
                 typeof(MediFiler3.MainWindow).GetMethod("OnNavigationSelectionChanged", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, ["Settings"]);
                 var sliderIsland = (WinUiCarouselSettingsIsland)settingsView.FindName("CarouselSliderIsland");
                 await WaitUntil(() => Field(sliderIsland, "_slider") is not null);
-                ((Microsoft.UI.Xaml.Controls.Slider)Field(sliderIsland, "_slider")!).Value = 17;
+                ((Microsoft.UI.Xaml.Controls.Slider)Field(sliderIsland, "_slider")!).Value = 16; // zero-origin position maps to 17 icons
                 Require(settings.Current.CarouselIconCount == 17, "Settings slider did not update persistence state");
                 ((Microsoft.UI.Xaml.Controls.ToggleSwitch)Field(sliderIsland, "_carouselToggle")!).IsOn = false;
                 Require(!settings.Current.CarouselEnabled && !browse.CarouselEnabled, "Carousel toggle did not update browsing/persistence");

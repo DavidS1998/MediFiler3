@@ -32,8 +32,8 @@ public sealed partial class WinUiCarouselSettingsIsland
     }
     private void AddReaderSettings(StackPanel page)
     {
-        page.Children.Add(Heading("Continuous reader"));
         _readerSpacing = ReaderSlider(0, 64, 4, "Reader page spacing");
+        _readerSpacing.TickPlacement = TickPlacement.None;
         _readerSpacing.ValueChanged += (_, args) => ChangeReaderOptions(_readerOptions with { Spacing = (int)Math.Round(args.NewValue) });
         page.Children.Add(_readerSpacing);
         _readerPreload = ReaderSlider(0, 6, 1, "Reader upcoming pages to preload");

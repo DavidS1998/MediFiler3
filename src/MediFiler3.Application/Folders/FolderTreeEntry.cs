@@ -7,6 +7,33 @@ namespace MediFiler3.Application.Folders;
 public sealed class FolderTreeEntry : INotifyPropertyChanged
 {
     private bool _isExpanded;
+    private bool _expansionTouched;
+    private bool? _ruleExpandedByDefault;
+    private FolderRuleColor? _ruleTextColor;
+    private bool _isHiddenByRule;
+    public bool IsHiddenByRule => _isHiddenByRule;
+    public FolderRuleColor? RuleTextColor => _ruleTextColor;
+
+    public void ApplyNameRule(FolderNameRule? rule)
+    {
+        var applyStructure = !IsRoot || rule?.ApplyToRootFolders == true;
+        ApplyRuleActions(new(rule?.TextColor, applyStructure ? rule?.ExpandedByDefault : null,
+            applyStructure && rule?.HideFolder == true));
+    }
+    public void ApplyRuleActions(FolderRuleActions actions, bool applyImmediately = false)
+    {
+        if (_ruleTextColor != actions.TextColor)
+        {
+            _ruleTextColor = actions.TextColor;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RuleTextColor)));
+        }
+        SetProperty(ref _isHiddenByRule, actions.Hidden, nameof(IsHiddenByRule));
+        _ruleExpandedByDefault = actions.ExpandedByDefault;
+        // An unspecified action leaves the current expansion alone. Deliberate
+        // settings application overrides manual choices; discovery/count refresh does not.
+        if (actions.ExpandedByDefault is { } expanded && (applyImmediately || !_expansionTouched))
+            SetProperty(ref _isExpanded, expanded, nameof(IsExpanded));
+    }
     private bool _isSelected;
     private long? _directFileCount;
     private long? _totalFileCount;
@@ -26,17 +53,34 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
     public string Path { get; }
     public bool IsRoot { get; }
     public FolderTreeEntry? Parent { get; private set; }
+    public int Depth
+    {
+        get { var depth = 0; for (var parent = Parent; parent is not null; parent = parent.Parent) depth++; return depth; }
+    }
     public ReadOnlyObservableCollection<FolderTreeEntry> Children { get; }
     public bool HasChildren => Children.Count > 0;
+    public bool ContainsChild(FolderTreeEntry child) => _childHandlers.ContainsKey(child);
     public bool IsExpanded
     {
         get => _isExpanded;
-        set => SetProperty(ref _isExpanded, value);
+        set
+        {
+            if (_isExpanded == value) return; // Two-way binding echoes are not user input.
+            _expansionTouched = true;
+            SetProperty(ref _isExpanded, value);
+        }
     }
     public bool IsSelected
     {
         get => _isSelected;
-        set => SetProperty(ref _isSelected, value);
+        set
+        {
+            // A default must not collapse the route to the currently selected folder:
+            // WPF could otherwise select an ancestor and navigate away from its content.
+            if (value && !_isSelected)
+                for (var parent = Parent; parent is not null; parent = parent.Parent) parent._expansionTouched = true;
+            SetProperty(ref _isSelected, value);
+        }
     }
     public string? Error { get; }
 
@@ -61,12 +105,18 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
 
     public void CollapseDirectChildren()
     {
-        foreach (var child in Children) child.IsExpanded = false;
+        foreach (var child in Children) { child._expansionTouched = true; child.IsExpanded = false; }
     }
 
     public void AddChild(FolderTreeEntry child)
     {
         child.Parent = this;
+        var descendants = new Stack<FolderTreeEntry>(); descendants.Push(child);
+        while (descendants.TryPop(out var descendant))
+        {
+            descendant.PropertyChanged?.Invoke(descendant, new PropertyChangedEventArgs(nameof(Depth)));
+            foreach (var nested in descendant.Children) descendants.Push(nested);
+        }
         _children.Add(child);
         var previousTotal = child.TotalFileCount;
         if (previousTotal is { } known) _knownChildFileCount += known;
@@ -84,7 +134,8 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         _childHandlers[child] = handler;
         child.PropertyChanged += handler;
         // Expand when the first children arrive, but preserve a later user collapse.
-        if (Children.Count == 1) IsExpanded = true;
+        if (Children.Count == 1 && !_expansionTouched)
+            SetProperty(ref _isExpanded, _ruleExpandedByDefault ?? true, nameof(IsExpanded));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasChildren)));
         NotifyTotalChanged();
     }

@@ -125,6 +125,8 @@ public partial class BrowseView : UserControl
         _thumbnailService = thumbnailService;
         _fileOrganizationService = fileOrganizationService;
         InitializeComponent();
+        _folderRuleController = new FolderRuleController(_navigationState.Roots, Dispatcher,
+            error => ShowOperationNotice($"Folder rules could not be applied: {error.Message}"));
         _navigationState.PropertyChanged += OnGalleryContextChanged;
         if (audioSettings is not null) ViewerHost.InitializeAudioSettings(audioSettings);
         ViewerHost.AudioSettingsChanged += (volume, muted) => AudioSettingsChanged?.Invoke(volume, muted);
@@ -992,6 +994,7 @@ public partial class BrowseView : UserControl
 
     public void StopBackgroundFolderCounts()
     {
+        _folderRuleController.Dispose();
         StopWatching();
         _readerDefaultApplication.Dispose();
         _readerCommandCancellation?.Cancel();

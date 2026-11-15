@@ -1,11 +1,12 @@
 # Project status
 
-Updated 2026-11-14. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
+Updated 2026-11-15. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Outstanding issues
 
 | Issue | Evidence / present position | Next action when pursued |
 |---|---|---|
+| Gallery drag-hover expansion check timed out once | Folder-color full run: row000 never reached the expected expanded state within the unchanged 5s assertion (GalleryDragChecks.cs:145). Unchanged-code full repeat passed 223/223. No dwell/input/root-cause diagnosis yet; the repeat does not prove it harmless. | On recurrence capture row/container identity, children/discovery state, drag point/target, dwell timer and layout changes. Retain the 600ms dwell and existing assertions; do not modify color or drag behavior to conceal the timeout. |
 | Historical native Gallery instability not conclusively eliminated | Earlier collection 0xC0000005 and later XAML transition 0xc000027b; no universal root-cause closure despite targeted fixes/successful runs. Reader's owned-pixel fix addresses a separate diagnosed lifetime defect. | On recurrence preserve WER/dumps, native stack and shared-path/disjoint/transition/input context; use ARCHITECTURE's failure knowledge. |
 
 ## Verification limits still carried
@@ -17,18 +18,18 @@ Updated 2026-11-14. Short-term issues, unresolved decisions and immediate action
 
 ## Decisions still open
 
-No new feature is selected. Search is explicitly deferred to a future phase; do not treat the earlier search suggestion as an active task. Other optional work is tracked in DEVELOPMENT_PLAN. Current hidden Reader commands/hotkeys and Gallery external buttons are intentional requirements, not missing implementation to restore.
+Ordered name/count/all-folder rules, direct-file ranges, editable exact-zero and disabled collapse-all defaults, root-aware expansion/Hide, live saved-rule previews and grouped Settings cards are implemented. Arbitrary depth-palette editing remains future scope. Search remains deferred; hidden Reader/Gallery controls must not be restored incidentally.
 
 The user accepted the measured roughly one-second clear of 10,000 Gallery selections on 2026-11-14. It is not an outstanding performance issue; optimization is unnecessary.
 
 ## Immediate next steps
 
-1. Follow the user's next request within the current specification. Reader file read-only guards, miscellaneous Windows icon fallback, folder collision totals and tree reveal changes are complete. Do not automatically start search or a new Reader slice.
+1. Follow the user's next request within the current specification. Ordered name/count rules, color/expansion actions, depth fallback and Settings cards are delivered; do not automatically implement depth-palette editing or search.
 2. On native crash recurrence preserve diagnostics before changing behavior. Keep the documented Reader scroll/dimension regression and exact pixel/fraction assertions.
 3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
 
-Browse fallback follow-up: clean build, 363 unit/filesystem and 222 full native checks passed, zero failures/skips. Full log %TEMP%\MediFiler3BrowseFallback-full.log, artifacts MediFiler3Integration-9f7b0cacac0646a297935352c0986e14. Final matching-file retention guard and previous-file rejection were then verified by --browse-fallback-only (1 passed), log MediFiler3BrowseFallback-focused.log, artifacts MediFiler3Integration-f6875a19f8db49948c65167e0dd08aa6; full suite was not repeated for that small guard follow-up. The real WPF surface check covers PSD association fallback, actual ICO green pixels, rendered bitmap pixels, message coexistence, resize and empty-result retention. Photoshop-specific association and diverse real PSD thumbnail codecs are environment-dependent and not established by the synthetic PSD fixture. Temporary paths are diagnostic hints only.
+Rule action precedence / immediate application: clean temporary-output build (zero warnings/errors); 404 unit/filesystem, 39 focused UI/Gallery and 229 full native checks passed, zero failures/skips. Logs %TEMP%\MediFiler3RuleActions-focused.log and MediFiler3RuleActions-full.log; full artifacts MediFiler3Integration-9c3a7b2bb892423db1f4ee6926fab7b2. Coverage includes separate color/structure priorities, root-excluded fallthrough, no-op unspecified expansion, saved lower-priority collapse overriding earlier manual state, unchanged Save reapplication, immediate expand/collapse/Hide/unhide, and retained default/migration/preview/Reader checks. An older unit fixture now performs a real expand/collapse gesture before checking manual preservation, since removing an action intentionally no longer reopens the folder. Reorder tests use native flags/buttons/managed completion rather than physical OLE pointer input; physical accessibility/DPI limits remain. Earlier Gallery dwell timeout remains independently unresolved above.
 
 The deterministic gated-decode regression failed before the fix with tracing enabled and disabled, then passed after it and in focused/full suites. Existing waits, tolerances and pixel/fraction assertions are intact. Root cause, guard mechanics and reproduction instructions are in ARCHITECTURE; milestone evidence is in DEVELOPMENT_PLAN.

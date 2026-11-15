@@ -15,10 +15,23 @@ namespace MediFiler3.Interop;
 
 public sealed partial class WinUiCarouselSettingsIsland : HwndHost
 {
+    public WinUiCarouselSettingsIsland()
+    {
+        Unloaded += (_, _) => DetachFolderRuleSource();
+        Loaded += (_, _) => ResumeFolderRuleSource();
+    }
     private DesktopWindowXamlSource? _xamlSource;
     private Slider? _slider;
     private int _neighborCount = 5;
     private ToggleSwitch? _carouselToggle;
+    private ToggleSwitch? _folderDepthToggle;
+    private bool _folderDepthShadingEnabled = true;
+    public event Action<bool>? FolderDepthShadingChanged;
+    public void SetFolderDepthShading(bool enabled)
+    {
+        _folderDepthShadingEnabled = enabled;
+        if (_folderDepthToggle is not null) _folderDepthToggle.IsOn = enabled;
+    }
     private Button? _clearBackups;
     private Button? _clearCache;
     private TextBlock? _backupStatus;
@@ -56,10 +69,10 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
     public void SetNeighborCount(int neighborCount)
     {
         _neighborCount = Math.Clamp(neighborCount, 0, 12);
-        var totalIconCount = (_neighborCount * 2) + 1;
-        if (_slider is not null && Math.Abs(_slider.Value - totalIconCount) > 0.01)
+        var sliderPosition = _neighborCount * 2;
+        if (_slider is not null && Math.Abs(_slider.Value - sliderPosition) > 0.01)
         {
-            _slider.Value = totalIconCount;
+            _slider.Value = sliderPosition;
         }
     }
 
@@ -71,13 +84,14 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
 
         _slider = new Slider
         {
-            Minimum = 1,
-            Maximum = 25,
+            // Use a zero origin so native ticks and step positions share the same lattice.
+            Minimum = 0,
+            Maximum = 24,
             StepFrequency = 2,
             TickFrequency = 2,
             TickPlacement = TickPlacement.BottomRight,
-            SnapsTo = SliderSnapsTo.StepValues,
-            Value = (_neighborCount * 2) + 1,
+            SnapsTo = SliderSnapsTo.Ticks,
+            Value = _neighborCount * 2,
             IsThumbToolTipEnabled = false,
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
@@ -87,15 +101,25 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         ToolTipService.SetToolTip(_slider, new ToolTip { Content = "Total carousel icons" });
         _slider.ValueChanged += (_, args) =>
         {
-            var totalIconCount = Math.Clamp((int)Math.Round(args.NewValue), 1, 25);
-            _neighborCount = (totalIconCount - 1) / 2;
+            _neighborCount = Math.Clamp((int)Math.Round(args.NewValue / 2), 0, 12);
             NeighborCountChanged?.Invoke(_neighborCount);
         };
 
-        var page = new StackPanel { Spacing = 12, MaxWidth = 640, HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+        var page = new StackPanel { Spacing = 16, MaxWidth = 960, HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             Margin = new Microsoft.UI.Xaml.Thickness(32) };
         page.Children.Add(new TextBlock { Text = "Settings", FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        page.Children.Add(Heading("Carousel"));
+        var folderPage = SettingsCard(page, "Folder tree");
+        _folderDepthToggle = new ToggleSwitch { Header = "Dim folder text by depth", IsOn = _folderDepthShadingEnabled };
+        _folderDepthToggle.Toggled += (_, _) =>
+        {
+            if (_folderDepthShadingEnabled == _folderDepthToggle.IsOn) return;
+            _folderDepthShadingEnabled = _folderDepthToggle.IsOn;
+            FolderDepthShadingChanged?.Invoke(_folderDepthShadingEnabled);
+        };
+        folderPage.Children.Add(_folderDepthToggle);
+        folderPage.Children.Add(Description("Roots and their immediate subfolders stay white. Deeper folders gradually become grey, stopping at depth 5."));
+        AddFolderRuleSettings(folderPage);
+        var carouselPage = SettingsCard(page, "Carousel");
         _carouselToggle = new ToggleSwitch { Header = "Show carousel", IsOn = _carouselEnabled };
         _carouselToggle.Toggled += (_, _) =>
         {
@@ -103,8 +127,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
             _slider.IsEnabled = _carouselEnabled;
             CarouselEnabledChanged?.Invoke(_carouselEnabled);
         };
-        page.Children.Add(_carouselToggle);
-        page.Children.Add(Description("Nearby thumbnails shown on each side of the current file."));
+        carouselPage.Children.Add(_carouselToggle);
+        carouselPage.Children.Add(Description("Nearby thumbnails shown on each side of the current file."));
         var sliderRow = new Grid { ColumnSpacing = 16 };
         sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) });
         sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
@@ -112,10 +136,11 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         sliderRow.Children.Add(_slider);
         var count = new TextBlock { Text = $"{_neighborCount * 2 + 1} icons", VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
         _slider.ValueChanged += (_, _) => count.Text = $"{_neighborCount * 2 + 1} icons";
-        Grid.SetColumn(count, 1); sliderRow.Children.Add(count); page.Children.Add(sliderRow);
-        AddReaderSettings(page);
-        page.Children.Add(Heading("Overwrite backups"));
-        page.Children.Add(Description("Replaced files are kept for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."));
+        Grid.SetColumn(count, 1); sliderRow.Children.Add(count); carouselPage.Children.Add(sliderRow);
+        AddReaderSettings(SettingsCard(page, "Continuous reader"));
+        var systemPage = SettingsCard(page, "System");
+        systemPage.Children.Add(Heading("Overwrite backups"));
+        systemPage.Children.Add(Description("Replaced files are kept for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."));
         _clearBackups = new Button { Content = "Clear overwrite backups" };
         _clearBackups.Click += (_, _) =>
         {
@@ -123,10 +148,10 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
             SetBackupState(true);
             Dispatcher.BeginInvoke(new Action(() => ClearBackupsRequested?.Invoke()));
         };
-        page.Children.Add(_clearBackups);
-        _backupStatus = Description(_backupText); page.Children.Add(_backupStatus);
-        page.Children.Add(Heading("Thumbnail cache"));
-        page.Children.Add(Description("Thumbnails are regenerated as needed. Idle cleanup targets 1 GiB and removes entries unused for 90 days."));
+        systemPage.Children.Add(_clearBackups);
+        _backupStatus = Description(_backupText); systemPage.Children.Add(_backupStatus);
+        systemPage.Children.Add(Heading("Thumbnail cache"));
+        systemPage.Children.Add(Description("Thumbnails are regenerated as needed. Idle cleanup targets 1 GiB and removes entries unused for 90 days."));
         _clearCache = new Button { Content = "Clear thumbnail cache" };
         _clearCache.Click += (_, _) =>
         {
@@ -134,8 +159,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
             SetCacheState(true);
             Dispatcher.BeginInvoke(new Action(() => ClearCacheRequested?.Invoke()));
         };
-        page.Children.Add(_clearCache);
-        _cacheStatus = Description(_cacheText); page.Children.Add(_cacheStatus);
+        systemPage.Children.Add(_clearCache);
+        _cacheStatus = Description(_cacheText); systemPage.Children.Add(_cacheStatus);
         SetBackupState(_backupsBusy); SetCacheState(_cacheBusy);
         var content = new Grid { Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 11, 12, 14)), RequestedTheme = ElementTheme.Dark };
         content.Children.Add(new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -151,8 +176,23 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
     private static TextBlock Description(string text) => new() { Text = text, TextWrapping = Microsoft.UI.Xaml.TextWrapping.Wrap,
         Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 163, 166, 174)) };
 
+    private static StackPanel SettingsCard(StackPanel page, string title)
+    {
+        var body = new StackPanel { Spacing = 12 };
+        body.Children.Add(new TextBlock { Text = title, FontSize = 22, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        page.Children.Add(new Border
+        {
+            Tag = title, Child = body, Padding = new Microsoft.UI.Xaml.Thickness(20), CornerRadius = new Microsoft.UI.Xaml.CornerRadius(10),
+            BorderThickness = new Microsoft.UI.Xaml.Thickness(1),
+            BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 48, 50, 56)),
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(ColorHelper.FromArgb(255, 22, 24, 28))
+        });
+        return body;
+    }
+
     protected override void DestroyWindowCore(HandleRef hwnd)
     {
+        ReleaseFolderRuleControls();
         if (_xamlSource is not null)
         {
             _xamlSource.Content = null;
@@ -161,6 +201,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         }
 
         _readerSpacing = null; _readerPreload = null; _readerIndicator = null;
+        _folderDepthToggle = null;
         _slider = null; _carouselToggle = null; _clearBackups = null; _clearCache = null; _backupStatus = null; _cacheStatus = null;
     }
 

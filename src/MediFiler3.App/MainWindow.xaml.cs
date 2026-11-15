@@ -105,6 +105,21 @@ public partial class MainWindow : Window
         _browseView.SetReaderOptions(settings.Current.GetReaderOptions());
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount, settings.Current.CarouselEnabled);
         _settingsView.SetReaderOptions(settings.Current.GetReaderOptions());
+        _browseView.FolderDepthShadingEnabled = settings.Current.FolderDepthShadingEnabled;
+        _settingsView.SetFolderDepthShading(settings.Current.FolderDepthShadingEnabled);
+        _browseView.SetFolderNameRules(settings.Current.GetFolderRules());
+        _settingsView.SetFolderNameRules(settings.Current.GetFolderRules());
+        _settingsView.FolderNameRulesChanged += rules =>
+        {
+            var snapshot = rules.ToArray();
+            settings.Update(s => s with { FolderNameRules = snapshot, FolderRulesConfigured = true, FolderCollapseDefaultConfigured = true });
+            _browseView.SetFolderNameRules(snapshot, applyStructureImmediately: true);
+        };
+        _settingsView.FolderDepthShadingChanged += enabled =>
+        {
+            _browseView.FolderDepthShadingEnabled = enabled;
+            settings.Update(s => s with { FolderDepthShadingEnabled = enabled });
+        };
         void ApplyReaderOptions(ReaderOptions options)
         {
             settings.Update(s => s.WithReaderOptions(options));
