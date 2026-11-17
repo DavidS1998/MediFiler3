@@ -182,6 +182,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 
     public void SetFolderContext(string title, string details)
     {
+        if (_folderTitleText == title && _folderDetailsText == details) return;
         _folderTitleText = title;
         _folderDetailsText = details;
         UpdateFolderPath();
@@ -217,6 +218,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
 
     public void SetFileMetadata(string metadata)
     {
+        if (_fileMetadataText == metadata && (_fileMetadata is null || _fileMetadata.Text == metadata &&
+            _fileMetadata.Visibility == (string.IsNullOrEmpty(metadata) ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible))) return;
         _fileMetadataText = metadata;
         if (_fileMetadata is null) return;
         _fileMetadata.Text = metadata;

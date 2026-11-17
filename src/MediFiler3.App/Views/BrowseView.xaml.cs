@@ -42,9 +42,10 @@ public partial class BrowseView : UserControl
     private bool _carouselPanelAnimating;
     private CarouselSpacerItem? _carouselLeadingSpacer;
     private CarouselSpacerItem? _carouselTrailingSpacer;
-    private readonly DispatcherTimer _carouselScrollTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private readonly DispatcherTimer _carouselScrollTimer = new(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(16) };
     private double _carouselScrollTargetOffset;
-    private double _carouselOffsetBeforeRefresh;
+    private double _carouselScrollStartOffset;
+    private long _carouselScrollStarted;
     private ScrollViewer? _carouselScrollViewer;
     private int _carouselStartIndex;
     private int _carouselEndIndex;
@@ -1352,7 +1353,6 @@ public partial class BrowseView : UserControl
 
         var cancellationToken = _carouselLoadCancellation.Token;
         _carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList);
-        _carouselOffsetBeforeRefresh = _carouselScrollViewer?.HorizontalOffset ?? 0;
 
         var files = _navigationState.Files;
         var currentFile = _navigationState.CurrentFile;
@@ -1454,13 +1454,6 @@ public partial class BrowseView : UserControl
                 return;
             }
 
-            _carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList);
-            if (_carouselScrollViewer is not null)
-            {
-                _carouselScrollViewer.ScrollToHorizontalOffset(
-                    Math.Clamp(_carouselOffsetBeforeRefresh, 0, _carouselScrollViewer.ScrollableWidth));
-            }
-
             CenterCurrentCarouselItem();
         }, DispatcherPriority.Loaded);
 
@@ -1498,8 +1491,7 @@ public partial class BrowseView : UserControl
 
     private void CenterCurrentCarouselItem()
     {
-        if (CarouselList.SelectedItem is not CarouselThumbnailItem selectedItem ||
-            CarouselList.ItemContainerGenerator.ContainerFromItem(selectedItem) is not ListBoxItem container ||
+        if (CarouselList.SelectedItem is not CarouselThumbnailItem ||
             (_carouselScrollViewer ??= FindVisualChild<ScrollViewer>(CarouselList)) is not { } scrollViewer)
         {
             return;
@@ -1508,7 +1500,9 @@ public partial class BrowseView : UserControl
         const double carouselItemWidth = 156;
         var targetOffset = _carouselCurrentIndex * carouselItemWidth;
         targetOffset = Math.Clamp(targetOffset, 0, scrollViewer.ScrollableWidth);
-        if (!_hasCenteredCarouselItem || Math.Abs(targetOffset - scrollViewer.HorizontalOffset) < 1)
+        if (!_hasCenteredCarouselItem || !SystemParameters.ClientAreaAnimation ||
+            Math.Abs(targetOffset - scrollViewer.HorizontalOffset) < 1 ||
+            Math.Abs(targetOffset - scrollViewer.HorizontalOffset) > carouselItemWidth * 1.5)
         {
             _carouselScrollTimer.Stop();
             scrollViewer.ScrollToHorizontalOffset(targetOffset);
@@ -1517,7 +1511,12 @@ public partial class BrowseView : UserControl
         }
 
         _carouselScrollTargetOffset = targetOffset;
-        if (!_carouselScrollTimer.IsEnabled) _carouselScrollTimer.Start();
+        if (!_carouselScrollTimer.IsEnabled)
+        {
+            _carouselScrollStartOffset = scrollViewer.HorizontalOffset;
+            _carouselScrollStarted = Stopwatch.GetTimestamp();
+            _carouselScrollTimer.Start();
+        }
     }
 
     private void OnCarouselScrollTimerTick(object? sender, EventArgs e)
@@ -1528,14 +1527,19 @@ public partial class BrowseView : UserControl
             return;
         }
 
-        // Retarget the running animation instead of restarting an ease-out on every notch.
-        var remaining = _carouselScrollTargetOffset - _carouselScrollViewer.HorizontalOffset;
-        if (Math.Abs(remaining) < 1)
+        // A fixed deadline bounds lag even if input retargets the animation or a tick arrives late.
+        var progress = Math.Clamp(Stopwatch.GetElapsedTime(_carouselScrollStarted).TotalMilliseconds / 80, 0, 1);
+        if (progress >= 1)
         {
             _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollTargetOffset);
             _carouselScrollTimer.Stop();
         }
-        else _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollViewer.HorizontalOffset + remaining * 0.45);
+        else
+        {
+            var eased = 1 - Math.Pow(1 - progress, 3);
+            _carouselScrollViewer.ScrollToHorizontalOffset(_carouselScrollStartOffset +
+                (_carouselScrollTargetOffset - _carouselScrollStartOffset) * eased);
+        }
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
@@ -1636,7 +1640,6 @@ public partial class BrowseView : UserControl
         _carouselRefreshVersion++;
         _carouselScrollTimer.Stop();
         _hasCenteredCarouselItem = false;
-        _carouselOffsetBeforeRefresh = 0;
         _carouselScrollViewer = null;
         _carouselStartIndex = 0;
         _carouselEndIndex = -1;

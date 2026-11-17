@@ -290,7 +290,7 @@
                 </LinearGradientBrush>
             </Border.Background>
             <Grid>
-                <ListBox x:Name="CarouselList" SelectionChanged="OnCarouselSelectionChanged"
+                <ListBox x:Name="CarouselList" SelectionChanged="OnCarouselSelectionChanged" RequestBringIntoView="OnCarouselRequestBringIntoView"
                          PreviewMouseLeftButtonDown="OnCarouselPreviewMouseLeftButtonDown"
                          Background="Transparent" BorderThickness="0" Foreground="#E7E8EA"
                          ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"

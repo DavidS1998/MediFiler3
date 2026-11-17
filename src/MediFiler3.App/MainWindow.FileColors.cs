@@ -17,8 +17,12 @@ public partial class MainWindow
         {
             if (!_fileRuleCaptionApplied) { _unruledCaptionBackground = TitleBarBackground; _unruledCaptionForeground = TitleBarForeground; }
             _fileRuleCaptionApplied = true;
-            var background = new SolidColorBrush(Color.FromRgb(rgb.Red, rgb.Green, rgb.Blue)); background.Freeze();
-            TitleBarBackground = background;
+            var colorValue = Color.FromRgb(rgb.Red, rgb.Green, rgb.Blue);
+            if (TitleBarBackground is not SolidColorBrush current || current.Color != colorValue)
+            {
+                var background = new SolidColorBrush(colorValue); background.Freeze();
+                TitleBarBackground = background;
+            }
             TitleBarForeground = 299 * rgb.Red + 587 * rgb.Green + 114 * rgb.Blue >= 150000 ? Brushes.Black : Brushes.White;
         }
         else if (_fileRuleCaptionApplied)

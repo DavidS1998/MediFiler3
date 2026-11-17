@@ -21,20 +21,25 @@ public sealed class WinUiTitleBarIsland : HwndHost
     public void SetPresentation(string text, Windows.UI.Color background, Windows.UI.Color foreground)
     {
         _text = text; _background = background; _foreground = foreground;
-        if (_root is not null) _root.Background = new SolidColorBrush(background);
+        if (_root?.Background is SolidColorBrush fill && fill.Color != background) fill.Color = background;
         if (_title is null) return;
-        _title.Text = text;
-        _title.Foreground = new SolidColorBrush(foreground);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_title, text);
+        if (_title.Text != text)
+        {
+            _title.Text = text;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_title, text);
+        }
+        if (_title.Foreground is SolidColorBrush ink && ink.Color != foreground) ink.Color = foreground;
     }
 
     protected override HandleRef BuildWindowCore(HandleRef parent)
     {
         _source = new DesktopWindowXamlSource();
         _source.Initialize(Win32Interop.GetWindowIdFromWindow(parent.Handle));
-        _root = new Grid { RequestedTheme = ElementTheme.Dark };
+        _root = new Grid { RequestedTheme = ElementTheme.Dark, Background = new SolidColorBrush(_background),
+            BackgroundTransition = null };
         _title = new TextBlock { FontSize = 12, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
-            Margin = new Thickness(12, 0, 12, 0), TextTrimming = TextTrimming.CharacterEllipsis };
+            Margin = new Thickness(12, 0, 12, 0), TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = new SolidColorBrush(_foreground) };
         _root.Children.Add(_title);
         SetPresentation(_text, _background, _foreground);
         _source.Content = _root;

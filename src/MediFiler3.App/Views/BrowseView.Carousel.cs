@@ -106,6 +106,12 @@ public partial class BrowseView
         }));
     }
 
+    private void OnCarouselRequestBringIntoView(object sender, RequestBringIntoViewEventArgs args)
+    {
+        // Selection must not race explicit index-based centering with ListBox auto-scrolling.
+        args.Handled = true;
+    }
+
     private void OnCarouselItemLoaded(object sender, RoutedEventArgs args)
     {
         if (sender is not ListBoxItem { DataContext: CarouselThumbnailItem } container || !SystemParameters.ClientAreaAnimation) return;

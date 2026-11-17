@@ -26,7 +26,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <Border x:Name="TitleBarFrame" Height="32" Visibility="Collapsed"
-                Background="{Binding TitleBarBackground, RelativeSource={RelativeSource AncestorType=Window}}">
+                Background="#000000">
             <interop:WinUiTitleBarIsland x:Name="TitleBarIsland" Focusable="False" />
         </Border>
     <Grid x:Name="ShellGrid" Grid.Row="1" Background="#000000">

@@ -82,9 +82,20 @@ internal static partial class Program
             var tagged = state.Files.Single(file => file.Name.Contains("[SET]")); var plain = state.Files.Single(file => file.Name == "plain.png");
             state.SetCurrentFile(tagged); await WaitUntil(() => Caption(255, 113, 206));
             var appWindow = (Microsoft.UI.Windowing.AppWindow)Field(window, "_appWindow")!;
-            Require(appWindow.TitleBar.BackgroundColor == Microsoft.UI.ColorHelper.FromArgb(255, 255, 113, 206) &&
-                appWindow.TitleBar.ButtonBackgroundColor == appWindow.TitleBar.BackgroundColor &&
-                appWindow.TitleBar.ExtendsContentIntoTitleBar, "AppWindow caption colors/content extension did not receive the chosen RGB");
+            await WaitUntil(() => appWindow.TitleBar.BackgroundColor == Microsoft.UI.ColorHelper.FromArgb(255, 255, 113, 206) &&
+                appWindow.TitleBar.ButtonBackgroundColor == appWindow.TitleBar.BackgroundColor);
+            Require(appWindow.TitleBar.ExtendsContentIntoTitleBar, "AppWindow caption content extension was lost");
+            var titleIsland = (WinUiTitleBarIsland)window.FindName("TitleBarIsland");
+            var titleRoot = (Native.Grid)Field(titleIsland, "_root")!;
+            var fill = (Microsoft.UI.Xaml.Media.SolidColorBrush)titleRoot.Background;
+            var details = (Native.TextBlock)Field((WinUiToolbarIsland)window.FindName("ToolbarIsland"), "_folderDetails")!;
+            var firstInline = details.Inlines[0];
+            for (var i = 0; i < 32; i++) state.SetCurrentFile(i % 2 == 0 ? plain : tagged);
+            await window.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            Require(ReferenceEquals(fill, titleRoot.Background) && fill.Color == appWindow.TitleBar.ButtonBackgroundColor &&
+                appWindow.TitleBar.BackgroundColor == fill.Color && fill.Color == Microsoft.UI.ColorHelper.FromArgb(255, 255, 113, 206),
+                "Rapid navigation rebuilt title brushes or published mismatched final caption colors");
+            Require(ReferenceEquals(firstInline, details.Inlines[0]), "File navigation rebuilt unchanged folder breadcrumbs");
             Require(((System.Windows.Controls.Border)window.FindName("ToolbarFrame")).Background is SolidColorBrush toolbar && toolbar.Color == Colors.Black,
                 "File color changed the toolbar");
             state.SetCurrentFile(plain); await WaitUntil(() => Caption(0, 0, 0));

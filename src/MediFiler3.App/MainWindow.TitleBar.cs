@@ -13,6 +13,8 @@ public partial class MainWindow
     private bool _titleBarClosed;
     private HwndSource? _titleBarSource;
     private (int Width, int Height, int Left, int Right, bool Shown)? _titleBarGeometry;
+    private bool _captionPresentationQueued;
+    private (Windows.UI.Color Background, Windows.UI.Color Foreground)? _appliedCaptionPalette;
 
     private void InitializeAppTitleBar()
     {
@@ -94,23 +96,40 @@ public partial class MainWindow
 
     private void ApplyCaptionColors()
     {
+        if (_titleBarClosed || _appWindow is null || _captionPresentationQueued) return;
+        _captionPresentationQueued = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render, new Action(() =>
+        {
+            _captionPresentationQueued = false;
+            FlushCaptionPresentation();
+        }));
+    }
+
+    private void FlushCaptionPresentation()
+    {
         if (_titleBarClosed || _appWindow is null || !AppWindowTitleBar.IsCustomizationSupported() ||
             TitleBarBackground is not SolidColorBrush background || TitleBarForeground is not SolidColorBrush foreground) return;
         var bg = ColorHelper.FromArgb(255, background.Color.R, background.Color.G, background.Color.B);
         var fg = ColorHelper.FromArgb(255, foreground.Color.R, foreground.Color.G, foreground.Color.B);
         var bar = _appWindow.TitleBar;
-        bar.BackgroundColor = bg; bar.ForegroundColor = fg;
-        bar.InactiveBackgroundColor = bg;
         var inactive = ColorHelper.FromArgb(255, (byte)((fg.R + bg.R) / 2),
             (byte)((fg.G + bg.G) / 2), (byte)((fg.B + bg.B) / 2));
-        bar.InactiveForegroundColor = inactive;
-        bar.ButtonBackgroundColor = bg; bar.ButtonForegroundColor = fg;
-        bar.ButtonInactiveBackgroundColor = bg; bar.ButtonInactiveForegroundColor = inactive;
-        bar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(255, (byte)((bg.R * 3 + fg.R) / 4),
-            (byte)((bg.G * 3 + fg.G) / 4), (byte)((bg.B * 3 + fg.B) / 4));
-        bar.ButtonHoverForegroundColor = fg;
-        bar.ButtonPressedBackgroundColor = bar.ButtonHoverBackgroundColor;
-        bar.ButtonPressedForegroundColor = fg;
+        if (_appliedCaptionPalette != (bg, fg))
+        {
+            bar.BackgroundColor = bg; bar.ForegroundColor = fg;
+            bar.InactiveBackgroundColor = bg; bar.InactiveForegroundColor = inactive;
+            bar.ButtonBackgroundColor = bg; bar.ButtonForegroundColor = fg;
+            bar.ButtonInactiveBackgroundColor = bg; bar.ButtonInactiveForegroundColor = inactive;
+            bar.ButtonHoverBackgroundColor = ColorHelper.FromArgb(255, (byte)((bg.R * 3 + fg.R) / 4),
+                (byte)((bg.G * 3 + fg.G) / 4), (byte)((bg.B * 3 + fg.B) / 4));
+            bar.ButtonHoverForegroundColor = fg;
+            bar.ButtonPressedBackgroundColor = bar.ButtonHoverBackgroundColor;
+            bar.ButtonPressedForegroundColor = fg;
+            _appliedCaptionPalette = (bg, fg);
+        }
+        // Publish WPF, WinUI content and native button colors in the same render-priority update.
+        if (TitleBarFrame.Background is not SolidColorBrush frame || frame.Color != background.Color)
+            TitleBarFrame.Background = background;
         TitleBarIsland.SetPresentation(Title, bg, IsActive ? fg : inactive);
     }
 }

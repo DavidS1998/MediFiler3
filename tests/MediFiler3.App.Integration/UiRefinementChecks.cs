@@ -58,8 +58,7 @@ internal static partial class Program
                 Require(SendLayoutMessage(new WindowInteropHelper(window).Handle, 0x0084, 0, coordinates) == 2,
                     "Extended title region no longer reports HTCAPTION for native dragging");
                 window.Title = "Title content probe";
-                Require(((Microsoft.UI.Xaml.Controls.TextBlock)Field(title, "_title")!).Text == window.Title,
-                    "Extended WinUI title did not follow the native window title");
+                await WaitUntil(() => ((Microsoft.UI.Xaml.Controls.TextBlock)Field(title, "_title")!).Text == window.Title);
                 window.Title = "MediFiler3";
             });
             await Check("Settings native buttons and carousel switch persist visibility", async () =>
@@ -101,6 +100,11 @@ internal static partial class Program
                 await WaitUntil(() => browse.CarouselItems.OfType<CarouselThumbnailItem>().Any(i => i.IsCurrent && ReferenceEquals(i.File, state.CurrentFile)));
                 Require(browse.CarouselItems.Count <= 7 && token.IsCancellationRequested, "Carousel backlog is not bounded/cancelled");
                 Require(browse.CarouselItems.OfType<CarouselThumbnailItem>().Select(i => i.File).Distinct().Count() == 5, "Duplicate carousel tiles");
+                await window.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                var carouselScroll = (ScrollViewer)Field(browse, "_carouselScrollViewer")!;
+                Require(!((System.Windows.Threading.DispatcherTimer)Field(browse, "_carouselScrollTimer")!).IsEnabled &&
+                    Math.Abs(carouselScroll.HorizontalOffset - 40 * 156) < 1,
+                    "Rapid navigation left the carousel easing behind its latest selected position");
                 var unfinished = browse.CarouselItems.OfType<CarouselThumbnailItem>().First();
                 unfinished.Thumbnail = null;
                 unfinished.ThumbnailTask = new TaskCompletionSource<System.Windows.Media.Imaging.BitmapSource?>().Task;
