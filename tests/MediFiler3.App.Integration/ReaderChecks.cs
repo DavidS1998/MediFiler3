@@ -15,6 +15,9 @@ using MediFiler3.Interop;
 using MediFiler3.Services;
 using MediFiler3.Views;
 
+// Actual PagerControl coverage for the user-approved experimental SDK.
+#pragma warning disable CS8305
+
 internal static partial class Program
 {
     private static async Task RunReaderChecksAsync()
@@ -459,11 +462,19 @@ internal static partial class Program
                 Require(browse.JumpReaderPage(0), "Could not jump to the first Reader image");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[0]);
                 Require(Key(System.Windows.Input.Key.Left) && ReferenceEquals(originalFolder, state.ActiveFolder), "Reader escaped the folder at the start");
-                InvokeReaderToolbarButton((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerNext")!);
+                var pager = (Microsoft.UI.Xaml.Controls.PagerControl)Field(toolbar, "_readerPager")!;
+                Require(pager.IsEnabled && pager.NumberOfPages == state.Reader.Pages.Count && pager.SelectedPageIndex == 0,
+                    "Native Reader pager is not synchronized with the projection");
+                var nextPage = CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.Button>()
+                    .Single(button => button.Name == "NextPageButton");
+                InvokeNativeButton(nextPage);
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[1]);
+                var pageInput = CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.NumberBox>().Single();
+                pageInput.Value = 3;
+                await WaitUntil(() => state.CurrentFile == state.Reader.Pages[2]);
                 Require(browse.JumpReaderPage(state.Reader.Pages.Count - 1), "Could not jump to the last page");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[^1]);
-                Require(!((Microsoft.UI.Xaml.Controls.AppBarButton)Field(toolbar, "_readerNext")!).IsEnabled && Key(System.Windows.Input.Key.Right) &&
+                Require(pager.SelectedPageIndex == state.Reader.Pages.Count - 1 && !nextPage.IsEnabled && Key(System.Windows.Input.Key.Right) &&
                     ReferenceEquals(originalFolder, state.ActiveFolder) && state.Files.SequenceEqual(files), "Reader crossed a folder or enabled next beyond the sequence");
                 Require(!Key(System.Windows.Input.Key.Right, System.Windows.Input.ModifierKeys.Control), "Reader claimed an undefined shortcut");
                 Require(!Key(System.Windows.Input.Key.Enter), "Reader Enter handoff should be dormant");

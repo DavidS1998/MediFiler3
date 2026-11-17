@@ -19,7 +19,8 @@ public partial class MainWindow
 
     private Point? GetFolderHoverPosition()
     {
-        if (!IsVisible || WindowState == WindowState.Minimized || PageContent.Content != _browseView || !GetCursorPos(out var cursor)) return null;
+        if (!IsVisible || WindowState == WindowState.Minimized || PageContent.Content != _browseView ||
+            PresentationSource.FromVisual(_browseView) is null || !GetCursorPos(out var cursor)) return null;
         return _browseView.PointFromScreen(new Point(cursor.X, cursor.Y));
     }
 

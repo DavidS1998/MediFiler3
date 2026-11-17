@@ -6,6 +6,7 @@ Long-term milestone tracker, updated 2026-11-15. Requirements and current produc
 
 | Milestone | Delivered scope | State / acceptance |
 |---|---|---|
+| WinUI title and navigation updates (2026-11-17) | AppWindowTitleBar colors/extended native title content, native Reader PagerControl on approved experimental SDK, combined Browse zoom AppBarButton, folder-menu icons and text clearance | Implemented; clean build, 411 unit/filesystem and 234 full native checks passed, zero failures/skips. Physical user review pending. Breadcrumbs accepted by user. |
 | Phase 1: foundation | WPF shell/WinUI islands, separate roots/progressive tree/listing, natural order, centralized current file, images, interaction policy and carousel | Complete |
 | Phase 2: safe organization | File/folder move/rename/create/recycle, durable intents/events, identity checks, grouped compensating Undo/Redo and recovery | Complete; safety remains a permanent requirement |
 | Phase 3: content | Native audio/video, windowed Unicode text, GIF animation, metadata, external fallback, cross-content release/cancellation | Complete; user accepted physical viewer/input/audio/external/Browse-operation review on 2026-11-10, for representative formats |

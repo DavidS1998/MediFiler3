@@ -6,7 +6,7 @@ This is the current product contract and decision record. Requirements below sup
 
 MediFiler3 is a local Windows desktop application for browsing, viewing and safely organizing personal file/media collections in one workflow. Prioritize immediate navigation, predictable context-sensitive input, responsive large-folder handling and preservation of user data. Core use must not require a server/cloud service.
 
-Use C# with a WPF application/window host and suitable WinUI controls through Windows App SDK XAML Islands. Retain the native Windows caption/system buttons. Additional dependencies and feature scope require an explicit reason; use the existing architecture rather than redesigning it from this document.
+Use C# with a WPF application/window host and suitable WinUI controls through Windows App SDK XAML Islands. Retain native Windows system caption buttons with AppWindowTitleBar and extended WinUI title content. Additional dependencies and feature scope require an explicit reason; use the existing architecture rather than redesigning it from this document.
 
 ## 2. Workspace and navigation
 
@@ -53,7 +53,7 @@ The compact icon-only sidebar contains Home, a separator, Browse, Gallery and Re
 | Open current Reader image in Browse | Not a Reader toolbar action | Gallery handoff uses Enter/double-click/context menu | Temporarily hidden |
 | Image zoom / text / media controls | Follow current content capabilities | Hidden | Hidden |
 | Width / Height thumbnail sliders | Hidden | Available | Hidden |
-| Previous image / Next image / numeric Go / Reader scaling | Hidden | Hidden | Available |
+| Native page pager / Reader scaling | Hidden | Hidden | Available; numeric Go dialog remains on Ctrl+G |
 | Failed-page Retry / Open in Browse recovery | Not applicable | Not applicable | Retained |
 
 Reader is read-only for files. Destination-folder right-clicks and move/rename/recycle/Undo/Redo APIs do nothing in Reader. Folder-tree folder commands remain available for consistency. External/Browse recovery remains implemented; hidden controls and dormant shortcuts must not be restored incidentally. Gallery file operations remain available.
@@ -111,6 +111,12 @@ Media provides play/pause, stop, +/-5-second jumps, stretching seekbar, time dis
 Text reads at most 1 MiB per window without splitting Unicode code points; previous/next-window controls handle larger files. Center the text with symmetric insets allowing for the tree. Word counts count whitespace-delimited runs and explicitly label a partial window `(window)`, rather than implying a whole-file total.
 
 Metadata is shown only in Browse's left toolbar: top line for values, bottom line for full folder path with only the final folder name white. File size uses 1024-based KB/MB/GB, one decimal digit and a period; image dimensions show original canvas resolution, video resolution shows pixel height (`[1080p]`), and duration is bracketed (`[00:14]`, `[1:02:05]`). Clear stale metadata immediately; retain known dimensions during same-file zoom/resize. Unknown values are omitted. Richer metadata and decimal-separator options are deferred.
+
+User-accepted breadcrumbs (2026-11-17): the second-row folder location uses native inline breadcrumb links for ancestors within the active loaded root. Keep the preceding filesystem path as context, the current folder white/noninteractive, full-path tooltips and existing compact ellipsis. Links navigate through the shared folder workflow without adding roots; the original location text remains easy to restore.
+
+User-authorized WinUI updates (2026-11-17): use AppWindowTitleBar for caption colors and ExtendsContentIntoTitleBar for WinUI title content, retaining native system buttons and the `(position/total) filename` title. File rules color title content/buttons, leaving the toolbar black. Preserve drag/double-click/system-menu behavior, caption-button insets, DPI and fullscreen hiding/reveal. Browse's reset-to-fit is one AppBarButton with a magnifying-glass icon and visible zoom-percent label; Gallery retains its thumbnail-size sliders. Folder menus have appropriate native icons; folder labels truncate before the menu-button column with extra clearance.
+
+Reader uses a native PagerControl in NumberBox mode with current/total and first/previous/next/last navigation. The user explicitly approved switching to an experimental Windows App SDK for this control. Hide the pager outside Reader and for empty projections. Page input navigates directly through validated deferred callbacks; Ctrl+G retains the existing bounded numeric Go dialog. Reader read-only safeguards and other keyboard behavior remain.
 
 Browse's external actions use the selected path and owner window, prevent duplicate in-flight requests, treat chooser cancellation normally and publish results only in the matching active context. Resolve default-app icon/name asynchronously; unknown lookup uses a generic icon/label. A known missing association disables Default but keeps Choose available. Do not automatically launch a second action on failure.
 

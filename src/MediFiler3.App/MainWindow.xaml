@@ -20,7 +20,16 @@
         <SolidColorBrush x:Key="BorderBrush" Color="#292B31" />
     </Window.Resources>
 
-    <Grid x:Name="ShellGrid" Background="#000000">
+    <Grid Background="#000000">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Border x:Name="TitleBarFrame" Height="32" Visibility="Collapsed"
+                Background="{Binding TitleBarBackground, RelativeSource={RelativeSource AncestorType=Window}}">
+            <interop:WinUiTitleBarIsland x:Name="TitleBarIsland" Focusable="False" />
+        </Border>
+    <Grid x:Name="ShellGrid" Grid.Row="1" Background="#000000">
         <Grid.RowDefinitions>
             <RowDefinition x:Name="ToolbarRow" Height="48" />
             <RowDefinition Height="*" />
@@ -46,5 +55,6 @@
 
         <ContentControl x:Name="PageContent" Grid.Row="1" Grid.Column="1"
                         HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+    </Grid>
     </Grid>
 </Window>

@@ -1,11 +1,12 @@
 # Project status
 
-Updated 2026-11-15. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
+Updated 2026-11-17. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Outstanding issues
 
 | Issue | Evidence / present position | Next action when pursued |
 |---|---|---|
+| Experimental runtime early native shutdown failure | One early WinUI migration run exited after its checks with CoreMessagingXP.dll 12.6.6.0 / 0xe0435545. Subsequent close guards, explicit title-island disposal and geometry caching are in place; later focused/full runs exited normally. Root cause is not conclusively established. Dump `%LOCALAPPDATA%\CrashDumps\MediFiler3.App.Integration.exe.26488.dmp`; events `%TEMP%\MediFiler3WinUi-runtime-events.txt`. | Preserve new dumps/native stack and shutdown/window-transition context on recurrence; do not suppress native exceptions. |
 | Gallery drag-hover expansion check timed out once | Folder-color full run: row000 never reached the expected expanded state within the unchanged 5s assertion (GalleryDragChecks.cs:145). Unchanged-code full repeat passed 223/223. No dwell/input/root-cause diagnosis yet; the repeat does not prove it harmless. | On recurrence capture row/container identity, children/discovery state, drag point/target, dwell timer and layout changes. Retain the 600ms dwell and existing assertions; do not modify color or drag behavior to conceal the timeout. |
 | Historical native Gallery instability not conclusively eliminated | Earlier collection 0xC0000005 and later XAML transition 0xc000027b; no universal root-cause closure despite targeted fixes/successful runs. Reader's owned-pixel fix addresses a separate diagnosed lifetime defect. | On recurrence preserve WER/dumps, native stack and shared-path/disjoint/transition/input context; use ARCHITECTURE's failure knowledge. |
 
@@ -18,6 +19,8 @@ Updated 2026-11-15. Short-term issues, unresolved decisions and immediate action
 
 ## Decisions still open
 
+Toolbar breadcrumbs accepted by the user on 2026-11-17; the rendering switch remains for easy rollback. User authorized the experimental SDK for actual PagerControl. AppWindow title content/colors, native Reader pager, combined Browse zoom button, folder menu icons and label clearance await physical user evaluation. Framework-dependent targets now need the matching experimental runtime; stable-only installations cannot start this build.
+
 Ordered name/count/all-folder rules, direct-file ranges, editable exact-zero and disabled collapse-all defaults, root-aware expansion/Hide, live saved-rule previews and grouped Settings cards are implemented. File name/color rules now color the Browse native title bar and Gallery filename gradient; Reader is excluded. Arbitrary depth-palette editing remains future scope. Search remains deferred; hidden Reader/Gallery controls must not be restored incidentally.
 
 The user accepted the measured roughly one-second clear of 10,000 Gallery selections on 2026-11-14. It is not an outstanding performance issue; optimization is unnecessary.
@@ -29,6 +32,8 @@ The user accepted the measured roughly one-second clear of 10,000 Gallery select
 3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
+
+WinUI migration (2026-11-17): clean temporary-output build, zero warnings/errors; 411 unit/filesystem tests and 234 full native checks passed, zero failures/skips. Full log `%TEMP%\MediFiler3WinUi-full.log`; artifacts `%TEMP%\MediFiler3Integration-44ab01db94b243eda3500f2b5049cdc4`. An earlier focused UI/Gallery run passed 44 checks. Coverage includes actual AppWindow caption color readback/extension, native title drag hit testing, pager next-button and NumberBox navigation, Reader source pixels/fraction restoration, fullscreen and existing format/restart/operation checks. An early Reader rendered-pixel check reported no settled image; a later focused run and final full run passed that unchanged assertion. Another focused run exposed a detached-view hover-coordinate exception, now guarded by checking PresentationSource. No waits/tolerances/pixel assertions were weakened. Physical title/pager/keyboard/DPI review remains pending.
 
 Scrollable tree footer / Gallery reveal: clean build; 43 focused and 233 full native checks passed, zero failures/skips. Logs %TEMP%\MediFiler3TreeFooter-final.log and MediFiler3TreeFooter-full.log; full artifacts MediFiler3Integration-6b04413995174d9da49882b0d2b0ca15. Tests verify the full-height viewport, the actual last row above the carousel hover area after scroll-to-end, 10,102-node recycling, sidebar-only opening/retention in Gallery, drag behavior and retained Reader regressions. No Application/business changes, so unit checks were not repeated; the 411-unit baseline below remains prior evidence. Previous fixed outside clearance was replaced by genuine scrollable trailing margin on the last visible root.
 

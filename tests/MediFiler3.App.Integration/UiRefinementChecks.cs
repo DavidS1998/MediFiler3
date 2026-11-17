@@ -46,6 +46,22 @@ internal static partial class Program
         void StopFullscreenTimer() => ((System.Windows.Threading.DispatcherTimer)Field(window, "_fullscreenTimer")!).Stop();
         try
         {
+            await Check("AppWindow title content reserves caption buttons and preserves native drag hit testing", async () =>
+            {
+                await WaitUntil(() => ((FrameworkElement)window.FindName("TitleBarFrame")).ActualHeight > 0);
+                var appWindow = (Microsoft.UI.Windowing.AppWindow)Field(window, "_appWindow")!;
+                var title = (WinUiTitleBarIsland)window.FindName("TitleBarIsland");
+                Require(appWindow.TitleBar.ExtendsContentIntoTitleBar && title.Margin.Right > 0,
+                    "Title content does not reserve the native caption buttons");
+                var point = title.PointToScreen(new Point(title.ActualWidth / 2, title.ActualHeight / 2));
+                var coordinates = (nint)(((int)point.X & 0xffff) | (((int)point.Y & 0xffff) << 16));
+                Require(SendLayoutMessage(new WindowInteropHelper(window).Handle, 0x0084, 0, coordinates) == 2,
+                    "Extended title region no longer reports HTCAPTION for native dragging");
+                window.Title = "Title content probe";
+                Require(((Microsoft.UI.Xaml.Controls.TextBlock)Field(title, "_title")!).Text == window.Title,
+                    "Extended WinUI title did not follow the native window title");
+                window.Title = "MediFiler3";
+            });
             await Check("Settings native buttons and carousel switch persist visibility", async () =>
             {
                 Destination("Settings");

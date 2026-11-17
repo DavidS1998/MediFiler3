@@ -6,8 +6,6 @@ namespace MediFiler3;
 
 public partial class MainWindow
 {
-    private int? _lastCaptionColorResult;
-    private uint? _lastNativeCaptionColor;
     private FileNameColorRule[] _fileNameRules = [];
     private bool _fileRuleBrowseSelected, _fileRuleCaptionApplied;
     private Brush _unruledCaptionBackground = Brushes.Black, _unruledCaptionForeground = Brushes.White;

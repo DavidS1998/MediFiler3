@@ -81,8 +81,10 @@ internal static partial class Program
             await WaitUntil(() => state.Files.Count == 2);
             var tagged = state.Files.Single(file => file.Name.Contains("[SET]")); var plain = state.Files.Single(file => file.Name == "plain.png");
             state.SetCurrentFile(tagged); await WaitUntil(() => Caption(255, 113, 206));
-            Require(Field(window, "_lastCaptionColorResult") is int result && result >= 0 &&
-                Field(window, "_lastNativeCaptionColor") is uint nativeColor && nativeColor == 0x00CE71FF, "Native DWM caption write did not accept the chosen RGB");
+            var appWindow = (Microsoft.UI.Windowing.AppWindow)Field(window, "_appWindow")!;
+            Require(appWindow.TitleBar.BackgroundColor == Microsoft.UI.ColorHelper.FromArgb(255, 255, 113, 206) &&
+                appWindow.TitleBar.ButtonBackgroundColor == appWindow.TitleBar.BackgroundColor &&
+                appWindow.TitleBar.ExtendsContentIntoTitleBar, "AppWindow caption colors/content extension did not receive the chosen RGB");
             Require(((System.Windows.Controls.Border)window.FindName("ToolbarFrame")).Background is SolidColorBrush toolbar && toolbar.Color == Colors.Black,
                 "File color changed the toolbar");
             state.SetCurrentFile(plain); await WaitUntil(() => Caption(0, 0, 0));

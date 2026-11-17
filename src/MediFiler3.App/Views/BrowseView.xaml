@@ -212,7 +212,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="28" />
                             </Grid.ColumnDefinitions>
-                            <Border Grid.ColumnSpan="2" HorizontalAlignment="Stretch" Padding="4,5" CornerRadius="3">
+                            <Border Grid.Column="0" HorizontalAlignment="Stretch" Padding="4,5,8,5" CornerRadius="3">
                                 <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Foreground>
                                         <MultiBinding Converter="{StaticResource FolderTextBrush}">

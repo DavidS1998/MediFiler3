@@ -191,6 +191,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     {
         if (_folderDetails is null) return;
         _folderDetails.Inlines.Clear();
+        if (TryRenderFolderBreadcrumbs()) return;
         var trimmed = _folderDetailsText.TrimEnd('\\', '/');
         var name = _folderTitleText.TrimEnd('\\', '/');
         if (!string.IsNullOrEmpty(name) && trimmed.EndsWith(name, StringComparison.OrdinalIgnoreCase))
@@ -296,8 +297,9 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _rootElement = null;
         _fullscreenButton = null;
         _readerFileSeparators.Clear(); _readerNavigationDivider = null;
-        _readerPrevious = null; _readerNext = null; _readerJump = null; _readerBrowse = null;
+        _readerBrowse = null;
         _readerControls = null; _readerWidthControls = null; _readerWidthButton = null; _readerHeightButton = null; _readerWidthSlider = null; _readerWidthLabel = null;
+        _readerPager = null; _readerPagerContainer = null;
         _galleryControls = null; _galleryWidthSlider = null; _galleryHeightSlider = null;
     }
 
@@ -486,7 +488,16 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     private void AddFolderMenuItem(MenuFlyout menu, string label, string action, string folderName,
         Func<string, Task> actionHandler)
     {
-        var item = new MenuFlyoutItem { Text = label };
+        var item = new MenuFlyoutItem { Text = label, Icon = new FontIcon
+        {
+            Glyph = action switch
+            {
+                "new-folder" => "\uE8F4", "rename-folder" => "\uE8AC",
+                "move-folder" => "\uE8DE", "recycle-folder" => "\uE74D",
+                "collapse-children" => "\uE8A3", "refresh-tree" => "\uE72C",
+                "open-explorer" => "\uE838", _ => "\uE946"
+            }
+        } };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, $"{label}: {folderName}");
         item.Click += async (_, _) => await actionHandler(action);
         menu.Items.Add(item);

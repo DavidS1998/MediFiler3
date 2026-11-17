@@ -87,6 +87,7 @@ public partial class MainWindow
             _windowLayout.SetTransientPresentation(false);
         }
         ToolbarIsland.SetFullscreen(IsFullscreen);
+        UpdateAppTitleBarLayout();
     }
 
     private void FitFullscreenMonitor()
@@ -123,6 +124,7 @@ public partial class MainWindow
             FitFullscreenMonitor();
         }
         _fullscreenToolbarVisible = toolbar;
+        UpdateAppTitleBarLayout();
         _fullscreenSidebarVisible = sidebar;
         _browseView.SetFullscreenFolderReveal(IsFullscreen && sidebar && _browseView.IsVisible, IsSidebarVisible ? CompactSidebarWidth : 0);
         ToolbarFrame.Visibility = toolbar ? Visibility.Visible : Visibility.Collapsed;

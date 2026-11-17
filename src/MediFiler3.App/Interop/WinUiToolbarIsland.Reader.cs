@@ -2,6 +2,9 @@ using MediFiler3.Application.Navigation;
 using Microsoft.UI.Xaml.Controls;
 using Xaml = Microsoft.UI.Xaml;
 
+// User-approved experimental SDK adoption, isolated to the native pager adapter.
+#pragma warning disable CS8305
+
 namespace MediFiler3.Interop;
 
 public sealed partial class WinUiToolbarIsland
@@ -13,19 +16,32 @@ public sealed partial class WinUiToolbarIsland
     private ReaderOptions _readerToolbarOptions = new();
     private bool _readerControlsVisible, _settingReaderControls;
     public event Action<ReaderOptions>? ReaderOptionsChanged;
-    public event Action<ReaderNavigation>? ReaderNavigateRequested;
-    public event Action? ReaderJumpRequested, ReaderOpenBrowseRequested;
-    private AppBarButton? _readerPrevious, _readerNext, _readerJump, _readerBrowse;
+    public event Action? ReaderOpenBrowseRequested;
+    private AppBarButton? _readerBrowse;
+    private PagerControl? _readerPager;
+    private AppBarElementContainer? _readerPagerContainer;
+    private bool _settingReaderPager;
+    public event Action<int>? ReaderPageRequested;
     private int _readerPageIndex = -1, _readerPageCount;
     private readonly List<AppBarSeparator> _readerFileSeparators = [];
     private AppBarSeparator? _readerNavigationDivider;
     public void SetReaderNavigation(int index, int count)
     {
         _readerPageIndex = index; _readerPageCount = count;
-        if (_readerPrevious is not null) _readerPrevious.IsEnabled = index > 0 && count > 0;
-        if (_readerNext is not null) _readerNext.IsEnabled = index >= 0 && index + 1 < count;
-        if (_readerJump is not null) _readerJump.IsEnabled = count > 0;
+        if (_readerPagerContainer is not null) _readerPagerContainer.Visibility = _readerControlsVisible && count > 0
+            ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
         if (_readerBrowse is not null) _readerBrowse.IsEnabled = index >= 0 && index < count;
+        if (_readerPager is not null)
+        {
+            _settingReaderPager = true;
+            try
+            {
+                _readerPager.IsEnabled = count > 0;
+                _readerPager.NumberOfPages = Math.Max(1, count);
+                _readerPager.SelectedPageIndex = Math.Clamp(index, 0, Math.Max(0, count - 1));
+            }
+            finally { _settingReaderPager = false; }
+        }
     }
 
     public void SetReaderControls(bool visible, ReaderOptions options)
@@ -35,8 +51,8 @@ public sealed partial class WinUiToolbarIsland
         try
         {
             if (_readerControls is not null) _readerControls.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
-            foreach (var command in new AppBarButton?[] { _readerPrevious, _readerNext, _readerJump })
-                if (command is not null) command.Visibility = visible ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
+            if (_readerPagerContainer is not null) _readerPagerContainer.Visibility = visible && _readerPageCount > 0
+                ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
             // Temporarily simplify Reader chrome; keep command implementations available.
             if (_readerBrowse is not null) _readerBrowse.Visibility = Xaml.Visibility.Collapsed;
             foreach (var command in new AppBarButton?[] { _renameFileButton, _deleteFileButton, _undoButton, _redoButton })
@@ -86,12 +102,23 @@ public sealed partial class WinUiToolbarIsland
     {
         _readerFileSeparators.Clear(); _readerFileSeparators.AddRange(middle.PrimaryCommands.OfType<AppBarSeparator>());
         _readerNavigationDivider = new AppBarSeparator(); middle.PrimaryCommands.Add(_readerNavigationDivider);
-        _readerPrevious = CreateButton(Symbol.Back, "Previous Reader image (Left)", () => ReaderNavigateRequested?.Invoke(ReaderNavigation.PreviousImage));
-        _readerNext = CreateButton(Symbol.Forward, "Next Reader image (Right)", () => ReaderNavigateRequested?.Invoke(ReaderNavigation.NextImage));
-        _readerJump = CreateButton(Symbol.Find, "Go to Reader page (Ctrl+G)", () => ReaderJumpRequested?.Invoke());
-        middle.PrimaryCommands.Add(_readerPrevious); middle.PrimaryCommands.Add(_readerNext);
+        _readerPager = new PagerControl
+        {
+            DisplayMode = PagerControlDisplayMode.NumberBox,
+            VerticalAlignment = Xaml.VerticalAlignment.Center,
+            PrefixText = "Page", SuffixText = "of"
+        };
+        Xaml.Automation.AutomationProperties.SetName(_readerPager, "Reader page navigation");
+        _readerPager.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_settingReaderPager && _readerControlsVisible && _readerPageCount > 0)
+                ReaderPageRequested?.Invoke(_readerPager.SelectedPageIndex);
+        };
+        _readerPagerContainer = new AppBarElementContainer { Content = _readerPager,
+            VerticalAlignment = Xaml.VerticalAlignment.Center };
+        middle.PrimaryCommands.Add(_readerPagerContainer);
         _readerBrowse = CreateButton(Symbol.OpenFile, "Open current Reader image in Browse (Enter)", () => ReaderOpenBrowseRequested?.Invoke());
-        middle.PrimaryCommands.Add(_readerJump); middle.PrimaryCommands.Add(_readerBrowse);
+        middle.PrimaryCommands.Add(_readerBrowse);
         SetReaderNavigation(_readerPageIndex, _readerPageCount);
     }
 

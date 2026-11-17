@@ -1,7 +1,6 @@
 using MediFiler3.Interop;
 using MediFiler3.Views;
 using Microsoft.Extensions.Logging;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Interop;
@@ -21,8 +20,6 @@ namespace MediFiler3;
 
 public partial class MainWindow : Window
 {
-    private const uint DwmwaCaptionColor = 35;
-    private const uint DwmwaTextColor = 36;
     private const double CompactSidebarWidth = 56;
 
     public static readonly DependencyProperty TitleBarBackgroundProperty = DependencyProperty.Register(
@@ -150,8 +147,18 @@ public partial class MainWindow : Window
         InitializeComponent();
         ToolbarIsland.ViewShortcutHandler = TryHandleViewShortcut;
         NavigationIsland.ViewShortcutHandler = TryHandleViewShortcut;
-        ToolbarIsland.ReaderNavigateRequested += command => { if (ReaderCommandsAvailable) _browseView.NavigateReader(command); };
-        ToolbarIsland.ReaderJumpRequested += async () => await RunViewShortcutAsync(PromptReaderJumpAsync);
+        ToolbarIsland.ReaderPageRequested += page =>
+        {
+            var folder = _navigationState.ActiveFolder;
+            var pages = _navigationState.Reader.Pages;
+            var target = pages.ElementAtOrDefault(page);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!ReaderCommandsAvailable || !ReferenceEquals(folder, _navigationState.ActiveFolder) ||
+                    target is null || _navigationState.Reader.Pages.ElementAtOrDefault(page) != target) return;
+                _browseView.JumpReaderPage(page);
+            }));
+        };
         ToolbarIsland.ReaderOpenBrowseRequested += () => { if (ReaderCommandsAvailable) _browseView.OpenReaderInBrowse(); };
         ToolbarIsland.ReaderOptionsChanged += options =>
         {
@@ -200,6 +207,18 @@ public partial class MainWindow : Window
         NavigationIsland.RefreshRequested += async () => await RefreshBrowseAsync();
         ToolbarIsland.LoadFoldersRequested += OnLoadFoldersRequested;
         ToolbarIsland.RefreshRequested += async () => await RefreshBrowseAsync();
+        ToolbarIsland.FolderBreadcrumbRequested += path =>
+        {
+            var folder = _navigationState.ActiveFolder;
+            var mode = _navigationState.ViewingMode;
+            // Leave native input before changing folder content or island state.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!IsEnabled || ToolbarIsland.HasOpenPopup || PageContent.Content != _browseView ||
+                    !ReferenceEquals(folder, _navigationState.ActiveFolder) || mode != _navigationState.ViewingMode) return;
+                _ = RunViewShortcutAsync(() => _browseView.NavigateFolderBreadcrumbAsync(path));
+            }));
+        };
         _browseView.RefreshRequested += async () => await RefreshBrowseAsync();
         _browseView.FolderMenuRequested += (folder, location) =>
         {
@@ -268,41 +287,8 @@ public partial class MainWindow : Window
     private void OnWindowSourceInitialized(object? sender, EventArgs e)
     {
         _sourceInitialized = true;
+        InitializeAppTitleBar();
         ApplyCaptionColors();
-    }
-
-    private void ApplyCaptionColors()
-    {
-        var windowHandle = new WindowInteropHelper(this).Handle;
-        if (windowHandle == IntPtr.Zero)
-        {
-            return;
-        }
-
-        ApplyCaptionColor(windowHandle, DwmwaCaptionColor, TitleBarBackground, nameof(TitleBarBackground));
-        ApplyCaptionColor(windowHandle, DwmwaTextColor, TitleBarForeground, nameof(TitleBarForeground));
-    }
-
-    private void ApplyCaptionColor(IntPtr windowHandle, uint attribute, Brush brush, string propertyName)
-    {
-        if (brush is not SolidColorBrush solidBrush)
-        {
-            _logger.LogWarning("{PropertyName} must be a solid color brush for the native title bar.", propertyName);
-            return;
-        }
-
-        var color = solidBrush.Color;
-        var colorRef = (uint)(color.R | (color.G << 8) | (color.B << 16));
-        var result = DwmSetWindowAttribute(windowHandle, attribute, ref colorRef, sizeof(uint));
-        if (attribute == DwmwaCaptionColor)
-        {
-            _lastCaptionColorResult = result;
-            _lastNativeCaptionColor = result >= 0 ? colorRef : null;
-        }
-        if (result < 0)
-        {
-            _logger.LogWarning("Windows could not apply {PropertyName}; DwmSetWindowAttribute returned 0x{HResult:X8}.", propertyName, result);
-        }
     }
 
     private void ApplySidebarLayout()
@@ -462,6 +448,12 @@ public partial class MainWindow : Window
     {
         var folder = _navigationState.ActiveFolder;
         ToolbarIsland.SetFolderContext(folder?.Name ?? "MediFiler3", folder?.Path ?? "No folder loaded");
+        var breadcrumbPaths = new List<string>();
+        if (PageContent.Content == _browseView)
+            for (var ancestor = folder; ancestor is not null; ancestor = ancestor.Parent)
+                breadcrumbPaths.Add(ancestor.Path);
+        breadcrumbPaths.Reverse();
+        ToolbarIsland.SetFolderBreadcrumbs(breadcrumbPaths);
         var metadata = PageContent.Content == _browseView && _browseView.IsBrowse && _navigationState.CurrentFile is { } file
             ? _browseView.GetViewerMetadata(file) : null;
         ToolbarIsland.SetFileMetadata(ViewerMetadataFormatter.Format(metadata));
@@ -544,7 +536,4 @@ public partial class MainWindow : Window
             // A subsequent folder load replaced this one.
         }
     }
-
-    [DllImport("dwmapi.dll", PreserveSig = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr windowHandle, uint attribute, ref uint value, uint valueSize);
 }

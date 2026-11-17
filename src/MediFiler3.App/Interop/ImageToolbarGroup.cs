@@ -16,28 +16,22 @@ internal sealed class ImageToolbarGroup
         IsDynamicOverflowEnabled = false,
         Height = 48
     };
-    private readonly TextBlock _percentage = new() { Width = 32, VerticalAlignment = VerticalAlignment.Center,
-        Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), FontSize = 12, Margin = new Thickness(-5, 0, 0, 0) };
     private readonly AppBarButton _fit;
 
     public ImageToolbarGroup(Action zoomOut, Action fit, Action zoomIn)
     {
         Control.PrimaryCommands.Add(Button(Symbol.ZoomOut, "Zoom out", zoomOut));
         _fit = Button(Symbol.Zoom, "Reset zoom to fit", fit);
+        _fit.Width = 92;
+        _fit.LabelPosition = CommandBarLabelPosition.Default;
+        Control.DefaultLabelPosition = CommandBarDefaultLabelPosition.Right;
         Control.PrimaryCommands.Add(_fit);
-        Control.PrimaryCommands.Add(new AppBarElementContainer
-        {
-            Content = _percentage,
-            Width = 32,
-            VerticalAlignment = VerticalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        });
         Control.PrimaryCommands.Add(Button(Symbol.ZoomIn, "Zoom in", zoomIn));
     }
 
     public void SetZoom(double zoom)
     {
-        _percentage.Text = $"{zoom:P0}";
+        _fit.Label = $"{zoom:P0}";
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fit, $"Reset zoom to fit, {zoom:P0}");
     }
 
