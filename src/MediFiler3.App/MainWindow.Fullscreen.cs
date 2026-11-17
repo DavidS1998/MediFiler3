@@ -108,12 +108,14 @@ public partial class MainWindow
         // alive over that nonclient area, including the title and system buttons.
         var handle = new WindowInteropHelper(this).Handle;
         var inside = GetFullscreenWindowRect(handle, out var bounds) && cursor.X >= bounds.Left && cursor.X < bounds.Right && cursor.Y >= bounds.Top && cursor.Y < bounds.Bottom;
-        var popup = ToolbarIsland.HasOpenPopup;
+        var popup = ToolbarIsland.HasOpenPopup || TitleBarIsland.HasOpenPopup || TitleBarIsland.IsFileSearchFocused;
         var folderHover = _browseView.IsVisible
             ? _browseView.FolderRevealBounds.Contains(_browseView.PointFromScreen(new Point(cursor.X, cursor.Y)))
             : point.X <= (_fullscreenSidebarVisible ? CompactSidebarWidth + 12 : 8);
-        SetFullscreenChrome(popup || inside && point.Y <= (_fullscreenToolbarVisible ? 60 : 8),
-            inside && folderHover);
+        var toolbarBoundary = _fullscreenToolbarVisible
+            ? ToolbarFrame.TranslatePoint(new Point(0, ToolbarFrame.ActualHeight), this).Y
+            : 8;
+        SetFullscreenChrome(popup || inside && point.Y <= toolbarBoundary, inside && folderHover);
     }
 
     private void SetFullscreenChrome(bool toolbar, bool sidebar)

@@ -69,7 +69,7 @@ public sealed partial class WinUiReaderIsland
             if (_active && version == _interactionVersion && session.Pages.Contains(file)) OpenInBrowseRequested?.Invoke(file);
         }));
     }
-    public void FocusPages() => _scroll?.Focus(Xaml.FocusState.Programmatic);
+    public void FocusPages() => WinUiViewKeyboard.FocusControl(Handle, _scroll);
     private void OnReaderInput()
     {
         var pending = _restore;

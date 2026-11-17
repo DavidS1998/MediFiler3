@@ -253,6 +253,7 @@ public partial class MainWindow : Window
         ApplySidebarLayout();
         _windowLayout = new WindowLayoutController(this, windowLayout, windowPlacement);
         _windowLayout.PlacementFailed += exception => _logger.LogWarning(exception, "Could not capture or reconcile window placement.");
+        InitializeFileFilters(settings);
         InitializeFullscreen();
         InitializeFolderHover();
         logger.LogInformation("Main window initialized.");
@@ -307,6 +308,7 @@ public partial class MainWindow : Window
             _ => _homeView
         };
         _browseView.SetViewerActive(destination is "Browse" or "Gallery" or "Reader");
+        UpdateFileFilterToolbar();
         UpdateFileRuleCaption();
         UpdateViewerControls();
         UpdateFileActionAvailability();
@@ -382,6 +384,20 @@ public partial class MainWindow : Window
     private bool TryHandleViewShortcut(Key key, ModifierKeys modifiers, bool repeat = false)
     {
         if (!IsEnabled || OwnedWindows.OfType<Window>().Any(window => window.IsVisible)) return false;
+        if (TitleBarIsland.IsFileFilterEditorOpen) return false;
+        if (FileFiltersAvailable && !_browseView.IsGalleryMoveDragActive)
+        {
+            if (key == Key.F && modifiers == ModifierKeys.Control)
+            {
+                if (!repeat) Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (FileFiltersAvailable && IsEnabled && !_browseView.IsGalleryMoveDragActive) FocusToolbarFileSearch();
+                }));
+                return true;
+            }
+            if (TitleBarIsland.IsFileSearchFocused && key != Key.F11)
+                return TitleBarIsland.HandleFileSearchKey(key, modifiers, repeat);
+        }
         if (_browseView.IsGalleryMoveDragActive) return false; // Let the native drag loop own Escape/modifiers.
         if (ReaderIsActive && IsHiddenReaderCommandShortcut(key, modifiers)) return false;
         Func<Task>? action = null;

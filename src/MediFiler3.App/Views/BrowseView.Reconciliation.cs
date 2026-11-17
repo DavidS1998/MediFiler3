@@ -155,7 +155,7 @@ public partial class BrowseView
         if (reconcileRoots.Any(root => IsPathWithin(folder.Path, root)))
         {
             var currentFiles = listing.Files.ToDictionary(f => f.FullPath, StringComparer.OrdinalIgnoreCase);
-            var changed = _navigationState.Files.Where(old => !currentFiles.TryGetValue(old.FullPath, out var file) || file != old)
+            var changed = FolderInventory.Where(old => !currentFiles.TryGetValue(old.FullPath, out var file) || file != old)
                 .Select(old => old.FullPath).ToArray();
             if (_thumbnailService is IThumbnailCacheMaintenance maintenance)
                 foreach (var path in changed) await maintenance.InvalidateAsync(path, false, token);
@@ -168,18 +168,26 @@ public partial class BrowseView
                 item.Thumbnail = null; item.UncroppedThumbnail = null; item.ThumbnailTask = null;
             }
         }
+        var previousInventory = FolderInventory;
         var replacement = listing.Files.FirstOrDefault(f => selected is not null && PathsEqual(f.FullPath, selected.FullPath));
         var selectedChanged = selected is null && listing.Files.Count > 0 || selected != replacement || selected is not null &&
             (batch.RescanRoots.Any(root => IsPathWithin(selected.FullPath, root)) || invalidatedPaths.Any(p => PathsEqual(p, selected.FullPath)));
         var thumbnailsChanged = batch.Paths.Any(p => PathsEqual(Path.GetDirectoryName(p) ?? "", folder.Path));
-        if (listing.Files.SequenceEqual(_navigationState.Files) && !selectedChanged && !thumbnailsChanged) return true;
+        if (listing.Files.SequenceEqual(previousInventory) && _inventoryIncomplete == (listing.Errors.Count > 0) &&
+            (!selectedChanged || selected is null && _navigationState.Files.Count == 0) && !thumbnailsChanged) return true;
         // Keep the selected record for unaffected media/text/image presentation.
-        var previousFiles = _navigationState.Files.ToDictionary(f => f.FullPath, StringComparer.OrdinalIgnoreCase);
+        var previousFiles = previousInventory.ToDictionary(f => f.FullPath, StringComparer.OrdinalIgnoreCase);
         var files = listing.Files.Select(f => (!selectedChanged || selected != f) && previousFiles.TryGetValue(f.FullPath, out var old) && old == f ? old : f).ToArray();
-        _navigationState.ReplaceFiles(files);
-        _navigationState.SetCurrentFile(!selectedChanged && selected is not null ? selected : replacement ?? files.ElementAtOrDefault(Math.Clamp(position, 0, Math.Max(0, files.Length - 1))));
-        UpdateFolderFileCounts(folder.Path, files.Length);
-        EmptyFilesNotice.Visibility = files.Length == 0 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        if (!await ProjectFilesAsync(files, token, matches =>
+        {
+            if (!Current() || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
+            StoreInventory(folder, files, listing.Errors.Count > 0);
+            PublishFileResults(matches, selected?.FullPath, position,
+                skipUnchanged: _fileQuery != FileQuery.AllFiles && !selectedChanged);
+            selectedChanged |= selected != _navigationState.CurrentFile;
+            if (listing.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, files.Length);
+            return true;
+        })) return false;
         // Existing carousel items can otherwise keep stale same-size/timestamp images.
         foreach (var item in CarouselItems.OfType<CarouselThumbnailItem>())
         {

@@ -121,7 +121,10 @@ public partial class BrowseView : UserControl
         _folderTreeService = folderTreeService;
         _fileListingService = fileListingService;
         _navigationState = navigationState;
-        _navigationController = new NavigationController(navigationState, folder => ActivateFolderAsync(folder));
+        _navigationController = new NavigationController(navigationState, folder => ActivateFolderAsync(folder))
+        {
+            ProbeFolder = FolderHasQueryMatchAsync
+        };
         _navigationController.FileSelected += PresentSelectedFile;
         _navigationController.StatusChanged += message => StatusChanged?.Invoke(message);
         _thumbnailService = thumbnailService;
@@ -256,6 +259,12 @@ public partial class BrowseView : UserControl
         _fileLoadCancellation?.Dispose();
         _fileLoadCancellation = new CancellationTokenSource();
         var cancellationToken = _fileLoadCancellation.Token;
+        CancelFileQueryWork();
+        _inventoryFolder = null;
+        _inventory = [];
+        _inventoryIncomplete = false;
+        _readerUseFirstMatch = false;
+        _readerKeepQueryPosition = false;
         _navigationState.SetActiveFolder(folder);
         if (reloadCurrent)
         {
@@ -268,27 +277,19 @@ public partial class BrowseView : UserControl
         try
         {
             var result = await _fileListingService.GetFilesAsync(folder.Path, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(_navigationState.ActiveFolder, folder))
+            if (!await ProjectFilesAsync(result.Files, cancellationToken, matches =>
             {
-                return;
-            }
-
-            _navigationState.ReplaceFiles(result.Files);
-            UpdateFolderFileCounts(folder.Path, result.Files.Count);
-            if (preferredFilePath is not null)
-            {
-                var preferredFile = result.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
-                if (preferredFile is not null) _navigationState.SetCurrentFile(preferredFile);
-                else if (result.Files.Count > 0)
-                    _navigationState.SetCurrentFile(result.Files[Math.Clamp(preferredFileIndex, 0, result.Files.Count - 1)]);
-            }
+                if (!ReferenceEquals(_navigationState.ActiveFolder, folder)) return false;
+                StoreInventory(folder, result.Files, result.Errors.Count > 0);
+                if (result.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, result.Files.Count);
+                PublishFileResults(matches, preferredFilePath, preferredFileIndex);
+                return true;
+            })) return;
             if (reloadCurrent)
             {
                 _readerPreferCurrent = IsReader;
                 if (IsGallery) _gallery?.RevealCurrentFile(_navigationState.CurrentFile, preserveSelection: true);
             }
-            EmptyFilesNotice.Visibility = result.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
             _ = RefreshCarouselAsync();
             _ = LoadCurrentImageAsync(clearCurrentImage: true);
             StatusChanged?.Invoke(result.Errors.Count == 0
@@ -313,8 +314,8 @@ public partial class BrowseView : UserControl
         {
             if (ReferenceEquals(_navigationState.ActiveFolder, folder))
             {
-                _navigationState.ReplaceFiles([]);
-                EmptyFilesNotice.Visibility = Visibility.Visible;
+                StoreInventory(folder, [], incomplete: true);
+                PublishFileResults([], null, 0);
                 StatusChanged?.Invoke($"Could not read files in {folder.Name}.");
                 ShowOperationNotice($"Folder could not be read: {exception.Message}");
             }
@@ -840,7 +841,7 @@ public partial class BrowseView : UserControl
             {
                 if (ReferenceEquals(active, initialFolder))
                     await ReloadFilesInActiveFolderAsync(preferredFilePath ?? initialFile?.FullPath,
-                        () => ReferenceEquals(initialFolder, _navigationState.ActiveFolder) && !cancellationToken.IsCancellationRequested, preferredFileIndex);
+                        () => ReferenceEquals(initialFolder, _navigationState.ActiveFolder), preferredFileIndex, token: cancellationToken);
                 else await ActivateFolderAsync(active, preferredFilePath, preferredFileIndex);
             }
             else
@@ -860,27 +861,26 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0, bool preferReaderCurrent = false)
+    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0, bool preferReaderCurrent = false, CancellationToken token = default)
     {
         var folder = _navigationState.ActiveFolder;
         if (folder is null) return;
         try
         {
-            var listing = await _fileListingService.GetFilesAsync(folder.Path, CancellationToken.None);
-            if (contextIsCurrent is not null && !contextIsCurrent()) return;
-            UpdateFolderFileCounts(folder.Path, listing.Files.Count);
-            _navigationState.ReplaceFiles(listing.Files);
-            if (preferredFilePath is not null)
+            var listing = await _fileListingService.GetFilesAsync(folder.Path, token);
+            if (!await ProjectFilesAsync(listing.Files, token, matches =>
             {
-                var preferred = listing.Files.FirstOrDefault(file => PathsEqual(file.FullPath, preferredFilePath));
-                _navigationState.SetCurrentFile(preferred ?? listing.Files.ElementAtOrDefault(Math.Clamp(preferredFileIndex, 0, Math.Max(0, listing.Files.Count - 1))));
-            }
-            // Commit the preference only with a listing that passed its context guard.
-            _readerPreferCurrent |= IsReader && preferReaderCurrent;
-            EmptyFilesNotice.Visibility = listing.Files.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+                if (!ReferenceEquals(folder, _navigationState.ActiveFolder) || contextIsCurrent?.Invoke() == false) return false;
+                if (listing.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, listing.Files.Count);
+                StoreInventory(folder, listing.Files, listing.Errors.Count > 0);
+                _readerPreferCurrent |= IsReader && preferReaderCurrent;
+                PublishFileResults(matches, preferredFilePath, preferredFileIndex);
+                return true;
+            })) return;
             _ = RefreshCarouselAsync();
             _ = LoadCurrentImageAsync(clearCurrentImage: true);
         }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception exception) when (IsOperationUiException(exception))
         {
             ShowOperationNotice($"Folder refresh failed: {exception.Message}");
@@ -998,6 +998,7 @@ public partial class BrowseView : UserControl
     public void StopBackgroundFolderCounts()
     {
         StopTreeFooter();
+        _queryLifetime.Cancel();
         _folderRuleController.Dispose();
         StopWatching();
         _readerDefaultApplication.Dispose();
@@ -1657,7 +1658,9 @@ public partial class BrowseView : UserControl
         _carouselLeadingSpacer = null;
         _carouselTrailingSpacer = null;
         CarouselList.SelectedItem = null;
+        EmptyFilesNotice.Text = "No files in this folder.";
         EmptyFilesNotice.Visibility = Visibility.Visible;
+        FileQueryStatusChanged?.Invoke("");
         ViewerHost.ShowImageMessage(message, detail);
     }
 

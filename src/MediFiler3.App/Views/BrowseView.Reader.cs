@@ -56,7 +56,8 @@ public partial class BrowseView
         if (active && _reader is not null)
         {
             var prefer = !StringComparer.OrdinalIgnoreCase.Equals(_lastReaderCurrent, _navigationState.CurrentFile?.FullPath);
-            _reader.SetFiles(_navigationState.ActiveFolder?.Path, _navigationState.Files, _navigationState.CurrentFile, prefer);
+            _reader.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete);
+            SetReaderListing(prefer);
             _reader.SetTreeInset(_folderOverlayPinned ? FolderOverlay.Width + FolderOverlay.Margin.Left : 26);
         }
         _reader?.SetActive(active);
@@ -64,12 +65,24 @@ public partial class BrowseView
     }
 
     private bool _readerPreferCurrent;
+    private bool _readerUseFirstMatch;
+    private bool _readerKeepQueryPosition;
     private int _readerReconciliationDepth;
     private void RefreshReaderFiles()
     {
         if (!IsReader || !_viewerActive || _reader is null || _readerReconciliationDepth > 0) return;
         var prefer = _readerPreferCurrent; _readerPreferCurrent = false;
-        _reader.SetFiles(_navigationState.ActiveFolder?.Path, _navigationState.Files, _navigationState.CurrentFile, prefer);
+        SetReaderListing(prefer);
+    }
+
+    private void SetReaderListing(bool prefer)
+    {
+        var firstOnMissing = _readerUseFirstMatch;
+        _readerUseFirstMatch = false;
+        var keepPosition = _readerKeepQueryPosition;
+        _readerKeepQueryPosition = false;
+        _reader?.SetFiles(_navigationState.ActiveFolder?.Path, _navigationState.Files, _navigationState.CurrentFile,
+            prefer && !firstOnMissing && !keepPosition, firstOnMissing, keepPosition);
     }
     private IDisposable DeferReaderReconciliation()
     {

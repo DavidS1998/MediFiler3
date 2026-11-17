@@ -6,11 +6,7 @@ namespace MediFiler3.Services;
 
 public sealed class TextViewerHandler(ITextContentService text) : IWindowedViewerHandler<ViewerPresentation>
 {
-    private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
-    { ".txt", ".md", ".log", ".csv", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".config",
-      ".cs", ".xaml", ".html", ".htm", ".css", ".js", ".ts", ".sql", ".ps1", ".sh", ".srt", ".nfo", ".toml" };
-    public bool CanHandle(FileEntry file) => Extensions.Contains(file.Extension) ||
-        file.Name.Equals("README", StringComparison.OrdinalIgnoreCase) || file.Name.Equals("LICENSE", StringComparison.OrdinalIgnoreCase);
+    public bool CanHandle(FileEntry file) => TextFileTypes.Supports(file);
     public ViewerCapabilities Capabilities => ViewerCapabilities.DocumentScroll;
     public Task<ViewerContent<ViewerPresentation>> LoadAsync(FileEntry file, int width, int height, CancellationToken token) =>
         LoadWindowAsync(file, 0, token);

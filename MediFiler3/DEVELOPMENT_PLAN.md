@@ -6,6 +6,7 @@ Long-term milestone tracker, updated 2026-11-15. Requirements and current produc
 
 | Milestone | Delivered scope | State / acceptance |
 |---|---|---|
+| Direct-folder filters (2026-11-17) | Shared query, live native toolbar search, named/recent persistence, filter criteria and sorting, filtered navigation and reconciliation | Implemented. Clean build, 423 unit/filesystem and 237 native checks passed. Recursive collection is the next slice. |
 | Settings and backup retention (2026-11-17) | Persisted Browse overscroll toggle, aligned Settings/Gallery sliders, virtualized backup review with Explorer links, reviewed-ID manual cleanup and safe 30-day startup/hourly expiry | Implemented; clean build, 418 unit/filesystem and 235 full native checks passed, zero failures/skips. Physical user review pending. |
 | Browse responsiveness follow-up (2026-11-17) | Bounded render-priority carousel movement, rapid-jump centering, coalesced/cached caption publication and retained title/breadcrumb resources | Implemented; red/green rapid-navigation regression, 44 focused and 234 full native checks passed, zero failures/skips. User confirmed the carousel feels much better; native properties/layout are not compositor-frame measurements. |
 | WinUI title and navigation updates (2026-11-17) | AppWindowTitleBar colors/extended native title content, native Reader PagerControl on approved experimental SDK, combined Browse zoom AppBarButton, folder-menu icons and text clearance | Implemented; clean build, 411 unit/filesystem and 234 full native checks passed, zero failures/skips. User accepted the UI, then reported responsiveness addressed in the follow-up above. Breadcrumbs accepted by user. |
@@ -105,12 +106,12 @@ These summarize the relevant former JSON reports; the runner can regenerate arti
 
 ## 4. Remaining long-term scope
 
-No next feature is selected or authorized by this list. Discuss scope before implementing.
+The user confirmed the initial filter/search/sorting design on 2026-11-17 and authorized the direct-folder slice. Section 5 records the agreed behavior and deferred releases. Other candidates below remain unselected.
 
 | Candidate | Status / constraints |
 |---|---|
-| Browse/Gallery search and filtering | Explicitly deferred by user to a future phase, not the next active slice. Matching, filtering vs navigation, scope, selection and keyboard UX need design. Reader Go stays numeric. |
-| Additional sorting | Deferred; preserve shared natural filename order until separately scoped |
+| Shared filters/search | Direct-folder filtering and search implemented. Recursive collections are planned for the second slice. Reader Go stays numeric. |
+| Additional sorting | Name, size, Created and Modified sorting are implemented for direct-folder results. Extracted content metadata is deferred |
 | External file drag/import/export or cross-panel dragging | Deferred; do not confuse with implemented folder drops/internal Gallery moves; retain safe operations |
 | Richer metadata, saved collections/bookmarks, more handlers/view modes | Deferred; reference existing files rather than silently duplicating/mutating them |
 | Duplicate detection | Optional future scope; must never automatically delete files |
@@ -118,3 +119,101 @@ No next feature is selected or authorized by this list. Discuss scope before imp
 | Packaging/deployment | No installer/self-contained acceptance yet; decide runtime/distribution requirements separately |
 
 Bulk rename is **not planned**. Extra codecs/FLAC/animated WebP, PDF/document/3D viewing and universal codec support are not implicit requirements of the accepted MVP. Fix reported regressions within existing behavior; do not reopen completed implementation slices solely because exhaustive environmental matrices remain untested.
+
+## 5. Proposed next feature: shared filters, search and sorting
+
+The direct-folder slice delivers shared toolbar search and saved filters, literal filename conditions, categories and basic sorting. Recursive collection is the next slice of the initial feature. Regex and extracted content-metadata sorting are deferred to later releases.
+
+### Requested direction
+
+Filters are accessible on the toolbar in Browse, Gallery and Reader. Users can quickly choose a filter, search without first creating one, and save their search as a reusable filter. Recently used filters appear on the toolbar. A filter can change file loading across all views, including descendant files, grouped versus combined ordering, literal filename include/exclude, file categories and basic sort order. Regex and content-metadata sorts are excluded from the initial release.
+
+### Confirmed model and toolbar workflow
+
+Confirmed design decisions (2026-11-17):
+
+- The active filter follows folder navigation, applying the same criteria/options to each newly active folder's scope; roots remain separate.
+- Active filter/search state is session-only and is not restored across restarts. Restart retains Home/no-root startup and clears the applied query. Saved filter definitions and the recently-used filter list persist like other settings and remain available for explicit selection.
+- Include subfolders disables implicit cross-folder overscroll while active. Preserve the user's global overscroll preference so nonrecursive browsing can use it again; do not overwrite that preference. Reset boundary attempts when changing recursive scope.
+- Date-based ordering offers Created and Modified only. Added to MediFiler/app first-seen and other date fields are not options for this feature.
+- Search uses an editable search bar in the toolbar, not an icon-only search button or a replacement flyout.
+- Filters cannot be combined or stacked: selecting another replaces the active definition. Search changes a temporary effective version, with Unsaved changes and explicit Save/Save as filter, without overwriting the saved definition automatically.
+- Search updates after a short typing pause; Enter applies immediately. Ctrl+F focuses search. Escape from search restores focus to the active viewer without clearing text, resetting the filter or exiting fullscreen; normal viewer/fullscreen Escape applies after focus returns. Text editing owns arrows/selection keys; Ctrl+G remains Reader's numeric Go.
+- The remaining recommendations below are accepted for the initial feature, except regex and extracted content metadata, which are deferred to later releases.
+
+Use one active view definition combining scope, filename conditions, categories and ordering. Search edits an unsaved version of that same definition; it is not a separate search engine with different matching rules. Multiple conditions inside one filter are supported; combining several independently active filters is not allowed.
+
+The tall title bar centers search and places the Filters icon button and a configurable number of recent-filter chips to its right. The flyout shows filename conditions, categories, sort and direction, Clear filter, and saved-filter actions. Recent filtering history is accessible through the chips.
+
+1. Type ordinary filename text to narrow the active folder results. Literal, case-insensitive Contains is the default; filenames include extensions and paths are not implicitly searched. No query-language syntax is required initially.
+2. Open filter options for includes/exclusions, recursion, categories and basic order. Show an explicit active/Unsaved summary. No regex or content-metadata options in the initial release.
+3. Save current as filter stores the entire current definition, including scope and sort, under a name. Editing a saved filter creates unsaved changes until explicitly saved; applying temporary text does not overwrite it.
+4. Clearing the search field removes its temporary text condition while retaining the other options. Clear filter resets the entire definition to today's direct-folder/all-category/natural-name behavior. These actions need distinct labels.
+5. Applying a saved filter updates its recent-use position; typing characters does not create MRU entries. Definitions and the bounded recent-filter list persist locally as settings. The applied filter/search is not restored on restart; start without a filter with existing Home/no-root behavior.
+
+Ctrl+F focuses search in any view. Search editing owns text selection, arrows and Enter; it must not trigger Gallery selection/handoff or Reader page navigation. Escape restores active-viewer focus and leaves the query intact, taking precedence over fullscreen exit while search has focus. Ctrl+G remains Reader's numeric Go. Recent-filter chips select one filter, not combine several. Keep saved names and active/Unsaved state visible.
+
+### Confirmed initial options and semantics
+
+| Option | Initial behavior | Notes |
+|---|---|---|
+| Scope | Current folder; optional Include subfolders, always relative to the active folder and its owning loaded root | Active filters follow folder navigation, but do not survive restart. Saved definitions contain no fixed folder path by default |
+| Recursive ordering | Keep folders together: current-folder files first, then descendants in natural folder-tree preorder; chosen file sort applies within each folder | No visual group headers initially |
+| Combined ordering | Apply chosen file sort across the entire collected set, disregarding folder boundaries | Show relative-folder context for recursive results, particularly duplicate names |
+| Filename includes | Literal case-insensitive match on filename including extension | One Includes field initially; toolbar search is another condition and replaces its own previous text |
+| Filename excludes | Literal case-insensitive exclusion; AND with other conditions | One Excludes field initially; no expression builder |
+| Categories | All by default, otherwise a multi-select subset: Images, Video, Audio, Text, Other | Other preserves unsupported files; categories describe routing, not successful codec decoding |
+| Sort | Natural filename ascending by default; size, Modified date, Created date, ascending/descending | Created and Modified only; extracted content-metadata sorting is deferred |
+
+For the user's example, folder grouping gives `B.txt, Subfolder/A.txt`; a combined filename sort gives `Subfolder/A.txt, B.txt`. Combining is not sorting by the relative path: sort by filename, then use natural relative path and a deterministic path/identity tie-breaker for equal keys. Group order dominates the selected file sort when grouping is enabled. No random or discovery-order tie-breakers.
+
+Filename conditions and category constraints combine with AND; selected categories combine with OR. Toolbar search matches its entire text literally without automatic word splitting, path/content search or query-language syntax. Regex punctuation is ordinary filename text. Regex is deferred; any later design must specify validation, supported features, bounded matching and last-valid-result behavior ([Microsoft guidance](https://learn.microsoft.com/en-us/dotnet/standard/base-types/backtracking-in-regular-expressions)). No regex controls/scaffolding are included in the initial scope.
+
+Reader consumes the image subset of the same filtered, ordered collection. Selecting only Video produces no Reader pages with a clear explanation; it must not silently ignore the category filter. Changing views must not rescan roots, change the active filter, or load inactive viewers.
+
+### What should “recent” mean?
+
+Offer explicit Modified date and Created date, rather than one ambiguous Recent choice. Recommend Modified, newest first, as the first date-based preset. Created is a filesystem timestamp, not proof of when content was authored or added to MediFiler; filesystem timestamps can have caveats such as tunneling/caching ([Microsoft documentation](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.creationtime)).
+
+Confirmed: do not offer Added to MediFiler or maintain first-seen history for this feature. Created and Modified are the only date choices; do not relabel Created as Added or introduce Date taken as another date sort.
+
+### Extracted metadata: deferred release and performance notes
+
+Resolution, full-file text character counts and media-duration sorts, including their extraction/index/cache work, are deferred to a later release and do not block the initial feature. Basic filesystem properties (size, Created and Modified) remain in the initial scope. The recommendations below are future considerations, not authorization to implement metadata now.
+
+| Key | Available/cost in this project | Recommendation |
+|---|---|---|
+| Name/category | Already represented or derivable without reading contents | First slice; category is not a decode test |
+| Byte size/modified time | Already in FileEntry; sorting an existing inventory needs no content reads | First slice; fresh enumeration can still be slow on network/removable storage |
+| Created time | Additional filesystem metadata, not content indexing | Required initial basic sort; obtain through enumeration/listing metadata |
+| Image resolution | Source dimensions from metadata where supported; one metadata read per uncached image is still I/O | Later opt-in background indexing; define Resolution as pixel area (width × height), with width/height optional later |
+| Text character count | Exact whole-file counts require reading and decoding whole files | Later opt-in indexing; the current 1 MiB viewer window count is not a whole-file count |
+| Audio/video duration | Container/provider metadata with codec/provider variability | Future scope after image/text indexing proves useful |
+
+For a later metadata release, restrict specialized sorts to compatible categories. Character-count definitions and metadata publication can be resolved then; never substitute bytes, words or a partial viewer window. Resolution would use source dimensions, not cropped thumbnails/display size. Missing metadata should sort last in either direction, not as zero.
+
+Even a virtualized Gallery needs the sort key for every candidate to compute an exact global order. Fetching keys only for visible tiles cannot establish that order. Avoid full image pixel decoding solely to obtain dimensions where metadata APIs suffice; this does not promise that every codec's internals are cheap. Exact text counts are substantially more expensive than name/size sorts. A large uncached collection can therefore have noticeable indexing time even if only a few items are visible.
+
+Suggested safeguards: bounded worker concurrency and memory, cancellation/stale-query rejection, cached metadata keyed by file identity/version and the existing freshness signals, visible indexing progress, and no heavy scans merely from opening the filter menu. Never perform I/O in sort comparers or rendering. Keep the existing reading/current-file anchor while indexing and publish a completed metadata sort in a controlled update, rather than repeatedly reshuffling items as each key arrives. Unknown fields and partial discovery need explicit status; no universal timing promise before real-library/network measurement.
+
+### Recursive loading, navigation and safe operations
+
+Recursive collection changes today's direct-folder-only listing contract; it is not merely a toolbar addition. Keep loaded roots separate. Do not traverse reparse points or managed backup storage, and retain Hidden/System exclusions and partial-error reporting. Folder presentation Hide rules should not silently remove files from a recursive query unless a separate filter condition explicitly does so.
+
+Keep source inventory and ordered matching results distinct. Every result needs its full path, real parent folder and owning loaded-root identity, including overlapping roots. Recursive results must not lose physical ownership or silently duplicate the same path through overlapping traversal. The active folder remains the scope anchor; browsing a descendant result does not navigate the tree on every file change.
+
+Visible result positions drive Browse/carousel/title and Gallery; Reader has its own image-subset page positions. Show matching-versus-total/discovered counts separately from tree counts. Tree direct/total counts and count-based folder rules remain physical/unfiltered. Query edits retain the current result index or Reader page index and clamp it when the result list shrinks. Reader retains the fractional position on the page. Gallery selection is intersected with the new results; do not automatically select new matches or leave invisible files as mutation targets. Clear filter restores the full scope definition; clearing only search must not reset recursion/sort.
+
+Moves, rename, recycle and history must use each result's real source path/root. A recursive Gallery selection can span source folders; destination validation, same-folder no-ops, grouped outcomes and reconciliation need per-file handling. New folder and tree commands still act on the selected tree folder. Undo may restore a file that does not match the active filter: explain that result instead of overriding the filter or inserting an invisible exception. No filter/search/sort option itself mutates files.
+
+Disable implicit cross-folder overscroll while Include subfolders is active, retaining the global preference for nonrecursive browsing, to avoid revisiting descendants already in the collection. In nonrecursive filtered mode, retain the five-attempt behavior and seek the next folder with matching results using bounded cancellable work.
+
+Recursive discovery is progressive/cancellable with explicit incomplete/error states. Keep anchors during incremental publication and apply sorts in coalesced snapshots. Watcher invalidation, F5, folder renames and operation mappings must refresh both source inventory and results without discarding unaffected thumbnails/Reader pages. Do not claim “no matches” while discovery or required metadata is still pending.
+
+### Implementation slices
+
+1. Direct-folder shared query delivered with toolbar search/selector, persistent saved/recent filters, literal include/exclude, categories and basic sorts. Retains the default unfiltered listing and Reader's numeric Go.
+2. Recursive grouped/combined collections with real source ownership, progressive discovery, cancellation, watcher/operation/history reconciliation, selection/count/overscroll semantics and scale characterization. This is part of the agreed initial feature, even if developed as a separate slice, and must validate safe multi-folder operations/history before acceptance.
+3. Regex and extracted metadata require separately scoped later releases. Added/first-seen dates remain excluded.
+
+Acceptance must include all three views/carousel; saved/recent persistence with active-query reset after restart; follow-folder scope; live search/Enter/Escape/editor keys; literal phrases/punctuation; category combinations; empty/partial/error results; duplicate names; natural/equal-key ordering; first-result fallback/selection pruning/counters; five-attempt filtered overscroll and recursive suppression; cancellation/inactive work; Home/Settings retention; rapid edits; scope changes during dialogs; recursive operations/history; overlapping roots; no-link traversal; watcher/F5 freshness; and large real-file collections. Existing Reader pixel/fraction/native-lifetime and safety assertions remain mandatory.

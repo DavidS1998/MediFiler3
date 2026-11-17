@@ -19,21 +19,25 @@ Updated 2026-11-17. Short-term issues, unresolved decisions and immediate action
 
 ## Decisions still open
 
+The direct-folder filter/search/sort slice is implemented. [Development plan, section 5](DEVELOPMENT_PLAN.md#5-proposed-next-feature-shared-filters-search-and-sorting) defines the agreed recursive second slice. Physical toolbar focus, sizing, accessibility and mixed-DPI behavior still need targeted review.
+
 Toolbar breadcrumbs and the WinUI title/pager/menu changes were accepted by the user on 2026-11-17. They confirmed the refined carousel feels much better. Coalesced/cached caption publication is implemented; remaining physical inter-compositor color timing is unconfirmed. The breadcrumb rollback switch remains. User authorized the experimental SDK for actual PagerControl; framework-dependent targets need the matching experimental runtime.
 
 Settings now includes a persisted Browse overscroll switch (default on), 320px Carousel slider and consistently centered 150px Gallery toolbar sliders. Backup review/location links and reviewed-ID manual cleanup are delivered. User-authorized 30-day expiry replaces the former no-expiry policy: startup after recovery and hourly while running, based on last successful journaled preservation rather than source timestamps. Protected/unavailable/recovery backups remain for retry. Physical Settings/Explorer-link review is pending; test link invocation records a callback rather than launching Explorer.
 
-Ordered name/count/all-folder rules, direct-file ranges, editable exact-zero and disabled collapse-all defaults, root-aware expansion/Hide, live saved-rule previews and grouped Settings cards are implemented. File name/color rules now color the Browse native title bar and Gallery filename gradient; Reader is excluded. Arbitrary depth-palette editing remains future scope. Search remains deferred; hidden Reader/Gallery controls must not be restored incidentally.
+Ordered name/count/all-folder rules, direct-file ranges, editable exact-zero and disabled collapse-all defaults, root-aware expansion/Hide, live saved-rule previews and grouped Settings cards are implemented. File name/color rules now color the Browse native title bar and Gallery filename gradient; Reader is excluded. Arbitrary depth-palette editing remains future scope. For query work, hidden Reader/Gallery controls must not be restored incidentally.
 
 The user accepted the measured roughly one-second clear of 10,000 Gallery selections on 2026-11-14. It is not an outstanding performance issue; optimization is unnecessary.
 
 ## Immediate next steps
 
-1. Follow the user's next request within the current specification. Ordered name/count rules, color/expansion actions, depth fallback and Settings cards are delivered; do not automatically implement depth-palette editing or search.
+1. Continue with the recursive slice when authorized. Preserve physical ownership for multi-folder file operations and verify progressive discovery, cancellation, watcher reconciliation and recursive overscroll suppression.
 2. On native crash recurrence preserve diagnostics before changing behavior. Keep the documented Reader scroll/dimension regression and exact pixel/fraction assertions.
 3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
+
+Direct-folder filters (2026-11-17) passed a clean temporary-output solution build, 423 unit/filesystem tests and 237 full native checks with zero warnings, failures or skips. The focused filter checks cover shared results, native Gallery projection/selection, Reader anchor restoration, filtered F5, SQLite saved/recent persistence, and posted native Enter/Escape in fullscreen. Logs are `%TEMP%\MediFiler3Filter-unit-final.log` and `%TEMP%\MediFiler3Filter-full-final.log`. Manual cross-monitor, mixed-DPI and assistive-technology review remains pending.
 
 Settings/retention (2026-11-17): clean temporary-output solution build, zero warnings/errors; 418 unit/filesystem tests and 235 full native checks passed, zero failures/skips, normal exit. Logs `%TEMP%\MediFiler3Settings-unit-final.log` and `%TEMP%\MediFiler3Settings-full-final.log`; full artifacts `%TEMP%\MediFiler3Integration-f976730c802f481087bc9ef5e5489020`. Coverage includes overscroll persistence/legacy defaults/live native toggle and boundary reset, slider geometry, backup preview virtualization/location callback, manual cancellation/scoped IDs, exact 30-day age versus file timestamps, Undo/Redo retention age, locked deletion retry, group recovery guards and startup worker/clean stop. Prior format/Reader/fullscreen/operations checks remain passing; assertions/tolerances were not weakened. Existing physical/DPI/network/codec limits still apply.
 

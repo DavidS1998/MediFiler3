@@ -28,7 +28,7 @@ public sealed class FileSystemFileListingService : IFileListingService
                     }
 
                     var info = new FileInfo(path);
-                    files.Add(new FileEntry(path, info.Name, info.Length, info.LastWriteTimeUtc));
+                    files.Add(new FileEntry(path, info.Name, info.Length, info.LastWriteTimeUtc) { CreatedUtc = info.CreationTimeUtc });
                 }
                 catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or
                                                    System.Security.SecurityException)
@@ -43,7 +43,11 @@ public sealed class FileSystemFileListingService : IFileListingService
             errors.Add($"{folderPath}: {exception.Message}");
         }
 
-        files.Sort((left, right) => WindowsFileNameComparer.Instance.Compare(left.Name, right.Name));
+        files.Sort((left, right) =>
+        {
+            var natural = WindowsFileNameComparer.Instance.Compare(left.Name, right.Name);
+            return natural != 0 ? natural : StringComparer.Ordinal.Compare(left.FullPath, right.FullPath);
+        });
         return new FileListingResult(files, errors);
     }
 

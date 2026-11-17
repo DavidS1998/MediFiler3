@@ -88,6 +88,7 @@ public partial class BrowseView
         {
             _gallery = new WinUiGalleryIsland(_thumbnailService, _navigationState.GallerySelection);
             _gallery.SetFileNameRules(_fileNameRules);
+            _gallery.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete);
             _gallery.FileSelected += file =>
             {
                 if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;

@@ -26,6 +26,15 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
     private ToggleSwitch? _carouselToggle;
     private ToggleSwitch? _folderDepthToggle;
     private ToggleSwitch? _overscrollToggle;
+    private Slider? _toolbarFilterTagSlider;
+    private int _toolbarFilterTagCount = 3;
+    public event Action<int>? ToolbarFilterTagCountChanged;
+    public void SetToolbarFilterTagCount(int count)
+    {
+        _toolbarFilterTagCount = count;
+        if (_toolbarFilterTagSlider is not null) _toolbarFilterTagSlider.Value = count;
+    }
+
     private bool _overscrollEnabled = true;
     public event Action<bool>? OverscrollEnabledChanged;
     public void SetOverscrollEnabled(bool enabled)
@@ -141,6 +150,22 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         };
         filesPage.Children.Add(_overscrollToggle);
         filesPage.Children.Add(Description("In Browse, five attempts past the first or last file open the adjacent nonempty folder. Turn off to stay in the current folder."));
+        _toolbarFilterTagSlider = new Slider
+        {
+            Header = $"Recent filter tags on toolbar: {_toolbarFilterTagCount}", Minimum = 0,
+            Maximum = MediFiler3.Application.Persistence.ApplicationSettings.MaximumToolbarFilterTags,
+            StepFrequency = 1, Value = _toolbarFilterTagCount, Width = 320,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left
+        };
+        _toolbarFilterTagSlider.ValueChanged += (_, args) =>
+        {
+            var count = (int)Math.Round(args.NewValue);
+            _toolbarFilterTagSlider.Header = $"Recent filter tags on toolbar: {count}";
+            if (_toolbarFilterTagCount == count) return;
+            _toolbarFilterTagCount = count;
+            ToolbarFilterTagCountChanged?.Invoke(count);
+        };
+        filesPage.Children.Add(_toolbarFilterTagSlider);
         AddFileRuleSettings(filesPage);
         var carouselPage = SettingsCard(page, "Carousel");
         _carouselToggle = new ToggleSwitch { Header = "Show carousel", IsOn = _carouselEnabled };

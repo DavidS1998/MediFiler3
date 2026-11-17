@@ -46,9 +46,8 @@ public sealed class WindowLayoutController : IDisposable
         window.Top = layout.Top;
         window.Width = layout.Width;
         window.Height = layout.Height;
-        // WPF rejects showing a maximized window with ShowActivated=false. Background
-        // windows can maximize after Loaded; ordinary startup maximizes before Show.
-        window.WindowState = layout.Maximized && window.ShowActivated ? WindowState.Maximized : WindowState.Normal;
+        // Register the native caption on a normal HWND before applying startup maximization.
+        window.WindowState = WindowState.Normal;
         _captureTimer = new DispatcherTimer(DispatcherPriority.Background, window.Dispatcher) { Interval = TimeSpan.FromMilliseconds(100) };
         _captureTimer.Tick += OnCaptureTick;
         window.SourceInitialized += OnSourceInitialized;

@@ -12,7 +12,7 @@ public partial class MainWindow
     private AppWindow? _appWindow;
     private bool _titleBarClosed;
     private HwndSource? _titleBarSource;
-    private (int Width, int Height, int Left, int Right, bool Shown)? _titleBarGeometry;
+    private (int Width, int Height, int Left, int Right, bool Shown, int SearchLeft, int SearchWidth, int ControlsRight)? _titleBarGeometry;
     private bool _captionPresentationQueued;
     private (Windows.UI.Color Background, Windows.UI.Color Foreground)? _appliedCaptionPalette;
 
@@ -21,10 +21,13 @@ public partial class MainWindow
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(new WindowInteropHelper(this).Handle));
         if (!AppWindowTitleBar.IsCustomizationSupported()) return;
         _appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
+        _appWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         _titleBarSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         _titleBarSource?.AddHook(TitleBarWindowMessage);
         _appWindow.Changed += OnAppWindowChanged;
         SizeChanged += OnTitleBarSizeChanged;
+        ToolbarIsland.PrimaryCommandCenterChanged += UpdateAppTitleBarLayout;
+        StateChanged += OnTitleBarStateChanged;
         DpiChanged += OnTitleBarDpiChanged;
         Activated += OnTitleBarActivationChanged;
         Deactivated += OnTitleBarActivationChanged;
@@ -36,6 +39,8 @@ public partial class MainWindow
             if (_appWindow is not null) _appWindow.Changed -= OnAppWindowChanged;
             _appWindow = null;
             SizeChanged -= OnTitleBarSizeChanged;
+            ToolbarIsland.PrimaryCommandCenterChanged -= UpdateAppTitleBarLayout;
+            StateChanged -= OnTitleBarStateChanged;
             DpiChanged -= OnTitleBarDpiChanged;
             Activated -= OnTitleBarActivationChanged;
             Deactivated -= OnTitleBarActivationChanged;
@@ -53,7 +58,7 @@ public partial class MainWindow
         var point = TitleBarIsland.PointFromScreen(screen);
         if (point.X < 0 || point.Y < 0 || point.X >= TitleBarIsland.ActualWidth || point.Y >= TitleBarIsland.ActualHeight) return 0;
         handled = true;
-        return 2; // HTCAPTION: native drag, double-click maximize and system context menu.
+        return TitleBarIsland.ContainsFileControlPoint(point) ? 1 : 2; // HTCLIENT for search and filters; HTCAPTION elsewhere.
     }
 
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
@@ -62,6 +67,17 @@ public partial class MainWindow
             Dispatcher.BeginInvoke(new Action(UpdateAppTitleBarLayout));
     }
     private void OnTitleBarSizeChanged(object sender, SizeChangedEventArgs args) => UpdateAppTitleBarLayout();
+    private void OnTitleBarStateChanged(object? sender, EventArgs args)
+    {
+        if (WindowState == WindowState.Minimized) return;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+        {
+            // A native state transition can reset caption regions without changing the measured row.
+            _titleBarGeometry = null;
+            UpdateAppTitleBarLayout();
+        }));
+    }
+
     private void OnTitleBarDpiChanged(object sender, DpiChangedEventArgs args) => UpdateAppTitleBarLayout();
     private void OnTitleBarActivationChanged(object? sender, EventArgs args) => ApplyCaptionColors();
 
@@ -82,14 +98,34 @@ public partial class MainWindow
         TitleBarFrame.Height = Math.Max(24, bar.Height / dpi.DpiScaleY);
         TitleBarIsland.Margin = new Thickness(bar.LeftInset / dpi.DpiScaleX, 0, bar.RightInset / dpi.DpiScaleX, 0);
         // Coordinates are physical client pixels; leave Windows' caption button insets untouched.
-        var geometry = (_appWindow.ClientSize.Width, (int)Math.Round(TitleBarFrame.Height * dpi.DpiScaleY),
-            bar.LeftInset, bar.RightInset, shown);
+        var width = _appWindow.ClientSize.Width;
+        var height = (int)Math.Round(TitleBarFrame.Height * dpi.DpiScaleY);
+        var left = bar.LeftInset;
+        var rightEdge = Math.Max(left, width - bar.RightInset);
+        var searchWidth = shown && FileFiltersAvailable
+            ? Math.Min((int)Math.Round(320 * dpi.DpiScaleX), Math.Max(0, rightEdge - left) / 2) : 0;
+        var searchCenter = width / 2d;
+        if (ToolbarIsland.PrimaryCommandCenter is { } commandCenter && ToolbarIsland.IsVisible)
+            searchCenter = ToolbarIsland.TranslatePoint(new Point(commandCenter, 0), this).X * dpi.DpiScaleX;
+        var searchLeft = Math.Clamp((int)Math.Round(searchCenter - searchWidth / 2d), left, rightEdge - searchWidth);
+        var searchHeight = Math.Min(34, TitleBarFrame.Height - 4);
+        TitleBarIsland.SetSearchBounds(searchWidth > 0
+            ? new Rect((searchLeft - left) / dpi.DpiScaleX, (TitleBarFrame.Height - searchHeight) / 2,
+                searchWidth / dpi.DpiScaleX, searchHeight)
+            : Rect.Empty);
+
+        var filterLeft = Math.Min(rightEdge, searchLeft + searchWidth + (int)Math.Round(8 * dpi.DpiScaleX));
+        var filtersWidth = TitleBarIsland.SetFilterBounds((filterLeft - left) / dpi.DpiScaleX,
+            Math.Max(0, (TitleBarFrame.Height - 34) / 2), (rightEdge - filterLeft) / dpi.DpiScaleX);
+        var controlsRight = Math.Min(rightEdge, filterLeft + (int)Math.Round(filtersWidth * dpi.DpiScaleX));
+        var geometry = (width, height, left, bar.RightInset, shown, searchLeft, searchWidth, controlsRight);
         if (_titleBarGeometry != geometry)
         {
             _titleBarGeometry = geometry;
-            bar.SetDragRectangles(shown
-                ? [new RectInt32(bar.LeftInset, 0, Math.Max(0, geometry.Item1 - bar.LeftInset - bar.RightInset), geometry.Item2)]
-                : []);
+            bar.SetDragRectangles(!shown ? [] : searchWidth > 0
+                ? [new RectInt32(left, 0, searchLeft - left, height),
+                   new RectInt32(controlsRight, 0, rightEdge - controlsRight, height)]
+                : [new RectInt32(left, 0, rightEdge - left, height)]);
         }
         ApplyCaptionColors();
     }

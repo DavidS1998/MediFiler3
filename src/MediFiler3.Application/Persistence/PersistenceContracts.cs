@@ -11,8 +11,11 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100,
     bool FolderDepthShadingEnabled = true, IReadOnlyList<FolderNameRule>? FolderNameRules = null,
     bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false, IReadOnlyList<FileNameColorRule>? FileNameRules = null,
-    bool BrowseOverscrollEnabled = true)
+    bool BrowseOverscrollEnabled = true, IReadOnlyList<SavedFileFilter>? SavedFileFilters = null,
+    IReadOnlyList<Guid>? RecentFileFilters = null, int ToolbarFilterTagCount = 3)
 {
+    public const int MaximumToolbarFilterTags = 5;
+
     public IReadOnlyList<FolderNameRule> GetFolderRules()
     {
         var existing = (FolderNameRules ?? []).ToList();
@@ -46,6 +49,9 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     {
         FolderNameRule.ValidateAll(FolderNameRules);
         FileNameColorRule.ValidateAll(FileNameRules);
+        SavedFileFilter.Validate(SavedFileFilters, RecentFileFilters);
+        if (ToolbarFilterTagCount is < 0 or > MaximumToolbarFilterTags)
+            throw new ArgumentOutOfRangeException(nameof(ToolbarFilterTagCount));
         GetReaderOptions().Validate();
         if (!double.IsFinite(Volume) || Volume is < 0 or > 1)
             throw new ArgumentOutOfRangeException(nameof(Volume));

@@ -42,6 +42,14 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     private DesktopWindowXamlSource? _source;
     private GridView? _grid;
     private TextBlock? _empty;
+    private string _emptyMessage = "No files in this folder. Select a folder or add folders to begin.";
+
+    public void SetFilterNotice(bool filtered, bool incomplete)
+    {
+        _emptyMessage = incomplete ? "The folder listing is incomplete." :
+            filtered ? "No files match the current filter." : "No files in this folder. Select a folder or add folders to begin.";
+        if (_empty is not null) _empty.Text = _emptyMessage;
+    }
     private readonly GalleryFiles _files = [];
     private FileEntry? _current;
     private readonly Dictionary<SelectorItem, Tile> _tiles = [];
@@ -123,10 +131,14 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         {
             // Keep the native source and unchanged items stable when a watcher changes one file.
             var paths = next.Select(f => f.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (!_files.Any(file => paths.Contains(file.FullPath)))
+            var surviving = _files.Where(file => paths.Contains(file.FullPath)).Select(file => file.FullPath).ToArray();
+            var oldPaths = surviving.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var changedCount = _files.Count + next.Length - 2 * surviving.Length;
+            if (surviving.Length == 0 || changedCount > 256 || !surviving.SequenceEqual(
+                next.Where(file => oldPaths.Contains(file.FullPath)).Select(file => file.FullPath), StringComparer.OrdinalIgnoreCase))
             {
-                // A wholly different folder has no surviving containers to retain. Publish
-                // one reset rather than exposing thousands of transient indices to WinUI.
+                // Disjoint listings, large changes and reorders publish one reset. The existing
+                // source and decoded cache survive, with no per-file native move notifications.
                 CancelPendingReveal();
                 _grid?.SelectedItems.Clear();
                 if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
@@ -138,7 +150,6 @@ public sealed partial class WinUiGalleryIsland : HwndHost
             {
                 for (var i = _files.Count - 1; i >= 0; i--)
                     if (!paths.Contains(_files[i].FullPath)) _files.RemoveAt(i);
-                var existingPaths = _files.Select(f => f.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 for (var i = 0; i < next.Length; i++)
                 {
                     if (i < _files.Count && string.Equals(_files[i].FullPath, next[i].FullPath, StringComparison.OrdinalIgnoreCase))
@@ -146,13 +157,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
                         if (_files[i] != next[i]) _files[i] = next[i];
                         continue;
                     }
-                    var existing = -1;
-                    // Usually an insertion. Only search for a move if that path is still in the source.
-                    if (existingPaths.Contains(next[i].FullPath))
-                        for (var j = i + 1; j < _files.Count; j++)
-                            if (string.Equals(_files[j].FullPath, next[i].FullPath, StringComparison.OrdinalIgnoreCase)) { existing = j; break; }
-                    if (existing >= 0) { _files.Move(existing, i); if (_files[i] != next[i]) _files[i] = next[i]; }
-                    else _files.Insert(i, next[i]);
+                    _files.Insert(i, next[i]);
                 }
             }
             // Input can arrive between session publication and this deferred native diff.
@@ -362,7 +367,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
             if (point.X < 0 || point.Y < 0 || point.X >= _grid.ActualWidth || point.Y >= _grid.ActualHeight)
                 _hoverSelection.Reset();
         };
-        _empty = new TextBlock { Text = "No files in this folder. Select a folder or add folders to begin.",
+        _empty = new TextBlock { Text = _emptyMessage,
             HorizontalAlignment = Xaml.HorizontalAlignment.Center, VerticalAlignment = Xaml.VerticalAlignment.Center,
             IsHitTestVisible = false };
         root.Children.Add(_grid); root.Children.Add(_empty);
@@ -642,6 +647,8 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         if (_source is not null) { _source.Content = null; _source.Dispose(); _source = null; }
         _grid = null; _empty = null; _handle = 0; _regionKey = null;
     }
+    public void FocusItems() => WinUiViewKeyboard.FocusControl(Handle, _grid);
+
     protected override bool TabIntoCore(System.Windows.Input.TraversalRequest request) => _source?.NavigateFocus(
         new XamlSourceFocusNavigationRequest(XamlSourceFocusNavigationReason.First)).WasFocusMoved == true;
     [DllImport("gdi32.dll")] private static extern nint CreateRectRgn(int left, int top, int right, int bottom);

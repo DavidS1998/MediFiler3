@@ -15,6 +15,7 @@ namespace MediFiler3.Views;
 
 public partial class ViewerHostView : UserControl
 {
+    public void FocusViewer() => ImageViewport.Focus();
     private ViewerCoordinator<ViewerPresentation>? _coordinator;
     private FileEntry? _currentFile;
     private FileEntry? _displayedBitmapFile;

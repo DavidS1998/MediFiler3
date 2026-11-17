@@ -9,6 +9,40 @@ public sealed class NavigationControllerTests
     private static FileEntry File(string name) => new(name, name, 1, DateTime.UtcNow);
 
     [Fact]
+    public async Task FilteredOverscrollOnlyActivatesMatchingFolders()
+    {
+        var skipped = new FolderTreeEntry("Skipped", "root/skipped");
+        var target = new FolderTreeEntry("Target", "root/target");
+        var root = new FolderTreeEntry("Root", "root", [skipped, target]);
+        var state = new NavigationSessionState();
+        state.ReplaceRoots([root]);
+        state.SetActiveFolder(root);
+        state.ReplaceFiles([File("only")]);
+        var activated = new TaskCompletionSource<FolderTreeEntry>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var controller = new NavigationController(state, folder =>
+        {
+            state.SetActiveFolder(folder);
+            state.ReplaceFiles([File("next")]);
+            activated.TrySetResult(folder);
+            return Task.CompletedTask;
+        })
+        {
+            ProbeFolder = async (folder, token) =>
+            {
+                await Task.Yield();
+                token.ThrowIfCancellationRequested();
+                return ReferenceEquals(folder, target);
+            }
+        };
+
+        for (var attempt = 0; attempt < 4; attempt++) controller.NavigateByOneFile(1);
+        Assert.Same(root, state.ActiveFolder);
+        Assert.False(activated.Task.IsCompleted);
+        controller.NavigateByOneFile(1);
+        Assert.Same(target, await activated.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
     public void DisabledOverscrollKeepsNormalNavigationAndResetsAccumulatedBoundaryAttempts()
     {
         var root = new FolderTreeEntry("Root", "root");

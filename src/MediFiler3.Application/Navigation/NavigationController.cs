@@ -7,6 +7,8 @@ public sealed class NavigationController(NavigationSessionState navigationState,
 {
     private readonly NavigationSessionState _navigationState = navigationState;
     private readonly Func<FolderTreeEntry, Task> _activateFolder = activateFolder;
+    private CancellationTokenSource? _overscrollWork;
+    public Func<FolderTreeEntry, CancellationToken, Task<bool>>? ProbeFolder { get; set; }
     private int _overscrollDirection;
     private int _overscrollCount;
     private bool _changingFolderFromOverscroll;
@@ -44,6 +46,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
     {
         if (!_navigationState.ContainsFile(file)) return;
         _contextVersion++;
+        _overscrollWork?.Cancel();
         _navigationState.SetCurrentFile(file);
         ResetBoundaryAttempts();
         FileSelected?.Invoke(file);
@@ -52,6 +55,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
     public void CancelPendingNavigation()
     {
         _contextVersion++;
+        _overscrollWork?.Cancel();
         ResetBoundaryAttempts();
     }
 
@@ -82,6 +86,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
         if (!_overscrollEnabled) return;
         if (_overscrollDirection != direction)
         {
+            if (_changingFolderFromOverscroll && _overscrollDirection != 0) CancelPendingNavigation();
             _overscrollDirection = direction;
             _overscrollCount = 0;
         }
@@ -100,6 +105,8 @@ public sealed class NavigationController(NavigationSessionState navigationState,
     private async Task ActivateAdjacentFolderWithFilesAsync(int direction)
     {
         var version = _contextVersion;
+        using var work = new CancellationTokenSource();
+        _overscrollWork = work;
         try
         {
             var originalFolder = _navigationState.ActiveFolder;
@@ -108,6 +115,8 @@ public sealed class NavigationController(NavigationSessionState navigationState,
             for (var index = currentIndex + direction; index >= 0 && index < folders.Length; index += direction)
             {
                 var folder = folders[index];
+                if (ProbeFolder is not null && !await ProbeFolder(folder, work.Token)) continue;
+                if (version != _contextVersion) return;
                 await _activateFolder(folder);
                 if (version != _contextVersion) return;
                 folder.IsSelected = true;
@@ -119,7 +128,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
                 }
             }
 
-            if (originalFolder is not null)
+            if (originalFolder is not null && !ReferenceEquals(originalFolder, _navigationState.ActiveFolder))
             {
                 await _activateFolder(originalFolder);
                 originalFolder.IsSelected = true;
@@ -127,8 +136,10 @@ public sealed class NavigationController(NavigationSessionState navigationState,
 
             StatusChanged?.Invoke(direction > 0 ? "No files in later folders." : "No files in earlier folders.");
         }
+        catch (OperationCanceledException) when (work.IsCancellationRequested) { }
         finally
         {
+            _overscrollWork = null;
             _changingFolderFromOverscroll = false;
         }
     }

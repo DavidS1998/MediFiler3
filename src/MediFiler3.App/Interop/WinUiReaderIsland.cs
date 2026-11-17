@@ -66,7 +66,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         _pendingPathMappings.AddRange(mappings); _interactionVersion++;
     }
 
-    public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent)
+    public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent, bool firstOnMissing = false, bool keepPosition = false)
     {
         if (_active && _scroll is not null && !preferCurrent && !_restore) session.Capture(_scroll.VerticalOffset);
         var previous = session.Pages.ToArray();
@@ -78,17 +78,27 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
                 StringComparison.OrdinalIgnoreCase) == true) explicitPath = newPath + explicitPath[System.IO.Path.TrimEndingDirectorySeparator(oldPath).Length..];
         }
         session.MapPaths(_pendingPathMappings); _pendingPathMappings.Clear();
-        session.SetFiles(folder, files, current, preferCurrent);
+        session.SetFiles(folder, files, current, preferCurrent, firstOnMissing, keepPosition);
         if (!previous.SequenceEqual(session.Pages))
         {
             _interactionVersion++; _endRequested = false;
-            _explicitPage = session.Pages.FirstOrDefault(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, explicitPath));
+            _explicitPage = keepPosition ? null :
+                session.Pages.FirstOrDefault(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, explicitPath));
             foreach (var row in _rows.Values.Where(row => !session.Pages.Contains(row.File)).ToArray()) RemoveRow(row);
             foreach (var item in _cache.ToArray()) if (!session.Pages.Contains(item.File)) RemoveCache(item);
         }
         _reported = null;
         if (preferCurrent) { _reported = null; _explicitPage = session.Pages.FirstOrDefault(file => file == current); _endRequested = false; }
         _restore = true; QueueUpdate();
+    }
+
+    private string _emptyMessage = "No supported images in this folder.";
+
+    public void SetFilterNotice(bool filtered, bool incomplete)
+    {
+        _emptyMessage = incomplete ? "The folder listing is incomplete." :
+            filtered ? "No images match the current filter." : "No supported images in this folder.";
+        if (_empty is not null) _empty.Text = _emptyMessage;
     }
 
     public void SetActive(bool active)
@@ -296,7 +306,7 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
         _scroll.ViewChanged += (_, _) => OnReaderViewChanged();
         var root = new Grid { Background = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black) }; root.Children.Add(_scroll);
         WinUiViewKeyboard.Attach(root, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
-        _empty = new TextBlock { Text = "No supported images in this folder.", HorizontalAlignment = Xaml.HorizontalAlignment.Center,
+        _empty = new TextBlock { Text = _emptyMessage, HorizontalAlignment = Xaml.HorizontalAlignment.Center,
             VerticalAlignment = Xaml.VerticalAlignment.Center, Foreground = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White), IsHitTestVisible = false };
         _indicatorHost = OutlinedStatus.Create(_indicatorOutlines, out _indicator);
         _indicatorHost.Visibility = session.Options.ShowPageIndicator ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;

@@ -70,6 +70,19 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fullscreenButton, _fullscreenButton.Label);
         ToolTipService.SetToolTip(_fullscreenButton, _fullscreenButton.Label);
     }
+    private CommandBar? _primaryCommands;
+    public double? PrimaryCommandCenter { get; private set; }
+    public event Action? PrimaryCommandCenterChanged;
+
+    private void UpdatePrimaryCommandCenter(object? sender, object args)
+    {
+        if (_rootElement is not { IsLoaded: true } root || _primaryCommands is not { ActualWidth: > 0 } commands) return;
+        var center = commands.TransformToVisual(root).TransformPoint(new Windows.Foundation.Point(commands.ActualWidth / 2, 0)).X;
+        if (!double.IsFinite(center) || PrimaryCommandCenter is { } previous && Math.Abs(previous - center) < .25) return;
+        PrimaryCommandCenter = center;
+        PrimaryCommandCenterChanged?.Invoke();
+    }
+
     public bool HasOpenPopup => _rootElement?.XamlRoot is { } root && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0;
     public event Action? LoadFoldersRequested;
     public event Action? RefreshRequested;
@@ -297,7 +310,10 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _refreshButton = null;
         _renameFileButton = null;
         _deleteFileButton = null;
+        if (_rootElement is not null) _rootElement.LayoutUpdated -= UpdatePrimaryCommandCenter;
         _rootElement = null;
+        _primaryCommands = null;
+        PrimaryCommandCenter = null;
         _fullscreenButton = null;
         _readerFileSeparators.Clear(); _readerNavigationDivider = null;
         _readerBrowse = null;
@@ -391,6 +407,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         AddReaderNavigationControls(middle);
         Grid.SetColumn(middle, 1);
         layout.Children.Add(middle);
+        _primaryCommands = middle;
+        layout.LayoutUpdated += UpdatePrimaryCommandCenter;
 
         _imageToolbar = new ImageToolbarGroup(() => ZoomOutRequested?.Invoke(),
             () => ResetZoomRequested?.Invoke(), () => ZoomInRequested?.Invoke());

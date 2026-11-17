@@ -57,6 +57,12 @@ internal static partial class Program
                 {
                     Directory.CreateDirectory(Root); MakeFixtures();
                     await RunUiRefinementChecksAsync();
+                    await RunFileQueryChecksAsync();
+                }
+                else if (args.Length == 1 && args[0] == "--file-query-only")
+                {
+                    Directory.CreateDirectory(Root); MakeFixtures();
+                    await RunFileQueryChecksAsync();
                 }
                 else if (args.Length == 1 && args[0] == "--reader-only")
                 {
@@ -396,6 +402,7 @@ internal static partial class Program
         await RunSettingsAndRefreshChecksAsync();
         await RunWatcherChecksAsync();
         await RunUiRefinementChecksAsync();
+        await RunFileQueryChecksAsync();
         await RunGalleryResumeChecksAsync();
         await RunReaderChecksAsync();
         await RunPhase4RestartChecksAsync();

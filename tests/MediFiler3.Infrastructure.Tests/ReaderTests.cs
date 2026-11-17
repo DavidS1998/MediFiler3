@@ -11,6 +11,26 @@ public sealed class ReaderTests
 {
     private static FileEntry File(string name) => new(name, name, 1, DateTime.UnixEpoch);
     [Fact]
+    public void QueryChangesKeepPageIndexAndFractionWhenPageMoves()
+    {
+        var first = new FileEntry("a.png", "a.png", 1, DateTime.UnixEpoch);
+        var second = new FileEntry("b.png", "b.png", 1, DateTime.UnixEpoch);
+        var third = new FileEntry("c.png", "c.png", 1, DateTime.UnixEpoch);
+        var reader = new ReaderSessionState();
+        reader.SetFiles("folder", [first, second, third], second, true);
+        reader.Arrange(200);
+        reader.Capture(reader.Top(1) + reader.Height(1) * .25);
+
+        reader.SetFiles("folder", [second, third, first], null, false, keepPosition: true);
+        Assert.Equal(third.FullPath, reader.Anchor?.Path);
+        Assert.Equal(.25, reader.Anchor!.Fraction, 8);
+
+        reader.SetFiles("folder", [first], null, false, keepPosition: true);
+        Assert.Equal(first.FullPath, reader.Anchor?.Path);
+        Assert.Equal(.25, reader.Anchor!.Fraction, 8);
+    }
+
+    [Fact]
     public void ProjectionKeepsSharedOrderAndChoosesNextImageForUnsupportedCurrent()
     {
         var files = new[] { File("1.png"), File("2.txt"), File("3.gif"), File("4.webp"), File("5.mp4") };

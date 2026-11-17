@@ -128,7 +128,7 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
         ReplaceFiles([]);
     }
 
-    public void ReplaceFiles(IEnumerable<FileEntry> files)
+    public void ReplaceFiles(IEnumerable<FileEntry> files, FileEntry? preferred = null, bool selectFirst = true)
     {
         _replacingFiles = true;
         try
@@ -139,8 +139,8 @@ public sealed class NavigationSessionState : INotifyPropertyChanged
         finally { _replacingFiles = false; ReindexFiles(); }
 
         GallerySelection.Reconcile(Files);
+        SetCurrentFile(preferred ?? (selectFirst ? Files.FirstOrDefault() : null));
         OnPropertyChanged(nameof(Files));
-        SetCurrentFile(Files.FirstOrDefault());
         OnPropertyChanged(nameof(CurrentFilePosition));
     }
 

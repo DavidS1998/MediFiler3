@@ -26,7 +26,7 @@ public sealed class ReaderSessionState
     public double Extent => _tops[^1];
     public static bool Supports(FileEntry file) => Extensions.Contains(file.Extension);
 
-    public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent)
+    public void SetFiles(string? folder, IReadOnlyList<FileEntry> files, FileEntry? current, bool preferCurrent, bool firstOnMissing = false, bool keepPosition = false)
     {
         var previousPages = Pages;
         var previousIndex = Anchor is null ? -1 : Pages.ToList().FindIndex(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, Anchor.Path));
@@ -38,7 +38,12 @@ public sealed class ReaderSessionState
         _mappedRatios.Clear();
         var members = Pages.ToHashSet();
         foreach (var key in _ratios.Keys.Where(key => !members.Contains(key)).ToArray()) _ratios.Remove(key);
-        if (preferCurrent || Anchor is null || !Pages.Any(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, Anchor.Path)))
+        if (keepPosition && sameFolder)
+        {
+            var index = Math.Clamp(previousIndex, 0, Math.Max(0, Pages.Count - 1));
+            Anchor = Pages.Count == 0 ? null : new(Pages[index].FullPath, Anchor?.Fraction ?? 0, Anchor?.GapFraction ?? 0);
+        }
+        else if (preferCurrent || Anchor is null || !Pages.Any(file => StringComparer.OrdinalIgnoreCase.Equals(file.FullPath, Anchor.Path)))
         {
             var index = current is null ? 0 : Math.Max(0, files.ToList().FindIndex(file => file == current));
             var byPath = Pages.ToDictionary(file => file.FullPath, StringComparer.OrdinalIgnoreCase);
@@ -46,7 +51,8 @@ public sealed class ReaderSessionState
                 ? previousPages.Skip(previousIndex + 1).Concat(previousPages.Take(previousIndex).Reverse())
                     .Select(old => byPath.GetValueOrDefault(old.FullPath)).FirstOrDefault(file => file is not null)
                 : null;
-            var page = survivor ?? files.Skip(index).FirstOrDefault(Supports) ?? files.Take(index).LastOrDefault(Supports) ?? Pages.FirstOrDefault();
+            var page = firstOnMissing && !preferCurrent ? Pages.FirstOrDefault() :
+                survivor ?? files.Skip(index).FirstOrDefault(Supports) ?? files.Take(index).LastOrDefault(Supports) ?? Pages.FirstOrDefault();
             Anchor = page is null ? null : new(page.FullPath, 0);
         }
         Arrange(_width, _viewportHeight);

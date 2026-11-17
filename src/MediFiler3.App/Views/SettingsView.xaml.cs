@@ -49,6 +49,8 @@ public partial class SettingsView : UserControl
     public void SetReaderOptions(ReaderOptions options) => CarouselSliderIsland.SetReaderOptions(options);
     public event Action<int>? CarouselNeighborCountChanged;
     public event Action<bool>? CarouselEnabledChanged;
+    public event Action<int>? ToolbarFilterTagCountChanged;
+    public void SetToolbarFilterTagCount(int count) => CarouselSliderIsland.SetToolbarFilterTagCount(count);
     public event Action<bool>? OverscrollEnabledChanged;
     public void SetOverscrollEnabled(bool enabled) => CarouselSliderIsland.SetOverscrollEnabled(enabled);
     public Func<Task>? ClearBackupsRequested { get; set; }
@@ -80,6 +82,7 @@ public partial class SettingsView : UserControl
         CarouselSliderIsland.SetCarouselEnabled(carouselEnabled);
         CarouselSliderIsland.ReaderOptionsChanged += options => ReaderOptionsChanged?.Invoke(options);
         CarouselSliderIsland.CarouselEnabledChanged += value => CarouselEnabledChanged?.Invoke(value);
+        CarouselSliderIsland.ToolbarFilterTagCountChanged += count => ToolbarFilterTagCountChanged?.Invoke(count);
         CarouselSliderIsland.OverscrollEnabledChanged += value => OverscrollEnabledChanged?.Invoke(value);
         CarouselSliderIsland.ClearBackupsRequested += OnClearBackupsClick;
         CarouselSliderIsland.ReviewBackupsRequested += OnReviewBackupsClick;
