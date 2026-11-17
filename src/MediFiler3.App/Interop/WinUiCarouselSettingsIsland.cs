@@ -25,6 +25,14 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
     private int _neighborCount = 5;
     private ToggleSwitch? _carouselToggle;
     private ToggleSwitch? _folderDepthToggle;
+    private ToggleSwitch? _overscrollToggle;
+    private bool _overscrollEnabled = true;
+    public event Action<bool>? OverscrollEnabledChanged;
+    public void SetOverscrollEnabled(bool enabled)
+    {
+        _overscrollEnabled = enabled;
+        if (_overscrollToggle is not null) _overscrollToggle.IsOn = enabled;
+    }
     private bool _folderDepthShadingEnabled = true;
     public event Action<bool>? FolderDepthShadingChanged;
     public void SetFolderDepthShading(bool enabled)
@@ -33,6 +41,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         if (_folderDepthToggle is not null) _folderDepthToggle.IsOn = enabled;
     }
     private Button? _clearBackups;
+    private Button? _reviewBackups;
     private Button? _clearCache;
     private TextBlock? _backupStatus;
     private TextBlock? _cacheStatus;
@@ -41,6 +50,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
     private string _backupText = "", _cacheText = "";
     public event Action<bool>? CarouselEnabledChanged;
     public event Action? ClearBackupsRequested;
+    public event Action? ReviewBackupsRequested;
     public event Action? ClearCacheRequested;
     public void SetCarouselEnabled(bool enabled)
     {
@@ -53,6 +63,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         _backupsBusy = busy;
         if (text is not null) _backupText = text;
         if (_clearBackups is not null) _clearBackups.IsEnabled = !busy;
+        if (_reviewBackups is not null) _reviewBackups.IsEnabled = !busy;
         if (_backupStatus is not null) _backupStatus.Text = _backupText;
     }
     public void SetCacheState(bool busy, string? text = null)
@@ -93,7 +104,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
             SnapsTo = SliderSnapsTo.Ticks,
             Value = _neighborCount * 2,
             IsThumbToolTipEnabled = false,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            Width = 320,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
             VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
             RequestedTheme = ElementTheme.Dark
         };
@@ -119,7 +131,17 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         folderPage.Children.Add(_folderDepthToggle);
         folderPage.Children.Add(Description("Roots and their immediate subfolders stay white. Deeper folders gradually become grey, stopping at depth 5."));
         AddFolderRuleSettings(folderPage);
-        AddFileRuleSettings(SettingsCard(page, "Files"));
+        var filesPage = SettingsCard(page, "Files");
+        _overscrollToggle = new ToggleSwitch { Header = "Navigate to adjacent folders when overscrolling", IsOn = _overscrollEnabled };
+        _overscrollToggle.Toggled += (_, _) =>
+        {
+            if (_overscrollEnabled == _overscrollToggle.IsOn) return;
+            _overscrollEnabled = _overscrollToggle.IsOn;
+            OverscrollEnabledChanged?.Invoke(_overscrollEnabled);
+        };
+        filesPage.Children.Add(_overscrollToggle);
+        filesPage.Children.Add(Description("In Browse, five attempts past the first or last file open the adjacent nonempty folder. Turn off to stay in the current folder."));
+        AddFileRuleSettings(filesPage);
         var carouselPage = SettingsCard(page, "Carousel");
         _carouselToggle = new ToggleSwitch { Header = "Show carousel", IsOn = _carouselEnabled };
         _carouselToggle.Toggled += (_, _) =>
@@ -130,8 +152,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         };
         carouselPage.Children.Add(_carouselToggle);
         carouselPage.Children.Add(Description("Nearby thumbnails shown on each side of the current file."));
-        var sliderRow = new Grid { ColumnSpacing = 16 };
-        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new Microsoft.UI.Xaml.GridLength(1, Microsoft.UI.Xaml.GridUnitType.Star) });
+        var sliderRow = new Grid { ColumnSpacing = 16, HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left };
+        sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
         sliderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = Microsoft.UI.Xaml.GridLength.Auto });
         _slider.IsEnabled = _carouselEnabled;
         sliderRow.Children.Add(_slider);
@@ -141,7 +163,15 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         AddReaderSettings(SettingsCard(page, "Continuous reader"));
         var systemPage = SettingsCard(page, "System");
         systemPage.Children.Add(Heading("Overwrite backups"));
-        systemPage.Children.Add(Description("Replaced files are kept for Undo. Clearing backups permanently deletes those saved versions and removes Undo and Redo for the affected operations."));
+        systemPage.Children.Add(Description("Replaced files and folders are kept for Undo for 30 days after they are saved or saved again by Redo. Expired backups are permanently removed at startup and checked hourly while the app is open. Cleanup removes Undo and Redo for the affected operation groups; current files stay in place. Unavailable, changed or recovery-related backups are retained for retry."));
+        _reviewBackups = new Button { Content = "Review overwrite backups" };
+        _reviewBackups.Click += (_, _) =>
+        {
+            if (_backupsBusy) return;
+            SetBackupState(true);
+            Dispatcher.BeginInvoke(new Action(() => ReviewBackupsRequested?.Invoke()));
+        };
+        systemPage.Children.Add(_reviewBackups);
         _clearBackups = new Button { Content = "Clear overwrite backups" };
         _clearBackups.Click += (_, _) =>
         {
@@ -202,8 +232,8 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         }
 
         _readerSpacing = null; _readerPreload = null; _readerIndicator = null;
-        _folderDepthToggle = null;
-        _slider = null; _carouselToggle = null; _clearBackups = null; _clearCache = null; _backupStatus = null; _cacheStatus = null;
+        _folderDepthToggle = null; _overscrollToggle = null;
+        _slider = null; _carouselToggle = null; _clearBackups = null; _reviewBackups = null; _clearCache = null; _backupStatus = null; _cacheStatus = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)

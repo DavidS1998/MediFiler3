@@ -78,8 +78,16 @@ public sealed partial class WinUiCarouselSettingsIsland
         _fileRuleName = new TextBox { Header = "File name contains", PlaceholderText = "Text to find in the filename", MaxLength = 256 };
         _fileRuleColor = new ColorPicker { IsAlphaEnabled = false, MaxWidth = 320 };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_fileRuleColor, "File rule background color");
-        page.Children.Add(RuleColumns(_fileRuleName, new Expander { Header = "Background color", Content = _fileRuleColor,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch }));
+        var colorSelector = new Expander { Header = "Background color", Content = _fileRuleColor,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch };
+        // Keep the existing half-width columns; only move the color selector to the next row.
+        var editor = RuleColumns(_fileRuleName, colorSelector);
+        editor.RowSpacing = 12;
+        editor.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        editor.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        Grid.SetColumn(colorSelector, 0);
+        Grid.SetRow(colorSelector, 1);
+        page.Children.Add(editor);
         _fileRuleError = Description(""); _fileRuleError.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetLiveSetting(_fileRuleError, Microsoft.UI.Xaml.Automation.Peers.AutomationLiveSetting.Polite);
         page.Children.Add(_fileRuleError);

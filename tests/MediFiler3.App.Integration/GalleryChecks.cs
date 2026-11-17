@@ -40,6 +40,10 @@ internal static partial class Program
             var y = (Microsoft.UI.Xaml.Controls.Slider)Field(toolbar, "_galleryHeightSlider")!;
             Require(x.Minimum == 100 && x.Maximum == 400 && x.StepFrequency == 50 && y.StepFrequency == 50, "Gallery slider steps/range incorrect");
             var controls = (Microsoft.UI.Xaml.Controls.Grid)Field(toolbar, "_galleryControls")!;
+            var readerWidth = (Microsoft.UI.Xaml.Controls.Slider)Field(toolbar, "_readerWidthSlider")!;
+            Require(x.Width == readerWidth.Width && y.Width == readerWidth.Width && controls.VerticalAlignment == Microsoft.UI.Xaml.VerticalAlignment.Center &&
+                x.TickPlacement == Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None &&
+                controls.ColumnDefinitions.All(column => column.Width.IsAuto), "Gallery slider sizing/centering differs from the other toolbar controls");
             Require(controls.Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Select(t => t.Text).SequenceEqual(new[] { "Width", "Height" }) && x.MaxWidth >= 110 && y.MaxWidth >= 110,
                 "Gallery slider labels/compact widths incorrect");
             x.Value = 250; y.Value = 100;

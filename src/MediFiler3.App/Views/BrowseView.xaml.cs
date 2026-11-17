@@ -106,6 +106,7 @@ public partial class BrowseView : UserControl
     }
 
     public int CarouselNeighborCount => _carouselNeighborsOnEachSide;
+    public void SetOverscrollEnabled(bool enabled) => _navigationController.SetOverscrollEnabled(enabled);
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,

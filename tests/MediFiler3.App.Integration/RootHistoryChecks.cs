@@ -263,7 +263,12 @@ internal static partial class Program
                                 ?.GetValue(dialog.Content) as Microsoft.UI.Xaml.Controls.Grid;
                             if (root is null || root.Children.Count == 0) return;
                             var contentDialog = (Microsoft.UI.Xaml.Controls.ContentDialog)root.Children[0];
-                            Require(((Microsoft.UI.Xaml.Controls.TextBlock)contentDialog.Content).Text.Contains("Undo and Redo"), "Cleanup lacks history warning");
+                            var preview = (Microsoft.UI.Xaml.Controls.StackPanel)contentDialog.Content;
+                            Require(preview.Children.OfType<Microsoft.UI.Xaml.Controls.TextBlock>().Any(text => text.Text.Contains("Undo and Redo") && text.Text.Contains("30 days")),
+                                "Cleanup lacks history/retention warning");
+                            var previewList = preview.Children.OfType<Microsoft.UI.Xaml.Controls.ListView>().Single();
+                            var rows = ((IEnumerable<WinUiToolbarIsland.BackupPreviewRow>)previewList.ItemsSource).ToArray();
+                            Require(stored.All(path => rows.Any(row => row.BackupPath == path && row.Item.CanRemove)), "Confirmation omitted a removable saved version/location");
                             var chosen = NativeDialogButton(contentDialog, confirm ? "PrimaryButton" : "CloseButton");
                             if (chosen is null) return;
                             timer.Stop(); clicked = true;

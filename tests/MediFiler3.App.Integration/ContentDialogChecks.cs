@@ -1,4 +1,5 @@
 using System.Reflection;
+using MediFiler3.Application.Operations;
 using MediFiler3.Interop;
 using Native = Microsoft.UI.Xaml.Controls;
 
@@ -6,6 +7,32 @@ internal static partial class Program
 {
     private static async Task RunContentDialogChecksAsync(WinUiToolbarIsland toolbar, System.Windows.Window owner)
     {
+        await Check("Backup review virtualizes saved versions and routes location links without deleting", async () =>
+        {
+            var items = Enumerable.Range(0, 100).Select(index => new OverwriteBackupItem(Guid.NewGuid(),
+                $@"C:\Original\file {index}.png", $@"C:\Backups\{index}.png", false, DateTimeOffset.UtcNow,
+                index != 1, index == 1 ? "Recovery required" : null)).ToArray();
+            Guid? revealed = null;
+            var cleared = true;
+            await DriveContentDialogAsync("Overwrite backups", async () => cleared = await toolbar.ShowBackupPreviewAsync(items,
+                id => { revealed = id; return Task.CompletedTask; }, false), async (_, dialog) =>
+            {
+                Require(dialog.DefaultButton == Native.ContentDialogButton.Close && dialog.PrimaryButtonText == "", "Read-only backup review offers deletion");
+                var body = (Native.StackPanel)dialog.Content;
+                var list = body.Children.OfType<Native.ListView>().Single();
+                await WaitUntil(() => list.ContainerFromIndex(0) is Native.ListViewItem { ContentTemplateRoot: not null });
+                var row = (Native.ListViewItem)list.ContainerFromIndex(0);
+                var link = (Native.HyperlinkButton)((Microsoft.UI.Xaml.FrameworkElement)row.ContentTemplateRoot).FindName("BackupLocation");
+                Require((Guid)link.Tag == items[0].OperationId, "Backup link targets the wrong saved version");
+                ((Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(link)
+                    .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke)).Invoke();
+                await WaitUntil(() => revealed == items[0].OperationId);
+                Require(Enumerable.Range(0, 100).Count(index => list.ContainerFromIndex(index) is not null) < 100,
+                    "Backup preview realizes the entire inventory");
+                InvokeNativeButton(NativeDialogButton(dialog, "CloseButton")!);
+            });
+            Require(!cleared, "Reviewing backup locations authorized deletion");
+        });
         foreach (var (title, initial, close) in new[] { ("Rename file", "Sample", false), ("Rename folder", "Folder.name", false), ("New folder", "", false), ("Rename file", "Sample", true) })
             await Check($"ContentDialog {title} {(close ? "Cancel" : "submit")} preserves text prompt behavior", async () =>
             {

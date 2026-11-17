@@ -49,7 +49,10 @@ public partial class SettingsView : UserControl
     public void SetReaderOptions(ReaderOptions options) => CarouselSliderIsland.SetReaderOptions(options);
     public event Action<int>? CarouselNeighborCountChanged;
     public event Action<bool>? CarouselEnabledChanged;
+    public event Action<bool>? OverscrollEnabledChanged;
+    public void SetOverscrollEnabled(bool enabled) => CarouselSliderIsland.SetOverscrollEnabled(enabled);
     public Func<Task>? ClearBackupsRequested { get; set; }
+    public Func<Task>? ReviewBackupsRequested { get; set; }
 
     public void SetBackupCleanupStatus(string message) => CarouselSliderIsland.SetBackupState(true, message);
 
@@ -58,6 +61,13 @@ public partial class SettingsView : UserControl
         if (ClearBackupsRequested is null) { CarouselSliderIsland.SetBackupState(false); return; }
         CarouselSliderIsland.SetBackupState(true);
         try { await ClearBackupsRequested(); }
+        finally { CarouselSliderIsland.SetBackupState(false); }
+    }
+
+    private async void OnReviewBackupsClick()
+    {
+        CarouselSliderIsland.SetBackupState(true);
+        try { if (ReviewBackupsRequested is not null) await ReviewBackupsRequested(); }
         finally { CarouselSliderIsland.SetBackupState(false); }
     }
 
@@ -70,7 +80,9 @@ public partial class SettingsView : UserControl
         CarouselSliderIsland.SetCarouselEnabled(carouselEnabled);
         CarouselSliderIsland.ReaderOptionsChanged += options => ReaderOptionsChanged?.Invoke(options);
         CarouselSliderIsland.CarouselEnabledChanged += value => CarouselEnabledChanged?.Invoke(value);
+        CarouselSliderIsland.OverscrollEnabledChanged += value => OverscrollEnabledChanged?.Invoke(value);
         CarouselSliderIsland.ClearBackupsRequested += OnClearBackupsClick;
+        CarouselSliderIsland.ReviewBackupsRequested += OnReviewBackupsClick;
         CarouselSliderIsland.ClearCacheRequested += OnClearThumbnailCache;
         Loaded += OnCacheLoaded;
         CarouselSliderIsland.SetNeighborCount(initialCarouselNeighborCount);

@@ -67,6 +67,17 @@ internal static partial class Program
                 var island = (WinUiCarouselSettingsIsland)settingsView.FindName("CarouselSliderIsland");
                 await WaitUntil(() => Field(island, "_carouselToggle") is not null);
                 Require(Field(island, "_clearBackups") is Microsoft.UI.Xaml.Controls.Button && Field(island, "_clearCache") is Microsoft.UI.Xaml.Controls.Button, "Settings still uses WPF action buttons");
+                Require(Field(island, "_reviewBackups") is Microsoft.UI.Xaml.Controls.Button, "Backup inventory has no review entry point");
+                var carouselSlider = (Microsoft.UI.Xaml.Controls.Slider)Field(island, "_slider")!;
+                var readerSlider = (Microsoft.UI.Xaml.Controls.Slider)Field(island, "_readerSpacing")!;
+                Require(carouselSlider.Width == 320 && carouselSlider.Width == readerSlider.Width &&
+                    carouselSlider.HorizontalAlignment == readerSlider.HorizontalAlignment, "Settings slider sizing/alignment differs");
+                var overscroll = (Microsoft.UI.Xaml.Controls.ToggleSwitch)Field(island, "_overscrollToggle")!;
+                Require(overscroll.IsOn, "Default Browse overscroll was disabled");
+                overscroll.IsOn = false; await settings.FlushAsync();
+                Require(!(await ((IApplicationSettingsStore)new SqliteApplicationStateStore(new SqliteDatabase(Path.Combine(Root, "ui-refinement.db")))).LoadAsync()).BrowseOverscrollEnabled,
+                    "Overscroll toggle did not persist");
+                overscroll.IsOn = true;
                 ((Microsoft.UI.Xaml.Controls.Slider)Field(island, "_slider")!).Value = 5;
                 var toggle = (Microsoft.UI.Xaml.Controls.ToggleSwitch)Field(island, "_carouselToggle")!;
                 toggle.IsOn = false;

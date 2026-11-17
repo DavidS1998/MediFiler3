@@ -9,6 +9,108 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class OperationBackupTests
 {
     [Fact]
+    public async Task InventoryMatchesCleanupAndReviewedIdsDoNotAuthorizeNewBackups()
+    {
+        using var temp = new TemporaryDatabase();
+        await ReplaceAsync(temp);
+        var item = Assert.Single(await temp.Backups.GetBackupsAsync());
+        Assert.True(item.CanRemove); Assert.Null(item.RetainedReason);
+        Assert.Equal(Path.Combine(Parent(temp), "target.txt"), item.OriginalPath);
+        Assert.True(File.Exists(item.BackupPath));
+        Assert.Equal(item.SavedUtc.AddDays(30), item.ExpiresUtc);
+        await ReplaceAsync(temp);
+        var all = await temp.Backups.GetBackupsAsync(); Assert.Equal(2, all.Count);
+        var newer = all.Single(backup => backup.OperationId != item.OperationId);
+        Assert.Equal(1, (await temp.Backups.ClearAsync([item.OperationId])).RemovedCount);
+        Assert.False(File.Exists(item.BackupPath)); Assert.True(File.Exists(newer.BackupPath));
+        Assert.Equal(newer.OperationId, Assert.Single(await temp.Backups.GetBackupsAsync()).OperationId);
+    }
+
+    [Fact]
+    public async Task ExpiryUsesSavedJournalAgeAtThirtyDaysAndNeverOriginalFileTimestamps()
+    {
+        using var temp = new TemporaryDatabase();
+        await ReplaceAsync(temp);
+        var old = Assert.Single(await temp.Backups.GetBackupsAsync());
+        File.SetLastWriteTimeUtc(old.BackupPath, DateTime.UtcNow.AddYears(1));
+        await ReplaceAsync(temp);
+        var recent = (await temp.Backups.GetBackupsAsync()).Single(item => item.OperationId != old.OperationId);
+        File.SetLastWriteTimeUtc(recent.BackupPath, DateTime.UtcNow.AddYears(-1));
+        var clock = new BackupClock(old.ExpiresUtc.AddTicks(-1));
+        var store = new FileSystemOperationBackupStore(temp.Journal, new WindowsFileIdentityProvider(),
+            Path.Combine(Parent(temp), "app-managed", "UndoBackups"), clock);
+        Assert.Equal(0, (await store.ClearExpiredAsync()).RemovedCount);
+        clock.Now = old.ExpiresUtc;
+        Assert.Equal(1, (await store.ClearExpiredAsync()).RemovedCount);
+        Assert.False(File.Exists(old.BackupPath)); Assert.True(File.Exists(recent.BackupPath));
+        clock.Now = recent.ExpiresUtc;
+        Assert.Equal(1, (await store.ClearExpiredAsync()).RemovedCount);
+        Assert.Equal("new", File.ReadAllText(Path.Combine(Parent(temp), "target.txt")));
+    }
+
+    [Fact]
+    public async Task ExpiryRetiresLockedHistoryBeforeFailureAndRetriesWithoutResettingAge()
+    {
+        using var temp = new TemporaryDatabase();
+        var service = await ReplaceAsync(temp);
+        var item = Assert.Single(await temp.Backups.GetBackupsAsync());
+        var store = new FileSystemOperationBackupStore(temp.Journal, new WindowsFileIdentityProvider(),
+            Path.Combine(Parent(temp), "app-managed", "UndoBackups"), new BackupClock(item.ExpiresUtc));
+        using (var locked = File.Open(item.BackupPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var result = await store.ClearExpiredAsync();
+            Assert.Equal(0, result.RemovedCount); Assert.Single(result.Issues);
+            Assert.Null(await service.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Undo));
+        }
+        Assert.Equal(1, (await store.ClearExpiredAsync()).RemovedCount);
+    }
+
+    private sealed class BackupClock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task HostedRetentionRunsAtStartupAndStopsCleanly()
+    {
+        using var temp = new TemporaryDatabase();
+        await ReplaceAsync(temp);
+        var item = Assert.Single(await temp.Backups.GetBackupsAsync());
+        var store = new FileSystemOperationBackupStore(temp.Journal, new WindowsFileIdentityProvider(),
+            Path.Combine(Parent(temp), "app-managed", "UndoBackups"), new BackupClock(item.ExpiresUtc));
+        var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.Changed += () => completed.TrySetResult();
+        using var worker = new OperationBackupRetentionService(store,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<OperationBackupRetentionService>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        await completed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await worker.StopAsync(CancellationToken.None);
+        Assert.False(File.Exists(item.BackupPath));
+        Assert.True(File.Exists(Path.Combine(Parent(temp), "target.txt")));
+    }
+
+    [Fact]
+    public async Task UndoRemovesTheStoredCandidateAndRedoStartsANewRetentionPeriod()
+    {
+        using var temp = new TemporaryDatabase();
+        var service = await ReplaceAsync(temp);
+        var first = Assert.Single(await temp.Backups.GetBackupsAsync());
+        var clock = new BackupClock(first.ExpiresUtc);
+        var store = new FileSystemOperationBackupStore(temp.Journal, new WindowsFileIdentityProvider(),
+            Path.Combine(Parent(temp), "app-managed", "UndoBackups"), clock);
+        Assert.True((await service.UndoAsync()).Succeeded);
+        Assert.Empty(await store.GetBackupsAsync());
+        Assert.Equal(0, (await store.ClearExpiredAsync()).RemovedCount);
+        Assert.NotNull(await service.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo));
+        Assert.True((await service.RedoAsync()).Succeeded);
+        var savedAgain = Assert.Single(await store.GetBackupsAsync());
+        Assert.True(savedAgain.SavedUtc > first.SavedUtc);
+        Assert.Equal(0, (await store.ClearExpiredAsync()).RemovedCount);
+        clock.Now = savedAgain.ExpiresUtc;
+        Assert.Equal(1, (await store.ClearExpiredAsync()).RemovedCount);
+    }
+    [Fact]
     public async Task ClearingBackupsRetiresWholeGroupsAcrossRootsButKeepsUnrelatedHistoryAndFiles()
     {
         using var temp = new TemporaryDatabase();
@@ -79,6 +181,7 @@ public sealed class OperationBackupTests
         Assert.Equal(0, result.RemovedCount);
         Assert.Empty(result.Issues);
         Assert.Equal("old", File.ReadAllText(Path.Combine(Parent(temp), "target.txt")));
+        Assert.Empty(await temp.Backups.GetBackupsAsync());
         Assert.NotNull(await service.GetHistoryPreviewAsync(FileOrganizationHistoryDirection.Redo));
         Assert.True((await service.RedoAsync()).Succeeded);
     }
@@ -162,6 +265,7 @@ public sealed class OperationBackupTests
         await ReplaceAsync(temp);
         var backup = Assert.Single(BackupEntries(await temp.Journal.GetAllAsync()));
         await temp.Journal.AppendEventAsync(backup.Operation.Id, FileOperationEventKind.RecoveryRequired);
+        Assert.False(Assert.Single(await temp.Backups.GetBackupsAsync()).CanRemove);
         var result = await temp.Backups.ClearAsync();
         Assert.Equal(0, result.RemovedCount);
         Assert.Single(result.Issues);
@@ -178,6 +282,7 @@ public sealed class OperationBackupTests
             "source", "target", DateTimeOffset.UtcNow, 1, "{}", backup.Operation.Id);
         await temp.Journal.AppendPreparedAsync(compensation);
         await temp.Journal.AppendEventAsync(compensation.Id, FileOperationEventKind.RecoveryRequired);
+        Assert.False(Assert.Single(await temp.Backups.GetBackupsAsync()).CanRemove);
         var result = await temp.Backups.ClearAsync();
         Assert.Equal(0, result.RemovedCount);
         Assert.Single(result.Issues);

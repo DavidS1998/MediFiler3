@@ -43,11 +43,13 @@ public sealed partial class WinUiToolbarIsland
     {
         var root = new Grid { Margin = new Thickness(8, 0, 8, 0),
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center,
+            ColumnSpacing = 8,
             Visibility = _galleryControlsVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        root.ColumnDefinitions.Add(new ColumnDefinition());
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        root.ColumnDefinitions.Add(new ColumnDefinition());
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _galleryWidthSlider = AddDimension("Width", "Gallery thumbnail width", _galleryWidth, 0);
         _galleryHeightSlider = AddDimension("Height", "Gallery thumbnail height", _galleryHeight, 2);
         _galleryControls = root;
@@ -55,11 +57,12 @@ public sealed partial class WinUiToolbarIsland
 
         Slider AddDimension(string label, string name, double value, int column)
         {
-            var text = new TextBlock { Text = label, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center, Margin = new Thickness(4) };
+            var text = new TextBlock { Text = label, FontSize = 12, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
             Grid.SetColumn(text, column); root.Children.Add(text);
             var slider = new Slider { Minimum = 100, Maximum = 400, StepFrequency = 50, TickFrequency = 50,
-                TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.Outside, Value = value,
-                MaxWidth = 150, MinWidth = 150, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
+                TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None, Value = value,
+                SnapsTo = Microsoft.UI.Xaml.Controls.Primitives.SliderSnapsTo.StepValues,
+                Width = 150, IsThumbToolTipEnabled = false, VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, name);
             ToolTipService.SetToolTip(slider, name);
             Grid.SetColumn(slider, column + 1); root.Children.Add(slider);

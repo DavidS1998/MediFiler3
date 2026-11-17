@@ -7,9 +7,10 @@ using MediFiler3.Domain.Operations;
 
 namespace MediFiler3.Infrastructure.Operations;
 
-public sealed class FileSystemOperationBackupStore(IFileOperationJournal journal, IFileIdentityProvider identities,
-    string? storageDirectory = null) : IFileOperationBackupStore, IOperationBackupMaintenance
+public sealed partial class FileSystemOperationBackupStore(IFileOperationJournal journal, IFileIdentityProvider identities,
+    string? storageDirectory = null, TimeProvider? timeProvider = null) : IFileOperationBackupStore, IOperationBackupMaintenance
 {
+    public event Action? Changed;
     private readonly string _primary = Path.GetFullPath(storageDirectory ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediFiler3", "UndoBackups"));
     private static readonly string VolumeFolder = CreateVolumeFolderName();
@@ -39,9 +40,21 @@ public sealed class FileSystemOperationBackupStore(IFileOperationJournal journal
     }
 
     public Task<BackupCleanupResult> ClearAsync(CancellationToken cancellationToken = default) =>
-        Task.Run(() => OperationMaintenanceGate.RunAsync(() => ClearCoreAsync(cancellationToken), cancellationToken), cancellationToken);
+        RunCleanupAsync(null, null, cancellationToken);
 
-    private async Task<BackupCleanupResult> ClearCoreAsync(CancellationToken token)
+    public Task<BackupCleanupResult> ClearAsync(IReadOnlyCollection<Guid> operationIds, CancellationToken cancellationToken = default) =>
+        RunCleanupAsync(operationIds.ToHashSet(), null, cancellationToken);
+
+    public Task<BackupCleanupResult> ClearExpiredAsync(CancellationToken cancellationToken = default) =>
+        RunCleanupAsync(null, (timeProvider ?? TimeProvider.System).GetUtcNow().AddDays(-30), cancellationToken);
+
+    private async Task<BackupCleanupResult> RunCleanupAsync(HashSet<Guid>? ids, DateTimeOffset? cutoff, CancellationToken token)
+    {
+        try { return await Task.Run(() => OperationMaintenanceGate.RunAsync(() => ClearCoreAsync(ids, cutoff, token), token), token).ConfigureAwait(false); }
+        finally { Changed?.Invoke(); } // Partial/cancelled cleanup may already have retired history.
+    }
+
+    private async Task<BackupCleanupResult> ClearCoreAsync(HashSet<Guid>? ids, DateTimeOffset? cutoff, CancellationToken token)
     {
         var entries = await journal.GetAllAsync(token).ConfigureAwait(false);
         var removed = 0;
@@ -50,6 +63,7 @@ public sealed class FileSystemOperationBackupStore(IFileOperationJournal journal
         {
             token.ThrowIfCancellationRequested();
             var operation = entry.Operation;
+            if (ids is not null && !ids.Contains(operation.Id) || cutoff is { } before && SavedUtc(entry) > before) continue;
             if (operation.Kind is not (FileOperationKind.Move or FileOperationKind.Rename)) continue;
             PathOperationPayload? payload;
             try { payload = JsonSerializer.Deserialize<PathOperationPayload>(operation.PayloadJson ?? "{}"); }
@@ -67,7 +81,7 @@ public sealed class FileSystemOperationBackupStore(IFileOperationJournal journal
                     FileOperationEventKind.RedoInvalidated or FileOperationEventKind.HistoryDiscarded))
                     throw new IOException("Backup has an unresolved operation and was retained for recovery.");
                 ValidateBackupPath(path);
-                EnsureSafeTree(path);
+                EnsureSafeTree(path, token);
                 // Retire the entire owning group durably BEFORE deleting any data. A crash
                 // or locked file can leave an extra backup, never an enabled broken Undo.
                 await journal.DiscardHistoryAsync(operation.Id, token).ConfigureAwait(false);
@@ -109,12 +123,13 @@ public sealed class FileSystemOperationBackupStore(IFileOperationJournal journal
                 throw new IOException("Backup storage cannot traverse symbolic links, junctions or mount points.");
     }
 
-    private static void EnsureSafeTree(string path)
+    private static void EnsureSafeTree(string path, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         var attributes = File.GetAttributes(path);
         if (attributes.HasFlag(FileAttributes.ReparsePoint)) throw new IOException("A backup contains a link and was retained.");
         if (attributes.HasFlag(FileAttributes.Directory))
-            foreach (var child in Directory.EnumerateFileSystemEntries(path)) EnsureSafeTree(child);
+            foreach (var child in Directory.EnumerateFileSystemEntries(path)) EnsureSafeTree(child, token);
     }
 
     private static void DeleteOwnedItem(string path, bool directory)

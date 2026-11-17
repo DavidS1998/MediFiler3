@@ -12,6 +12,13 @@ public sealed class NavigationController(NavigationSessionState navigationState,
     private bool _changingFolderFromOverscroll;
     private long _contextVersion;
     private const int OverscrollAttemptsToChangeFolder = 5;
+    private bool _overscrollEnabled = true;
+    public void SetOverscrollEnabled(bool enabled)
+    {
+        if (_overscrollEnabled == enabled) return;
+        _overscrollEnabled = enabled;
+        CancelPendingNavigation();
+    }
     public event Action<FileEntry>? FileSelected;
     public event Action<string>? StatusChanged;
 
@@ -72,6 +79,7 @@ public sealed class NavigationController(NavigationSessionState navigationState,
 
     private void RegisterBoundaryAttempt(int direction)
     {
+        if (!_overscrollEnabled) return;
         if (_overscrollDirection != direction)
         {
             _overscrollDirection = direction;

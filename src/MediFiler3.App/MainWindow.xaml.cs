@@ -95,6 +95,7 @@ public partial class MainWindow : Window
         _browseView.SetCarouselNeighborCount((settings.Current.CarouselIconCount - 1) / 2);
         _browseView.SetFolderPinned(settings.Current.FolderTreePinned);
         _browseView.SetCarouselEnabled(settings.Current.CarouselEnabled);
+        _browseView.SetOverscrollEnabled(settings.Current.BrowseOverscrollEnabled);
         _browseView.AudioSettingsChanged += (volume, muted) => settings.Update(s => s with { Volume = volume, Muted = muted });
         _browseView.FolderPinChanged += pinned => settings.Update(s => s with { FolderTreePinned = pinned });
         Closed += (_, _) => { _historyAvailabilityCancellation?.Cancel(); _homeView.Stop(); _browseView.StopBackgroundFolderCounts(); };
@@ -102,6 +103,12 @@ public partial class MainWindow : Window
         _browseView.SetReaderOptions(settings.Current.GetReaderOptions());
         _settingsView = new SettingsView(_browseView.CarouselNeighborCount, settings.Current.CarouselEnabled);
         _settingsView.SetReaderOptions(settings.Current.GetReaderOptions());
+        _settingsView.SetOverscrollEnabled(settings.Current.BrowseOverscrollEnabled);
+        _settingsView.OverscrollEnabledChanged += enabled =>
+        {
+            _browseView.SetOverscrollEnabled(enabled);
+            settings.Update(s => s with { BrowseOverscrollEnabled = enabled });
+        };
         _browseView.FolderDepthShadingEnabled = settings.Current.FolderDepthShadingEnabled;
         _settingsView.SetFolderDepthShading(settings.Current.FolderDepthShadingEnabled);
         _browseView.SetFolderNameRules(settings.Current.GetFolderRules());
@@ -183,24 +190,7 @@ public partial class MainWindow : Window
             _settingsView.ClearThumbnailCacheRequested = () => thumbnailCache.MaintainAsync(clear: true);
         }
         ToolbarIsland.CollisionPreviews = collisionPreviews;
-        _settingsView.ClearBackupsRequested = async () =>
-        {
-            if (!await ToolbarIsland.ConfirmAsync("Clear overwrite backups",
-                "Permanently delete stored overwrite backups? Undo and Redo will be removed for the affected operations. Current files will remain in place.", "Clear backups")) return;
-            _settingsView.SetBackupCleanupStatus("Clearing overwrite backups…");
-            try
-            {
-                var result = await backupMaintenance.ClearAsync();
-                _settingsView.SetBackupCleanupStatus($"Cleared {result.RemovedCount} backups." +
-                    (result.Issues.Count == 0 ? string.Empty : $" {result.Issues.Count} backups could not be cleared.\n" + string.Join("\n", result.Issues.Take(3))));
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or Microsoft.Data.Sqlite.SqliteException)
-            {
-                _logger.LogWarning(exception, "Could not clear overwrite backups.");
-                _settingsView.SetBackupCleanupStatus($"Could not finish clearing backups: {exception.Message}");
-            }
-            finally { await UpdateHistoryAvailabilityAsync(); }
-        };
+        InitializeBackupReview(backupMaintenance);
         _browseView.DialogService = ToolbarIsland;
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;

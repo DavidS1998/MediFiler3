@@ -86,6 +86,18 @@ public sealed class ApplicationPersistenceTests
         Assert.True((await ((IApplicationSettingsStore)reopened).LoadAsync()).CarouselEnabled);
     }
 
+    [Fact]
+    public async Task OverscrollPreferencePersistsAndOlderSettingsKeepItEnabled()
+    {
+        using var temp = new TemporaryDatabase();
+        var store = new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
+        await store.SaveAsync(new ApplicationSettings(BrowseOverscrollEnabled: false));
+        var reopened = (IApplicationSettingsStore)new SqliteApplicationStateStore(new SqliteDatabase(temp.DatabasePath));
+        Assert.False((await reopened.LoadAsync()).BrowseOverscrollEnabled);
+        await ExecuteAsync(temp.DatabasePath, "UPDATE ApplicationSettings SET PayloadJson = '{\"Muted\":false,\"Volume\":0.5}'");
+        Assert.True((await reopened.LoadAsync()).BrowseOverscrollEnabled);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

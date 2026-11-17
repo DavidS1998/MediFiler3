@@ -59,7 +59,7 @@ public sealed class SqliteFileOperationJournal(SqliteDatabase database, string? 
                 throw new InvalidOperationException("The history group has an unresolved operation; backups were retained for recovery.");
             if (original)
                 await InsertEventAsync(connection, transaction, id, FileOperationEventKind.HistoryDiscarded, DateTimeOffset.UtcNow,
-                    "{\"Message\":\"Overwrite backups cleared from Settings; this history group is retired.\"}", cancellationToken).ConfigureAwait(false);
+                    "{\"Message\":\"Overwrite backups cleared by maintenance; this history group is retired.\"}", cancellationToken).ConfigureAwait(false);
         }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }

@@ -10,7 +10,8 @@ public sealed record ApplicationSettings(bool Muted = false, double Volume = 0.5
     ReaderScalingMode ReaderScaling = ReaderScalingMode.FitWidth, int ReaderSpacing = 0,
     int ReaderPreload = 2, bool ReaderPageIndicator = true, int ReaderWidthPercent = 100,
     bool FolderDepthShadingEnabled = true, IReadOnlyList<FolderNameRule>? FolderNameRules = null,
-    bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false, IReadOnlyList<FileNameColorRule>? FileNameRules = null)
+    bool FolderRulesConfigured = false, bool FolderCollapseDefaultConfigured = false, IReadOnlyList<FileNameColorRule>? FileNameRules = null,
+    bool BrowseOverscrollEnabled = true)
 {
     public IReadOnlyList<FolderNameRule> GetFolderRules()
     {

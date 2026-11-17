@@ -53,6 +53,7 @@ public partial class App : System.Windows.Application
                     services.AddSingleton<IFileOperationRecoveryInspector, FileSystemOperationRecoveryInspector>();
                     services.AddSingleton<OperationJournalRecoveryService>();
                     services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<OperationJournalRecoveryService>());
+                    services.AddHostedService<OperationBackupRetentionService>();
                     services.AddSingleton<MediFiler3.Application.Folders.IFolderTreeService, FileSystemFolderTreeService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileListingService, FileSystemFileListingService>();
                     services.AddSingleton<MediFiler3.Application.Files.IFileContentService, FileSystemFileContentService>();

@@ -9,6 +9,29 @@ public sealed class NavigationControllerTests
     private static FileEntry File(string name) => new(name, name, 1, DateTime.UtcNow);
 
     [Fact]
+    public void DisabledOverscrollKeepsNormalNavigationAndResetsAccumulatedBoundaryAttempts()
+    {
+        var root = new FolderTreeEntry("Root", "root");
+        var state = new NavigationSessionState();
+        state.ReplaceRoots([root]); state.SetActiveFolder(root);
+        var first = File("first"); var last = File("last"); state.ReplaceFiles([first, last]);
+        var activations = 0;
+        var controller = new NavigationController(state, _ => { activations++; return Task.CompletedTask; });
+        controller.NavigateByOneFile(1);
+        for (var i = 0; i < 4; i++) controller.NavigateByOneFile(1);
+        controller.SetOverscrollEnabled(false);
+        for (var i = 0; i < 20; i++) controller.NavigateByOneFile(1);
+        Assert.Equal(0, activations); Assert.Same(last, state.CurrentFile);
+        controller.NavigateByOneFile(-1); Assert.Same(first, state.CurrentFile);
+        for (var i = 0; i < 20; i++) controller.NavigateByOneFile(-1);
+        Assert.Equal(0, activations);
+        controller.SetOverscrollEnabled(true);
+        controller.NavigateByOneFile(1);
+        for (var i = 0; i < 4; i++) controller.NavigateByOneFile(1);
+        Assert.Equal(0, activations);
+    }
+
+    [Fact]
     public void NavigationUpdatesSharedSelectionAndRejectsFilesOutsideCurrentFolder()
     {
         var state = new NavigationSessionState();
