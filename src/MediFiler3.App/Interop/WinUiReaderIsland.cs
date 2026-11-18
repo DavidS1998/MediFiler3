@@ -94,9 +94,9 @@ public sealed partial class WinUiReaderIsland(ReaderSessionState session, IReade
 
     private string _emptyMessage = "No supported images in this folder.";
 
-    public void SetFilterNotice(bool filtered, bool incomplete)
+    public void SetFilterNotice(bool filtered, bool incomplete, bool discovering = false)
     {
-        _emptyMessage = incomplete ? "The folder listing is incomplete." :
+        _emptyMessage = discovering ? "Discovering files in subfolders..." : incomplete ? "The folder listing is incomplete." :
             filtered ? "No images match the current filter." : "No supported images in this folder.";
         if (_empty is not null) _empty.Text = _emptyMessage;
     }

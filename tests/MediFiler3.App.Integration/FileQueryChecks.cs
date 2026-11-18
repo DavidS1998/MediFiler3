@@ -187,7 +187,7 @@ internal static partial class Program
                 var fields = panel.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().First();
                 var names = fields.Children.OfType<Microsoft.UI.Xaml.Controls.Grid>().First();
                 names.Children.OfType<Microsoft.UI.Xaml.Controls.TextBox>().First().Text = "046";
-                Require(fields.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().Single().Children
+                Require(fields.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().SelectMany(group => group.Children)
                     .OfType<Microsoft.UI.Xaml.Controls.RadioButton>().Count() == 4, "Sort options are not radio buttons");
                 await WaitUntil(() => flyout.IsOpen && state.Files.Count == 1 && state.CurrentFile?.Name == "046.png");
                 var tagList = panel.Children.OfType<Microsoft.UI.Xaml.Controls.ScrollViewer>().Single();
@@ -305,6 +305,76 @@ internal static partial class Program
                     if (window.IsFullscreen) window.ToggleFullscreen();
                     if (previousForeground != 0) SetLayoutForegroundWindow(previousForeground);
                 }
+            });
+            await Check("recursive results share ordering and support grouped moves across source folders", async () =>
+            {
+                var scope = System.IO.Directory.CreateDirectory(Path.Combine(Root, "recursive-query")).FullName;
+                var second = System.IO.Directory.CreateDirectory(Path.Combine(scope, "Folder 2")).FullName;
+                var tenth = System.IO.Directory.CreateDirectory(Path.Combine(scope, "Folder 10")).FullName;
+                var direct = Path.Combine(scope, "B.png");
+                var firstChild = Path.Combine(second, "A1.png");
+                var secondChild = Path.Combine(tenth, "A2.png");
+                foreach (var path in new[] { direct, firstChild, secondChild }) File.Copy(Fixtures[".png"].FullPath, path);
+
+                var apply = typeof(MediFiler3.MainWindow).GetMethod("ApplyEditedFileFilter", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                void Apply(FileQuery query) => apply.Invoke(window, [query]);
+                Apply(FileQuery.AllFiles);
+                await LoadRestartRootsAsync(window, [scope, second]);
+                await WaitUntil(() => state.ActiveFolder?.Path == scope && state.Files.Count == 1);
+                var owner = state.ActiveRoot!;
+                var filterButton = (Microsoft.UI.Xaml.Controls.Button)Field(caption, "_fileFilterButton")!;
+                var editor = (Microsoft.UI.Xaml.Controls.Flyout)filterButton.Flyout;
+                editor.ShowAt(filterButton);
+                await WaitUntil(() => editor.IsOpen);
+                var panel = (Microsoft.UI.Xaml.Controls.StackPanel)((Microsoft.UI.Xaml.Controls.ScrollViewer)editor.Content).Content;
+                var fields = panel.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().First();
+                var scopeOptions = fields.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().First();
+                var include = scopeOptions.Children.OfType<Microsoft.UI.Xaml.Controls.CheckBox>().First();
+                var combine = scopeOptions.Children.OfType<Microsoft.UI.Xaml.Controls.CheckBox>().Last();
+                include.IsChecked = true;
+                await WaitUntil(() => state.Files.Select(file => file.FullPath).SequenceEqual(new[] { direct, firstChild, secondChild }));
+                Require(state.ActiveFolder?.DirectFileCount == 1 && ReferenceEquals(state.ActiveRoot, owner),
+                    "Recursive results changed physical counts or ownership for overlapping roots");
+                combine.IsChecked = true;
+                await WaitUntil(() => state.Files.Select(file => file.FullPath).SequenceEqual(new[] { firstChild, secondChild, direct }));
+                editor.Hide();
+                await WaitUntil(() => !editor.IsOpen);
+
+                var controller = (NavigationController)Field(browse, "_navigationController")!;
+                controller.SelectFile(state.Files[^1]);
+                for (var attempt = 0; attempt < 6; attempt++) controller.NavigateByOneFile(1);
+                Require(state.ActiveFolder?.Path == scope, "Recursive overscroll crossed into another folder");
+
+                Destination("Reader");
+                await WaitUntil(() => state.Reader.Pages.Select(file => file.FullPath).SequenceEqual(new[] { firstChild, secondChild, direct }));
+                Destination("Gallery");
+                await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland gallery && gallery.RealizedCount > 0);
+                state.GallerySelection.SelectAll(state.Files);
+                var move = typeof(BrowseView).GetMethod("RunGalleryFileCommandAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                await (Task)move.Invoke(browse, [owner, null])!;
+                Require(File.Exists(direct) && !File.Exists(firstChild) && !File.Exists(secondChild) &&
+                    File.Exists(Path.Combine(scope, "A1.png")) && File.Exists(Path.Combine(scope, "A2.png")),
+                    "Recursive move did not handle both physical source folders and a same-folder item");
+                await browse.UndoLastOperationAsync();
+                Require(File.Exists(firstChild) && File.Exists(secondChild) && File.Exists(direct) &&
+                    state.Files.Any(file => file.FullPath == firstChild) && state.Files.Any(file => file.FullPath == secondChild),
+                    "Grouped Undo did not restore the physical source paths and recursive results");
+                await browse.RedoLastOperationAsync();
+                Require(!File.Exists(firstChild) && !File.Exists(secondChild) && File.Exists(direct),
+                    "Grouped Redo did not replay both real source paths");
+                var savedRecursive = new SavedFileFilter(Guid.NewGuid(), "Recursive combined", new FileQuery(IncludeSubfolders: true, CombineFolders: true));
+                settings.Update(current => current with { SavedFileFilters = (current.SavedFileFilters ?? []).Append(savedRecursive).ToArray() });
+                await settings.FlushAsync();
+                Require((await ((IApplicationSettingsStore)store).LoadAsync()).SavedFileFilters!.Contains(savedRecursive),
+                    "Saved recursive criteria did not survive a settings reload");
+                Apply(FileQuery.AllFiles);
+                await WaitUntil(() => state.Files.Count == 3 && state.Files.All(file => Path.GetDirectoryName(file.FullPath) == scope));
+                var overlappingRoot = state.Roots.Single(root => StringComparer.OrdinalIgnoreCase.Equals(root.Path, second));
+                var activate = typeof(BrowseView).GetMethod("ActivateFolderAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                await (Task)activate.Invoke(browse, [overlappingRoot, null, 0])!;
+                await browse.RefreshAsync();
+                Require(ReferenceEquals(state.ActiveRoot, overlappingRoot) && ReferenceEquals(state.ActiveFolder, overlappingRoot),
+                    "F5 switched an overlapping root to its ancestor's ownership");
             });
         }
         finally { window.Close(); }

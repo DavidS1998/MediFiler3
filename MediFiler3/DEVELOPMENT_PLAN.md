@@ -6,7 +6,7 @@ Long-term milestone tracker, updated 2026-11-15. Requirements and current produc
 
 | Milestone | Delivered scope | State / acceptance |
 |---|---|---|
-| Direct-folder filters (2026-11-17) | Shared query, live native toolbar search, named/recent persistence, filter criteria and sorting, filtered navigation and reconciliation | Implemented. Clean build, 423 unit/filesystem and 237 native checks passed. Recursive collection is the next slice. |
+| Direct-folder filters (2026-11-17) | Shared query, live native toolbar search, named/recent persistence, filter criteria and sorting, filtered navigation and reconciliation | Implemented. Clean build, 423 unit/filesystem and 237 native checks passed. |
 | Settings and backup retention (2026-11-17) | Persisted Browse overscroll toggle, aligned Settings/Gallery sliders, virtualized backup review with Explorer links, reviewed-ID manual cleanup and safe 30-day startup/hourly expiry | Implemented; clean build, 418 unit/filesystem and 235 full native checks passed, zero failures/skips. Physical user review pending. |
 | Browse responsiveness follow-up (2026-11-17) | Bounded render-priority carousel movement, rapid-jump centering, coalesced/cached caption publication and retained title/breadcrumb resources | Implemented; red/green rapid-navigation regression, 44 focused and 234 full native checks passed, zero failures/skips. User confirmed the carousel feels much better; native properties/layout are not compositor-frame measurements. |
 | WinUI title and navigation updates (2026-11-17) | AppWindowTitleBar colors/extended native title content, native Reader PagerControl on approved experimental SDK, combined Browse zoom AppBarButton, folder-menu icons and text clearance | Implemented; clean build, 411 unit/filesystem and 234 full native checks passed, zero failures/skips. User accepted the UI, then reported responsiveness addressed in the follow-up above. Breadcrumbs accepted by user. |
@@ -122,7 +122,7 @@ Bulk rename is **not planned**. Extra codecs/FLAC/animated WebP, PDF/document/3D
 
 ## 5. Proposed next feature: shared filters, search and sorting
 
-The direct-folder slice delivers shared toolbar search and saved filters, literal filename conditions, categories and basic sorting. Recursive collection is the next slice of the initial feature. Regex and extracted content-metadata sorting are deferred to later releases.
+The direct-folder slice delivers shared toolbar search and saved filters, literal filename conditions, categories and basic sorting. The second slice adds progressive descendant collection with grouped and combined ordering. Regex and extracted content-metadata sorting are deferred to later releases.
 
 ### Requested direction
 
@@ -198,7 +198,7 @@ Suggested safeguards: bounded worker concurrency and memory, cancellation/stale-
 
 ### Recursive loading, navigation and safe operations
 
-Recursive collection changes today's direct-folder-only listing contract; it is not merely a toolbar addition. Keep loaded roots separate. Do not traverse reparse points or managed backup storage, and retain Hidden/System exclusions and partial-error reporting. Folder presentation Hide rules should not silently remove files from a recursive query unless a separate filter condition explicitly does so.
+Recursive collection extends the direct-folder inventory to descendants. Keep loaded roots separate. Do not traverse reparse points or managed backup storage, and retain Hidden/System exclusions and partial-error reporting. Folder presentation Hide rules should not silently remove files from a recursive query unless a separate filter condition explicitly does so.
 
 Keep source inventory and ordered matching results distinct. Every result needs its full path, real parent folder and owning loaded-root identity, including overlapping roots. Recursive results must not lose physical ownership or silently duplicate the same path through overlapping traversal. The active folder remains the scope anchor; browsing a descendant result does not navigate the tree on every file change.
 
@@ -213,7 +213,7 @@ Recursive discovery is progressive/cancellable with explicit incomplete/error st
 ### Implementation slices
 
 1. Direct-folder shared query delivered with toolbar search/selector, persistent saved/recent filters, literal include/exclude, categories and basic sorts. Retains the default unfiltered listing and Reader's numeric Go.
-2. Recursive grouped/combined collections with real source ownership, progressive discovery, cancellation, watcher/operation/history reconciliation, selection/count/overscroll semantics and scale characterization. This is part of the agreed initial feature, even if developed as a separate slice, and must validate safe multi-folder operations/history before acceptance.
+2. Recursive grouped and combined results are implemented with source ownership, progressive discovery, cancellation, watcher and operation reconciliation, root-scoped history and overscroll suppression.
 3. Regex and extracted metadata require separately scoped later releases. Added/first-seen dates remain excluded.
 
-Acceptance must include all three views/carousel; saved/recent persistence with active-query reset after restart; follow-folder scope; live search/Enter/Escape/editor keys; literal phrases/punctuation; category combinations; empty/partial/error results; duplicate names; natural/equal-key ordering; first-result fallback/selection pruning/counters; five-attempt filtered overscroll and recursive suppression; cancellation/inactive work; Home/Settings retention; rapid edits; scope changes during dialogs; recursive operations/history; overlapping roots; no-link traversal; watcher/F5 freshness; and large real-file collections. Existing Reader pixel/fraction/native-lifetime and safety assertions remain mandatory.
+Acceptance must include all three views/carousel; saved/recent persistence with active-query reset after restart; follow-folder scope; live search/Enter/Escape/editor keys; literal phrases/punctuation; category combinations; empty/partial/error results; duplicate names; natural/equal-key ordering; clamped result positions/selection pruning/counters; five-attempt filtered overscroll and recursive suppression; cancellation/inactive work; Home/Settings retention; rapid edits; scope changes during dialogs; recursive operations/history; overlapping roots; no-link traversal; watcher/F5 freshness; and large real-file collections. Existing Reader pixel/fraction/native-lifetime and safety assertions remain mandatory.

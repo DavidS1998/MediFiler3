@@ -18,7 +18,7 @@ public partial class BrowseView
         var folder = _navigationState.ActiveFolder;
         var revision = _commandRevision;
         var selected = dragFiles?.ToArray() ?? _navigationState.GallerySelection.GetSelectedFiles(_navigationState.Files).ToArray();
-        if (root is null || selected.Length == 0) return;
+        if (root is null || selected.Length == 0 || selected.Any(file => !ReferenceEquals(GetResultOwner(file), root))) return;
         using var cancellation = new CancellationTokenSource();
         _galleryCommandCancellation = cancellation;
         bool Current() => _viewerActive && IsGallery && revision == _commandRevision &&

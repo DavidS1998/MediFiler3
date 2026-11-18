@@ -44,7 +44,7 @@ public partial class BrowseView
             _galleryRefreshQueued = false;
             if (IsGallery && _viewerActive && _gallery is not null && _galleryFilesDirty)
             {
-                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile, snapshotListing: _fileQuery.IncludeSubfolders);
                 _galleryFilesDirty = false;
             }
         }));
@@ -88,7 +88,8 @@ public partial class BrowseView
         {
             _gallery = new WinUiGalleryIsland(_thumbnailService, _navigationState.GallerySelection);
             _gallery.SetFileNameRules(_fileNameRules);
-            _gallery.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete);
+            _gallery.SetRelativeFileContext(_fileQuery.IncludeSubfolders ? _navigationState.ActiveFolder?.Path : null);
+            _gallery.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete, _inventoryDiscovering);
             _gallery.FileSelected += file =>
             {
                 if (!IsGallery || !_viewerActive || !_navigationState.ContainsFile(file)) return;
@@ -108,7 +109,7 @@ public partial class BrowseView
             _gallery.RedoRequested += async () => await RedoLastOperationAsync();
             _gallery.RefreshRequested += () => RefreshRequested?.Invoke();
             _gallery.SetTileSize(_galleryWidth, _galleryHeight);
-            _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+            _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile, snapshotListing: _fileQuery.IncludeSubfolders);
             _galleryFilesDirty = false;
             GalleryHost.Children.Add(_gallery);
         }
@@ -116,7 +117,7 @@ public partial class BrowseView
         {
             if (_galleryFilesDirty)
             {
-                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile);
+                _gallery.SetFiles(_navigationState.Files, _navigationState.CurrentFile, snapshotListing: _fileQuery.IncludeSubfolders);
                 _galleryFilesDirty = false;
             }
             UpdateGalleryTreeInset();

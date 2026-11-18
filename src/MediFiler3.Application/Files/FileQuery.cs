@@ -11,7 +11,7 @@ public enum FileCategories { All = 0, Images = 1, Video = 2, Audio = 4, Text = 8
 public enum FileSort { Name, Size, Created, Modified }
 
 public sealed record FileQuery(string Search = "", string Includes = "", string Excludes = "",
-    FileCategories Categories = FileCategories.All, FileSort Sort = FileSort.Name, bool Descending = false)
+    FileCategories Categories = FileCategories.All, FileSort Sort = FileSort.Name, bool Descending = false, bool IncludeSubfolders = false, bool CombineFolders = false)
 {
     public const int MaximumTextLength = 256;
     public static FileQuery AllFiles { get; } = new();
@@ -41,18 +41,34 @@ public sealed record FileQuery(string Search = "", string Includes = "", string 
             if (Matches(file)) matches.Add(file);
         }
 
-        // The listing already supplies natural order. Stable ordering retains it for equal sort keys.
-        IEnumerable<FileEntry> ordered = Sort switch
-        {
-            FileSort.Size => OrderBy(file => file.Size),
-            FileSort.Created => OrderBy(file => file.CreatedUtc),
-            FileSort.Modified => OrderBy(file => file.LastModifiedUtc),
-            _ => Descending ? matches.AsEnumerable().Reverse() : matches
-        };
-        return ordered.Select(file => { token.ThrowIfCancellationRequested(); return file; }).ToArray();
+        if (!IncludeSubfolders)
+            return Order(matches, global: false).ToArray();
+        if (CombineFolders)
+            return Order(matches, global: true).ToArray();
+        return matches.GroupBy(file => Path.GetDirectoryName(file.FullPath), StringComparer.OrdinalIgnoreCase)
+            .SelectMany(group => Order(group, global: false)).ToArray();
 
-        IEnumerable<FileEntry> OrderBy<TKey>(Func<FileEntry, TKey> key) =>
-            Descending ? matches.OrderByDescending(key) : matches.OrderBy(key);
+        IEnumerable<FileEntry> Order(IEnumerable<FileEntry> files, bool global)
+        {
+            var byName = WindowsFileNameComparer.Instance;
+            IEnumerable<FileEntry> ordered = Sort switch
+            {
+                FileSort.Size => SortBy(file => file.Size),
+                FileSort.Created => SortBy(file => file.CreatedUtc),
+                FileSort.Modified => SortBy(file => file.LastModifiedUtc),
+                _ when global => (Descending ? files.OrderByDescending(file => file.Name, byName) : files.OrderBy(file => file.Name, byName))
+                    .ThenBy(file => file.FullPath, byName).ThenBy(file => file.FullPath, StringComparer.Ordinal),
+                _ => Descending ? files.Reverse() : files
+            };
+            return ordered.Select(file => { token.ThrowIfCancellationRequested(); return file; });
+
+            IOrderedEnumerable<FileEntry> SortBy<TKey>(Func<FileEntry, TKey> key)
+            {
+                var values = Descending ? files.OrderByDescending(key) : files.OrderBy(key);
+                return global ? values.ThenBy(file => file.Name, byName).ThenBy(file => file.FullPath, byName)
+                    .ThenBy(file => file.FullPath, StringComparer.Ordinal) : values;
+            }
+        }
     }
 
     private static FileCategories Category(FileEntry file)

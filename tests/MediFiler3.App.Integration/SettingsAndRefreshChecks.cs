@@ -97,7 +97,11 @@ internal static partial class Program
                 foreach (var name in new[] { "0.txt", "a.txt", "b.txt" }) File.Delete(Path.Combine(nested, name));
                 Directory.Delete(nested);
                 await browse.RefreshAsync();
-                await WaitUntil(() => state.ActiveFolder?.Path == folder && state.Files.Count == 3);
+                try { await WaitUntil(() => state.ActiveFolder?.Path == folder && state.Files.Count == 3); }
+                catch (TimeoutException exception)
+                {
+                    throw new InvalidOperationException($"Expected fallback to {folder} with three files. Actual folder: {state.ActiveFolder?.Path}, files: {state.Files.Count}.", exception);
+                }
             });
             await Check("refresh clears selection when root is externally removed", async () =>
             {

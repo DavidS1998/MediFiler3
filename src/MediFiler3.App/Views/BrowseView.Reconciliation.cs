@@ -83,6 +83,7 @@ public partial class BrowseView
         var revision = _commandRevision;
         bool Current() => !token.IsCancellationRequested && _viewerActive && revision == _commandRevision && _reconciliationDeferrals == 0;
         var folder = _navigationState.ActiveFolder;
+        var owner = _navigationState.ActiveRoot;
         var selected = _navigationState.CurrentFile;
         var position = Math.Max(0, _navigationState.CurrentFilePosition - 1);
         var roots = _navigationState.Roots.ToArray();
@@ -117,18 +118,20 @@ public partial class BrowseView
             await foreach (var result in _folderTreeService.LoadHierarchyAsync(loaded.Roots, token))
             {
                 if (!Current()) return false;
-                var existing = FindFolder(roots, result.Parent.Path);
-                if (existing is not null && result.Errors.Count == 0) await existing.ReconcileChildrenAsync(result.Children, async () =>
-                {
-                    await Dispatcher.Yield(DispatcherPriority.Background);
-                    if (!Current()) throw new ReconciliationSupersededException();
-                }, token);
+                if (result.Errors.Count == 0)
+                    foreach (var existing in FindFolderOccurrences(roots, result.Parent.Path))
+                        await existing.ReconcileChildrenAsync(CloneFolderChildren(result.Children), async () =>
+                        {
+                            await Dispatcher.Yield(DispatcherPriority.Background);
+                            if (!Current()) throw new ReconciliationSupersededException();
+                        }, token);
                 await Dispatcher.Yield(DispatcherPriority.Background);
             }
             if (!Current()) return false;
-            if (folder is not null && FindFolder(roots, folder.Path) is null)
+            if (folder is not null && _navigationState.GetRootForFolder(folder) is null)
             {
-                var fallback = roots.FirstOrDefault();
+                var fallback = _fileQuery.IncludeSubfolders && owner is not null && roots.Contains(owner)
+                    ? owner : roots.FirstOrDefault();
                 if (fallback is not null) await ActivateFolderAsync(fallback);
                 return true;
             }
@@ -147,10 +150,15 @@ public partial class BrowseView
                 }
             }
         }
+        var scope = _scopeLifetime;
+        var recursive = _fileQuery.IncludeSubfolders;
+        bool InScope(string path) => folder is not null && (recursive ? IsPathWithin(path, folder.Path) :
+            PathsEqual(path, folder.Path) || PathsEqual(Path.GetDirectoryName(path) ?? "", folder.Path));
         var affectsFolder = folder is not null && (batch.RescanRoots.Concat(reconcileRoots).Any(root => IsPathWithin(folder.Path, root)) ||
-            batch.Paths.Any(path => PathsEqual(path, folder.Path) || PathsEqual(Path.GetDirectoryName(path) ?? "", folder.Path)));
+            batch.Paths.Any(InScope));
         if (!affectsFolder || folder is null) return true;
-        var listing = await _fileListingService.GetFilesAsync(folder.Path, token);
+        var listing = await ReadQueryScopeAsync(folder, token);
+        if (listing is null || !ReferenceEquals(scope, _scopeLifetime)) return false;
         if (!Current() || !ReferenceEquals(folder, _navigationState.ActiveFolder) || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
         if (reconcileRoots.Any(root => IsPathWithin(folder.Path, root)))
         {
@@ -172,7 +180,7 @@ public partial class BrowseView
         var replacement = listing.Files.FirstOrDefault(f => selected is not null && PathsEqual(f.FullPath, selected.FullPath));
         var selectedChanged = selected is null && listing.Files.Count > 0 || selected != replacement || selected is not null &&
             (batch.RescanRoots.Any(root => IsPathWithin(selected.FullPath, root)) || invalidatedPaths.Any(p => PathsEqual(p, selected.FullPath)));
-        var thumbnailsChanged = batch.Paths.Any(p => PathsEqual(Path.GetDirectoryName(p) ?? "", folder.Path));
+        var thumbnailsChanged = batch.Paths.Any(InScope);
         if (listing.Files.SequenceEqual(previousInventory) && _inventoryIncomplete == (listing.Errors.Count > 0) &&
             (!selectedChanged || selected is null && _navigationState.Files.Count == 0) && !thumbnailsChanged) return true;
         // Keep the selected record for unaffected media/text/image presentation.
@@ -180,12 +188,13 @@ public partial class BrowseView
         var files = listing.Files.Select(f => (!selectedChanged || selected != f) && previousFiles.TryGetValue(f.FullPath, out var old) && old == f ? old : f).ToArray();
         if (!await ProjectFilesAsync(files, token, matches =>
         {
-            if (!Current() || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
+            if (!Current() || !ReferenceEquals(scope, _scopeLifetime) || !ReferenceEquals(selected, _navigationState.CurrentFile)) return false;
+            _inventoryDiscovering = false;
             StoreInventory(folder, files, listing.Errors.Count > 0);
             PublishFileResults(matches, selected?.FullPath, position,
                 skipUnchanged: _fileQuery != FileQuery.AllFiles && !selectedChanged);
             selectedChanged |= selected != _navigationState.CurrentFile;
-            if (listing.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, files.Length);
+            if (listing.DirectCount is { } direct) UpdateFolderFileCounts(folder.Path, direct);
             return true;
         })) return false;
         // Existing carousel items can otherwise keep stale same-size/timestamp images.

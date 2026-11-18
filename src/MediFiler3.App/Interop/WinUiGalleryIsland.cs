@@ -41,16 +41,33 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     private const long DecodedByteLimit = 128L * 1024 * 1024;
     private DesktopWindowXamlSource? _source;
     private GridView? _grid;
+    private string? _relativeFileContext;
+    public void SetRelativeFileContext(string? folder)
+    {
+        if (string.Equals(_relativeFileContext, folder, StringComparison.OrdinalIgnoreCase)) return;
+        _relativeFileContext = folder;
+        foreach (var (container, tile) in _tiles)
+            UpdateFileCaption(container, tile.Root, tile.File);
+    }
+
+    private void UpdateFileCaption(SelectorItem container, Grid root, FileEntry file)
+    {
+        var label = _relativeFileContext is { } folder ? System.IO.Path.GetRelativePath(folder, file.FullPath) : file.Name;
+        ((TextBlock)((Border)root.Children[2]).Child).Text = label;
+        Xaml.Automation.AutomationProperties.SetName(container, label);
+    }
+
     private TextBlock? _empty;
     private string _emptyMessage = "No files in this folder. Select a folder or add folders to begin.";
 
-    public void SetFilterNotice(bool filtered, bool incomplete)
+    public void SetFilterNotice(bool filtered, bool incomplete, bool discovering = false)
     {
-        _emptyMessage = incomplete ? "The folder listing is incomplete." :
+        _emptyMessage = discovering ? "Discovering files in subfolders..." : incomplete ? "The folder listing is incomplete." :
             filtered ? "No files match the current filter." : "No files in this folder. Select a folder or add folders to begin.";
         if (_empty is not null) _empty.Text = _emptyMessage;
     }
-    private readonly GalleryFiles _files = [];
+    private GalleryFiles _files = [];
+    private bool _snapshotListing;
     private FileEntry? _current;
     private readonly Dictionary<SelectorItem, Tile> _tiles = [];
     private readonly SemaphoreSlim _workers = new(3);
@@ -71,6 +88,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
     private string? _regionKey;
     private FileEntry[]? _pendingFiles;
     private FileEntry? _pendingCurrent;
+    private bool _pendingSnapshotListing;
     private bool _filesUpdateQueued;
     public int RealizedCount => _tiles.Count;
     public event Action<FileEntry>? FileSelected;
@@ -97,11 +115,11 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         }
     }
 
-    public void SetFiles(IEnumerable<FileEntry> files, FileEntry? current)
+    public void SetFiles(IEnumerable<FileEntry> files, FileEntry? current, bool snapshotListing = false)
     {
         var next = files.ToArray();
-        if (_grid is null) { SetFilesCore(next, current); return; }
-        _pendingFiles = next; _pendingCurrent = current;
+        if (_grid is null) { SetFilesCore(next, current, snapshotListing); return; }
+        _pendingFiles = next; _pendingCurrent = current; _pendingSnapshotListing = snapshotListing;
         QueuePendingFiles();
     }
 
@@ -115,13 +133,13 @@ public sealed partial class WinUiGalleryIsland : HwndHost
             if (!_active || !IsLoaded || !IsVisible || _grid is not { IsLoaded: true } || _pendingFiles is not { } files) return;
             var current = _pendingCurrent;
             _pendingFiles = null; _pendingCurrent = null;
-            SetFilesCore(files, current);
+            SetFilesCore(files, current, _pendingSnapshotListing);
         }));
     }
 
-    private void SetFilesCore(FileEntry[] next, FileEntry? current)
+    private void SetFilesCore(FileEntry[] next, FileEntry? current, bool snapshotListing)
     {
-        if (_grid?.ItemsSource is not null && _files.SequenceEqual(next)) { RevealCurrentFile(current, preserveSelection: true); return; }
+        if (_grid?.ItemsSource is not null && _snapshotListing == snapshotListing && _files.SequenceEqual(next)) { RevealCurrentFile(current, preserveSelection: true); return; }
         _selectionMenu?.Hide();
         _hoverSelection.Reset();
         _selectionContextVersion++;
@@ -129,39 +147,23 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         _updating = true;
         try
         {
-            // Keep the native source and unchanged items stable when a watcher changes one file.
-            var paths = next.Select(f => f.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var surviving = _files.Where(file => paths.Contains(file.FullPath)).Select(file => file.FullPath).ToArray();
-            var oldPaths = surviving.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var changedCount = _files.Count + next.Length - 2 * surviving.Length;
-            if (surviving.Length == 0 || changedCount > 256 || !surviving.SequenceEqual(
-                next.Where(file => oldPaths.Contains(file.FullPath)).Select(file => file.FullPath), StringComparer.OrdinalIgnoreCase))
+            if (snapshotListing || _snapshotListing)
             {
-                // Disjoint listings, large changes and reorders publish one reset. The existing
-                // source and decoded cache survive, with no per-file native move notifications.
+                // Recursive ordering and membership can change together. Populate the next
+                // source off the GridView so WinRT receives no mutable collection callbacks.
                 CancelPendingReveal();
-                _grid?.SelectedItems.Clear();
                 if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
                 _hoveredRoot = null;
                 CancelTiles();
-                _files.ReplaceAll(next);
+                var source = new GalleryFiles();
+                source.ReplaceAll(next);
+                _files = source;
+                _snapshotListing = snapshotListing;
+                if (_grid is not null) _grid.ItemsSource = source;
             }
-            else
-            {
-                for (var i = _files.Count - 1; i >= 0; i--)
-                    if (!paths.Contains(_files[i].FullPath)) _files.RemoveAt(i);
-                for (var i = 0; i < next.Length; i++)
-                {
-                    if (i < _files.Count && string.Equals(_files[i].FullPath, next[i].FullPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (_files[i] != next[i]) _files[i] = next[i];
-                        continue;
-                    }
-                    _files.Insert(i, next[i]);
-                }
-            }
-            // Input can arrive between session publication and this deferred native diff.
-            // Prune any old-list selection accepted during that interval as well.
+            else UpdateIncrementalFiles(next);
+
+            // Input can arrive between session publication and the deferred native update.
             _selection.Reconcile(_files);
             if (_grid is null) return;
             _grid.ItemsSource ??= _files;
@@ -169,6 +171,41 @@ public sealed partial class WinUiGalleryIsland : HwndHost
             if (_empty is not null) _empty.Visibility = _files.Count == 0 ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
         }
         finally { _updating = false; }
+    }
+
+    private void UpdateIncrementalFiles(FileEntry[] next)
+    {
+        // Keep the native source and unchanged items stable when a watcher changes one file.
+        var paths = next.Select(f => f.FullPath).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var surviving = _files.Where(file => paths.Contains(file.FullPath)).Select(file => file.FullPath).ToArray();
+        var oldPaths = surviving.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var changedCount = _files.Count + next.Length - 2 * surviving.Length;
+        if (surviving.Length == 0 || changedCount > 256 || !surviving.SequenceEqual(
+            next.Where(file => oldPaths.Contains(file.FullPath)).Select(file => file.FullPath), StringComparer.OrdinalIgnoreCase))
+        {
+            // Disjoint listings, large changes and reorders publish one reset. The existing
+            // source and decoded cache survive, with no per-file native move notifications.
+            CancelPendingReveal();
+            _grid?.SelectedItems.Clear();
+            if (_hoveredRoot is not null) SetTileHover(_hoveredRoot, false);
+            _hoveredRoot = null;
+            CancelTiles();
+            _files.ReplaceAll(next);
+        }
+        else
+        {
+            for (var i = _files.Count - 1; i >= 0; i--)
+                if (!paths.Contains(_files[i].FullPath)) _files.RemoveAt(i);
+            for (var i = 0; i < next.Length; i++)
+            {
+                if (i < _files.Count && string.Equals(_files[i].FullPath, next[i].FullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_files[i] != next[i]) _files[i] = next[i];
+                    continue;
+                }
+                _files.Insert(i, next[i]);
+            }
+        }
     }
 
     public void RevealCurrentFile(FileEntry? file, bool preserveSelection = false)
@@ -445,7 +482,7 @@ public sealed partial class WinUiGalleryIsland : HwndHost
         placeholder.Text = string.IsNullOrEmpty(file.Extension) ? "FILE" : file.Extension.ToUpperInvariant();
         placeholder.Visibility = Xaml.Visibility.Visible;
         var picture = (Image)root.Children[1]; picture.Source = null;
-        ((TextBlock)((Border)root.Children[2]).Child).Text = file.Name;
+        UpdateFileCaption(container, root, file);
         SetTileHover(root, false);
         if (_hoveredRoot == root) _hoveredRoot = null;
         if (root.Tag is null)
@@ -460,7 +497,6 @@ public sealed partial class WinUiGalleryIsland : HwndHost
             root.PointerMoved += OnTilePointerMoved;
         }
         ToolTipService.SetToolTip(root, file.FullPath);
-        Xaml.Automation.AutomationProperties.SetName(container, file.Name);
         Xaml.Automation.AutomationProperties.SetHelpText(container, $"{file.FullPath}\n{file.Size:N0} bytes");
         var tile = new Tile(file, root, picture, placeholder, new CancellationTokenSource());
         _tiles[container] = tile;

@@ -187,6 +187,25 @@ internal static partial class Program
                 Require(!(bool)Field(host, "_active")!, "F5 resumed Browse inside Gallery");
                 browse.SetViewingMode(ViewingMode.Browse);
             });
+            await Check("recursive watcher and F5 update descendant results and retain physical counts", async () =>
+            {
+                var scope = state.ActiveFolder!;
+                var directCount = state.Files.Count;
+                await browse.ApplyFileQueryAsync(new FileQuery(IncludeSubfolders: true, CombineFolders: true));
+                var folder = Directory.CreateDirectory(Path.Combine(scope.Path, "recursive-watch"));
+                var nested = Path.Combine(folder.FullName, "descendant.txt");
+                File.WriteAllText(nested, "watch recursive");
+                await monitor.Emit(new([folder.FullName, nested], [], true));
+                Require(state.Files.Any(file => file.FullPath == nested) && scope.DirectFileCount == directCount &&
+                    ReferenceEquals(scope, state.ActiveFolder), "Watcher lost recursive scope or inflated its direct count");
+                var refreshed = Path.Combine(folder.FullName, "f5.txt");
+                File.WriteAllText(refreshed, "refresh recursive");
+                await browse.RefreshAsync();
+                Require(state.Files.Any(file => file.FullPath == refreshed), "F5 missed a descendant in the recursive scope");
+                await browse.ApplyFileQueryAsync(FileQuery.AllFiles);
+                Require(state.Files.Count == directCount && state.Files.All(file => Path.GetDirectoryName(file.FullPath) == scope.Path),
+                    "Clear filter did not restore the direct-folder scope");
+            });
             await Check("Settings shows indexed cache usage and clears only thumbnail artifacts", async () =>
             {
                 await thumbnails.GetThumbnailPngAsync(Fixtures[".png"], 20, 20, default);

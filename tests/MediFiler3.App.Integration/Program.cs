@@ -62,6 +62,8 @@ internal static partial class Program
                 else if (args.Length == 1 && args[0] == "--file-query-only")
                 {
                     Directory.CreateDirectory(Root); MakeFixtures();
+                    await RunSettingsAndRefreshChecksAsync();
+                    await RunWatcherChecksAsync();
                     await RunFileQueryChecksAsync();
                 }
                 else if (args.Length == 1 && args[0] == "--reader-only")

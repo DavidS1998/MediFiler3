@@ -12,7 +12,14 @@ public sealed class CarouselThumbnailItem : INotifyPropertyChanged
     private bool _isCurrent;
 
     public FileEntry File { get; }
-    public string Name => File.Name;
+    private string? _displayName;
+    public string Name => _displayName ?? File.Name;
+    public void SetDisplayName(string name)
+    {
+        if (Name == name) return;
+        _displayName = name;
+        OnPropertyChanged(nameof(Name));
+    }
     public string PlaceholderText => string.IsNullOrWhiteSpace(File.Extension) ? "FILE" : File.Extension.TrimStart('.').ToUpperInvariant();
     public bool IsCurrent
     {

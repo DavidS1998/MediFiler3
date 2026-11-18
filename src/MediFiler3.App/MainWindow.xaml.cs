@@ -491,7 +491,7 @@ public partial class MainWindow : Window
         var currentFile = _navigationState.CurrentFile;
         Title = currentFile is null || _navigationState.CurrentFilePosition == 0
             ? "MediFiler3"
-            : $"({_navigationState.CurrentFilePosition}/{_navigationState.Files.Count}) {currentFile.Name}";
+            : $"({_navigationState.CurrentFilePosition}/{_navigationState.Files.Count}) {_browseView.GetResultDisplayName(currentFile)}";
     }
 
     private async Task OnLoadFoldersClick(object sender, RoutedEventArgs e)

@@ -106,7 +106,11 @@ public partial class BrowseView : UserControl
     }
 
     public int CarouselNeighborCount => _carouselNeighborsOnEachSide;
-    public void SetOverscrollEnabled(bool enabled) => _navigationController.SetOverscrollEnabled(enabled);
+    public void SetOverscrollEnabled(bool enabled)
+    {
+        _browseOverscrollEnabled = enabled;
+        _navigationController.SetOverscrollEnabled(enabled && !_fileQuery.IncludeSubfolders);
+    }
     public event Action<double>? ZoomLevelChanged;
 
     public BrowseView(IFolderTreeService folderTreeService, IFileListingService fileListingService, NavigationSessionState navigationState,
@@ -165,6 +169,8 @@ public partial class BrowseView : UserControl
         _loadCancellation = new CancellationTokenSource();
         var cancellationToken = _loadCancellation.Token;
         _fileLoadCancellation?.Cancel();
+        ResetScopeWork();
+        _inventoryDiscovering = false;
         ClearActivePresentation("Loading folder hierarchy...", string.Empty);
         _navigationState.ReplaceRoots([]);
         var requestedRoots = paths.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -225,7 +231,7 @@ public partial class BrowseView : UserControl
 
     private async void OnFolderSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is FolderTreeEntry folder)
+        if (e.NewValue is FolderTreeEntry folder && _navigationState.GetRootForFolder(folder) is not null)
         {
             if (!ReferenceEquals(folder, _navigationState.ActiveFolder)) _navigationController.CancelPendingNavigation();
             await ActivateFolderAsync(folder);
@@ -260,9 +266,11 @@ public partial class BrowseView : UserControl
         _fileLoadCancellation = new CancellationTokenSource();
         var cancellationToken = _fileLoadCancellation.Token;
         CancelFileQueryWork();
+        ResetScopeWork();
         _inventoryFolder = null;
         _inventory = [];
         _inventoryIncomplete = false;
+        _inventoryDiscovering = _fileQuery.IncludeSubfolders;
         _readerUseFirstMatch = false;
         _readerKeepQueryPosition = false;
         _navigationState.SetActiveFolder(folder);
@@ -276,15 +284,19 @@ public partial class BrowseView : UserControl
 
         try
         {
-            var result = await _fileListingService.GetFilesAsync(folder.Path, cancellationToken);
-            if (!await ProjectFilesAsync(result.Files, cancellationToken, matches =>
+            var scope = _scopeLifetime;
+            bool Current() => ReferenceEquals(scope, _scopeLifetime) && !cancellationToken.IsCancellationRequested &&
+                ReferenceEquals(folder, _navigationState.ActiveFolder);
+            var result = await ReadQueryScopeAsync(folder, cancellationToken, async batch =>
             {
-                if (!ReferenceEquals(_navigationState.ActiveFolder, folder)) return false;
-                StoreInventory(folder, result.Files, result.Errors.Count > 0);
-                if (result.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, result.Files.Count);
-                PublishFileResults(matches, preferredFilePath, preferredFileIndex);
-                return true;
-            })) return;
+                var previous = _navigationState.CurrentFile;
+                if (!await PublishScopeListingAsync(folder, batch, cancellationToken, Current,
+                    previous?.FullPath ?? preferredFilePath, preferredFileIndex, progress: true)) return;
+                _ = RefreshCarouselAsync();
+                if (previous != _navigationState.CurrentFile) _ = LoadCurrentImageAsync(clearCurrentImage: true);
+            });
+            if (result is null || !await PublishScopeListingAsync(folder, result, cancellationToken, Current,
+                preferredFilePath ?? _navigationState.CurrentFile?.FullPath, preferredFileIndex)) return;
             if (reloadCurrent)
             {
                 _readerPreferCurrent = IsReader;
@@ -502,7 +514,12 @@ public partial class BrowseView : UserControl
         var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
         try
         {
-            var result = await (await GetRootOperationsAsync(root, requireActive: true)).MoveFileAsync(currentFile.FullPath, destination.Path);
+            var scope = _navigationState.ActiveFolder;
+            bool Current() => ReferenceEquals(scope, _navigationState.ActiveFolder) &&
+                ReferenceEquals(root, _navigationState.ActiveRoot) && ReferenceEquals(currentFile, _navigationState.CurrentFile) && IsBrowse && _viewerActive;
+            var operations = await GetRootOperationsAsync(root, requireActive: true, scopeIsCurrent: Current);
+            if (!Current() || !ReferenceEquals(GetResultOwner(currentFile), root)) return;
+            var result = await operations.MoveFileAsync(currentFile.FullPath, destination.Path);
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -510,7 +527,13 @@ public partial class BrowseView : UserControl
                 return;
             }
 
+            if (result.OperationId is null)
+            {
+                ShowOperationNotice(result.Message);
+                return;
+            }
             RememberKnownFileMoves([result]);
+            await RefreshOperationCountsAsync([result]);
             ShowOperationNotice($"Moved {currentFile.Name} to {destination.Name}.");
             await ReloadFilesInActiveFolderAsync(nextPath);
             var destinationListing = await _fileListingService.GetFilesAsync(destination.Path, CancellationToken.None);
@@ -593,7 +616,12 @@ public partial class BrowseView : UserControl
         var nextPath = index + 1 < files.Length ? files[index + 1].FullPath : index > 0 ? files[index - 1].FullPath : null;
         try
         {
-            var result = await (await GetRootOperationsAsync(root, requireActive: true)).SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
+            var scope = _navigationState.ActiveFolder;
+            bool Current() => ReferenceEquals(scope, _navigationState.ActiveFolder) &&
+                ReferenceEquals(root, _navigationState.ActiveRoot) && ReferenceEquals(currentFile, _navigationState.CurrentFile) && IsBrowse && _viewerActive;
+            var operations = await GetRootOperationsAsync(root, requireActive: true, scopeIsCurrent: Current);
+            if (!Current() || !ReferenceEquals(GetResultOwner(currentFile), root)) return;
+            var result = await operations.SendToRecycleBinAsync(currentFile.FullPath, isDirectory: false);
             if (result.OperationId is not null) OperationHistoryChanged?.Invoke();
             if (!result.Succeeded)
             {
@@ -660,7 +688,9 @@ public partial class BrowseView : UserControl
                 preferredPath = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(preferredPath));
             var preferredFilePath = result.Results.Where(item => item.Succeeded).Select(item => item.AffectedPath)
                 .FirstOrDefault(path => path is not null && File.Exists(path) &&
-                    PathsEqual(Path.GetDirectoryName(path) ?? string.Empty, preferredPath ?? string.Empty));
+                    (_fileQuery.IncludeSubfolders && preferredPath is not null
+                        ? IsPathWithin(path, preferredPath)
+                        : PathsEqual(Path.GetDirectoryName(path) ?? string.Empty, preferredPath ?? string.Empty)));
             if (IsReader) _reader?.MapPaths(pathMappings);
             RememberKnownFileMoves(result.Results);
             await RefreshOperationCountsAsync(result.Results);
@@ -773,6 +803,7 @@ public partial class BrowseView : UserControl
         _loadCancellation = new CancellationTokenSource();
         var cancellationToken = _loadCancellation.Token;
         var initialFolder = _navigationState.ActiveFolder;
+        var initialRoot = _navigationState.ActiveRoot;
         var initialFile = _navigationState.CurrentFile;
         var expansion = EnumerateFoldersInTreeOrder(_navigationState.Roots).GroupBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase).ToDictionary(group => group.Key, group => group.First().IsExpanded, StringComparer.OrdinalIgnoreCase);
         string MapPath(string path)
@@ -816,25 +847,29 @@ public partial class BrowseView : UserControl
             await foreach (var result in _folderTreeService.LoadHierarchyAsync(loaded.Roots, cancellationToken))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var parent = FindFolder(_navigationState.Roots, result.Parent.Path);
-                if (parent is not null && result.Errors.Count == 0)
-                {
-                    foreach (var child in result.Children)
-                        if (mappedExpansion.TryGetValue(child.Path, out var expanded)) child.IsExpanded = expanded;
-                    await parent.ReconcileChildrenAsync(result.Children, async () => await Dispatcher.Yield(DispatcherPriority.Background), cancellationToken);
-                }
+                if (result.Errors.Count == 0)
+                    foreach (var parent in FindFolderOccurrences(_navigationState.Roots, result.Parent.Path))
+                    {
+                        var children = CloneFolderChildren(result.Children);
+                        foreach (var child in children)
+                            if (mappedExpansion.TryGetValue(child.Path, out var expanded)) child.IsExpanded = expanded;
+                        await parent.ReconcileChildrenAsync(children, async () => await Dispatcher.Yield(DispatcherPriority.Background), cancellationToken);
+                    }
                 await Dispatcher.Yield(DispatcherPriority.Background);
             }
             cancellationToken.ThrowIfCancellationRequested();
             StartFolderCounts();
             if (!ReferenceEquals(initialFolder, _navigationState.ActiveFolder) || !ReferenceEquals(initialFile, _navigationState.CurrentFile)) return;
-            var active = FindFolder(_navigationState.Roots, preferred);
+            var owner = initialRoot is null ? null : _navigationState.Roots.FirstOrDefault(root => PathsEqual(root.Path, MapPath(initialRoot.Path)));
+            IEnumerable<FolderTreeEntry> preferredRoots = owner is not null && preferred is not null &&
+                IsPathWithin(preferred, owner.Path) ? [owner] : _navigationState.Roots;
+            var active = FindFolder(preferredRoots, preferred);
             // Keep a nested folder active while its replacement node is discovered.
             // This avoids jumping to a root's first file during a refresh.
             while (active is null && preferred is not null)
             {
                 preferred = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(preferred));
-                active = FindFolder(_navigationState.Roots, preferred);
+                active = FindFolder(preferredRoots, preferred);
             }
             active ??= _navigationState.Roots.FirstOrDefault();
             if (active is not null)
@@ -861,24 +896,51 @@ public partial class BrowseView : UserControl
         }
     }
 
-    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0, bool preferReaderCurrent = false, CancellationToken token = default)
+    private async Task ReloadFilesInActiveFolderAsync(string? preferredFilePath, Func<bool>? contextIsCurrent = null, int preferredFileIndex = 0, bool preferReaderCurrent = false, CancellationToken token = default, bool scopeChanged = false)
     {
         var folder = _navigationState.ActiveFolder;
         if (folder is null) return;
         try
         {
-            var listing = await _fileListingService.GetFilesAsync(folder.Path, token);
-            if (!await ProjectFilesAsync(listing.Files, token, matches =>
+            if (!scopeChanged && _inventoryDiscovering) ResetScopeWork();
+            var scope = _scopeLifetime;
+            var previousInventory = _inventory;
+            bool Current() => ReferenceEquals(scope, _scopeLifetime) && !token.IsCancellationRequested &&
+                ReferenceEquals(folder, _navigationState.ActiveFolder) && contextIsCurrent?.Invoke() != false;
+            var publishedProgress = false;
+            if (scopeChanged)
             {
-                if (!ReferenceEquals(folder, _navigationState.ActiveFolder) || contextIsCurrent?.Invoke() == false) return false;
-                if (listing.Errors.Count == 0) UpdateFolderFileCounts(folder.Path, listing.Files.Count);
-                StoreInventory(folder, listing.Files, listing.Errors.Count > 0);
-                _readerPreferCurrent |= IsReader && preferReaderCurrent;
-                PublishFileResults(matches, preferredFilePath, preferredFileIndex);
-                return true;
-            })) return;
+                _inventoryFolder = null;
+                _inventoryDiscovering = _fileQuery.IncludeSubfolders;
+                if (_inventoryDiscovering)
+                {
+                    FileQueryStatusChanged?.Invoke("Scanning...");
+                    EmptyFilesNotice.Text = "Discovering files in subfolders...";
+                    _reader?.SetFilterNotice(true, false, true);
+                    _gallery?.SetFilterNotice(true, false, true);
+                }
+            }
+            var listing = await ReadQueryScopeAsync(folder, token, scopeChanged ? async batch =>
+            {
+                var previous = _navigationState.CurrentFile;
+                if (!await PublishScopeListingAsync(folder, batch, token, Current, publishedProgress ? previous?.FullPath : null,
+                    preferredFileIndex, progress: true, queryChanged: !publishedProgress)) return;
+                publishedProgress = true;
+                _ = RefreshCarouselAsync();
+                if (previous != _navigationState.CurrentFile) _ = LoadCurrentImageAsync(clearCurrentImage: true);
+            } : null);
+            if (listing is null || !Current()) return;
+            var oldCurrent = _navigationState.CurrentFile;
+            _readerPreferCurrent |= IsReader && preferReaderCurrent;
+            if (!await PublishScopeListingAsync(folder, listing, token, Current, publishedProgress ? oldCurrent?.FullPath : preferredFilePath,
+                preferredFileIndex, queryChanged: scopeChanged && !publishedProgress)) return;
             _ = RefreshCarouselAsync();
-            _ = LoadCurrentImageAsync(clearCurrentImage: true);
+            if (!scopeChanged || oldCurrent != _navigationState.CurrentFile || !ReferenceEquals(previousInventory, _inventory) && oldCurrent is null)
+                _ = LoadCurrentImageAsync(clearCurrentImage: true);
+            if (_fileQuery.IncludeSubfolders && preferredFilePath is not null &&
+                !_navigationState.Files.Any(file => PathsEqual(file.FullPath, preferredFilePath)) &&
+                listing.Files.Any(file => PathsEqual(file.FullPath, preferredFilePath)))
+                ShowOperationNotice("The file is outside the current filter results.");
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception exception) when (IsOperationUiException(exception))
@@ -999,6 +1061,7 @@ public partial class BrowseView : UserControl
     {
         StopTreeFooter();
         _queryLifetime.Cancel();
+        _scopeLifetime.Cancel();
         _folderRuleController.Dispose();
         StopWatching();
         _readerDefaultApplication.Dispose();
@@ -1044,6 +1107,17 @@ public partial class BrowseView : UserControl
         _operationNoticeTimer.Start();
         StatusChanged?.Invoke(message);
     }
+
+    private static IEnumerable<FolderTreeEntry> FindFolderOccurrences(IEnumerable<FolderTreeEntry> roots, string path)
+    {
+        foreach (var root in roots)
+            if (IsPathWithin(path, root.Path) && FindFolder([root], path) is { } folder)
+                yield return folder;
+    }
+
+    private static FolderTreeEntry[] CloneFolderChildren(IReadOnlyList<FolderTreeEntry> children) =>
+        children.Select(child => new FolderTreeEntry(child.Name, child.Path, directFileCount: child.DirectFileCount,
+            error: child.Error, areChildrenLoaded: child.AreChildrenLoaded)).ToArray();
 
     private static FolderTreeEntry? FindFolder(IEnumerable<FolderTreeEntry> folders, string? path)
     {
@@ -1418,6 +1492,7 @@ public partial class BrowseView : UserControl
             var item = existingItems.TryGetValue(file, out var existingItem)
                 ? existingItem
                 : new CarouselThumbnailItem(file, index == currentIndex);
+            item.SetDisplayName(GetResultDisplayName(file));
             item.SetCurrent(index == currentIndex);
             var destinationIndex = index - start + 1;
             var currentItemIndex = CarouselItems.IndexOf(item);
@@ -1614,6 +1689,7 @@ public partial class BrowseView : UserControl
             _galleryCommandCancellation?.Cancel();
             _readerCommandCancellation?.Cancel();
             _historyCancellation?.Cancel(); StopWatching();
+            if (changed && _inventoryDiscovering) ResetScopeWork();
             _carouselRefreshVersion++;
             _carouselLoadCancellation?.Cancel();
             CancelCarouselItemLoads();
@@ -1621,7 +1697,12 @@ public partial class BrowseView : UserControl
         }
         if (!IsBrowse) ApplyViewingMode();
         else ViewerHost.SetActive(active);
-        if (active && changed) { StartWatching(); _ = RefreshCarouselAsync(); }
+        if (active && changed)
+        {
+            StartWatching();
+            if (_inventoryDiscovering && _fileQuery.IncludeSubfolders) _ = ResumeScopeDiscoveryAsync();
+            else _ = RefreshCarouselAsync();
+        }
     }
 
     private async Task<IFileOrganizationService> GetRootOperationsAsync(FolderTreeEntry? root,

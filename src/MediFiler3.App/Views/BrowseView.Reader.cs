@@ -56,7 +56,7 @@ public partial class BrowseView
         if (active && _reader is not null)
         {
             var prefer = !StringComparer.OrdinalIgnoreCase.Equals(_lastReaderCurrent, _navigationState.CurrentFile?.FullPath);
-            _reader.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete);
+            _reader.SetFilterNotice(_fileQuery != MediFiler3.Application.Files.FileQuery.AllFiles, _inventoryIncomplete, _inventoryDiscovering);
             SetReaderListing(prefer);
             _reader.SetTreeInset(_folderOverlayPinned ? FolderOverlay.Width + FolderOverlay.Margin.Left : 26);
         }

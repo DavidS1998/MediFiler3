@@ -1,6 +1,6 @@
 # Project status
 
-Updated 2026-11-17. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
+Updated 2026-11-18. Short-term issues, unresolved decisions and immediate actions only. Product behavior: [SPECIFICATION.md](SPECIFICATION.md). Completed milestones/acceptance/measurements: [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Build and diagnostic mechanics: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Outstanding issues
 
@@ -8,7 +8,7 @@ Updated 2026-11-17. Short-term issues, unresolved decisions and immediate action
 |---|---|---|
 | Experimental runtime early native shutdown failure | One early WinUI migration run exited after its checks with CoreMessagingXP.dll 12.6.6.0 / 0xe0435545. Subsequent close guards, explicit title-island disposal and geometry caching are in place; later focused/full runs exited normally. Root cause is not conclusively established. Dump `%LOCALAPPDATA%\CrashDumps\MediFiler3.App.Integration.exe.26488.dmp`; events `%TEMP%\MediFiler3WinUi-runtime-events.txt`. | Preserve new dumps/native stack and shutdown/window-transition context on recurrence; do not suppress native exceptions. |
 | Gallery drag-hover expansion check timed out once | Folder-color full run: row000 never reached the expected expanded state within the unchanged 5s assertion (GalleryDragChecks.cs:145). Unchanged-code full repeat passed 223/223. No dwell/input/root-cause diagnosis yet; the repeat does not prove it harmless. | On recurrence capture row/container identity, children/discovery state, drag point/target, dwell timer and layout changes. Retain the 600ms dwell and existing assertions; do not modify color or drag behavior to conceal the timeout. |
-| Historical native Gallery instability not conclusively eliminated | Earlier collection 0xC0000005 and later XAML transition 0xc000027b; no universal root-cause closure despite targeted fixes/successful runs. Reader's owned-pixel fix addresses a separate diagnosed lifetime defect. | On recurrence preserve WER/dumps, native stack and shared-path/disjoint/transition/input context; use ARCHITECTURE's failure knowledge. |
+| Historical native Gallery instability not conclusively eliminated | Earlier collection 0xC0000005 and later XAML transition 0xc000027b; no universal root-cause closure. A recursive Gallery update hit the collection callback fault on 2026-11-18. Recursive publishing now uses detached snapshots. Dump: `%LOCALAPPDATA%\CrashDumps\MediFiler3.App.Integration.exe.43016.dmp`. Reader's owned-pixel fix addresses a separate diagnosed lifetime defect. | On recurrence preserve WER/dumps, native stack and shared-path/disjoint/transition/input context; use ARCHITECTURE's failure knowledge. |
 
 ## Verification limits still carried
 
@@ -19,7 +19,7 @@ Updated 2026-11-17. Short-term issues, unresolved decisions and immediate action
 
 ## Decisions still open
 
-The direct-folder filter/search/sort slice is implemented. [Development plan, section 5](DEVELOPMENT_PLAN.md#5-proposed-next-feature-shared-filters-search-and-sorting) defines the agreed recursive second slice. Physical toolbar focus, sizing, accessibility and mixed-DPI behavior still need targeted review.
+The direct-folder and recursive filter/search/sort slices are implemented. [Development plan, section 5](DEVELOPMENT_PLAN.md#5-proposed-next-feature-shared-filters-search-and-sorting) records the recursive scope and ordering contract. Physical toolbar focus, sizing, accessibility and mixed-DPI behavior still need targeted review.
 
 Toolbar breadcrumbs and the WinUI title/pager/menu changes were accepted by the user on 2026-11-17. They confirmed the refined carousel feels much better. Coalesced/cached caption publication is implemented; remaining physical inter-compositor color timing is unconfirmed. The breadcrumb rollback switch remains. User authorized the experimental SDK for actual PagerControl; framework-dependent targets need the matching experimental runtime.
 
@@ -31,11 +31,13 @@ The user accepted the measured roughly one-second clear of 10,000 Gallery select
 
 ## Immediate next steps
 
-1. Continue with the recursive slice when authorized. Preserve physical ownership for multi-folder file operations and verify progressive discovery, cancellation, watcher reconciliation and recursive overscroll suppression.
+1. Physical review of recursive filter workflows and large cold, remote and removable libraries remains pending.
 2. On native crash recurrence preserve diagnostics before changing behavior. Keep the documented Reader scroll/dimension regression and exact pixel/fraction assertions.
 3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
+
+Recursive filters (2026-11-18) passed a clean build, 427 unit/filesystem tests, 29 focused native checks and 242 full native checks with zero failures or skips. Tests cover natural grouped and combined order, 1,000 physical files, junction/backup exclusions, cancellation, descendant watcher and F5 refresh, overlapping-root ownership, grouped move/Undo/Redo, and saved scope persistence. Full log: `%TEMP%\MediFiler3Recursive-final.log`. Cold network and removable-library characterization remains pending.
 
 Direct-folder filters (2026-11-17) passed a clean temporary-output solution build, 423 unit/filesystem tests and 237 full native checks with zero warnings, failures or skips. The focused filter checks cover shared results, native Gallery projection/selection, Reader anchor restoration, filtered F5, SQLite saved/recent persistence, and posted native Enter/Escape in fullscreen. Logs are `%TEMP%\MediFiler3Filter-unit-final.log` and `%TEMP%\MediFiler3Filter-full-final.log`. Manual cross-monitor, mixed-DPI and assistive-technology review remains pending.
 

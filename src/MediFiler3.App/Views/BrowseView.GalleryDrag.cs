@@ -58,7 +58,7 @@ public partial class BrowseView
         UpdateGalleryTreeDragNavigation(authorized, args.GetPosition(FolderTree));
         var valid = authorized &&
             item?.DataContext is FolderTreeEntry folder && _navigationState.GetRootForFolder(folder) is not null &&
-            !PathsEqual(folder.Path, _galleryMoveDrag.Folder.Path);
+            _galleryMoveDrag.Files.Any(file => !PathsEqual(folder.Path, System.IO.Path.GetDirectoryName(file.FullPath) ?? ""));
         HighlightGalleryDropTarget(valid ? item : null);
         if (valid) args.Effects = DragDropEffects.Move;
     }
