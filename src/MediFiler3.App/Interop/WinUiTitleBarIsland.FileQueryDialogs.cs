@@ -23,11 +23,11 @@ public sealed partial class WinUiTitleBarIsland
         filenameFields.Children.Add(excludes);
         fields.Children.Add(filenameFields);
         var includeSubfolders = new CheckBox { Content = "Include subfolders", IsChecked = query.IncludeSubfolders, MinWidth = 0 };
-        var combineFolders = new CheckBox { Content = "Combine folders", IsChecked = query.CombineFolders,
+        var groupBySubfolder = new CheckBox { Content = "Group files by subfolder", IsChecked = !query.CombineFolders,
             IsEnabled = query.IncludeSubfolders, MinWidth = 0 };
         var scopeOptions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
         scopeOptions.Children.Add(includeSubfolders);
-        scopeOptions.Children.Add(combineFolders);
+        scopeOptions.Children.Add(groupBySubfolder);
         fields.Children.Add(scopeOptions);
         fields.Children.Add(new TextBlock { Text = "File categories" });
         var all = new CheckBox { Content = "All", IsChecked = query.Categories == FileCategories.All };
@@ -97,8 +97,8 @@ public sealed partial class WinUiTitleBarIsland
                 includes.Text = query.Includes;
                 excludes.Text = query.Excludes;
                 includeSubfolders.IsChecked = query.IncludeSubfolders;
-                combineFolders.IsChecked = query.CombineFolders;
-                combineFolders.IsEnabled = query.IncludeSubfolders;
+                groupBySubfolder.IsChecked = !query.CombineFolders;
+                groupBySubfolder.IsEnabled = query.IncludeSubfolders;
                 all.IsChecked = query.Categories == FileCategories.All;
                 foreach (var (category, box) in categories) box.IsChecked = query.Categories.HasFlag(category);
                 sortRadios[query.Sort].IsChecked = true;
@@ -119,8 +119,8 @@ public sealed partial class WinUiTitleBarIsland
         descending.Unchecked += (_, _) => PublishEdit();
         includeSubfolders.Checked += (_, _) => OnScopeChanged();
         includeSubfolders.Unchecked += (_, _) => OnScopeChanged();
-        combineFolders.Checked += (_, _) => PublishEdit();
-        combineFolders.Unchecked += (_, _) => PublishEdit();
+        groupBySubfolder.Checked += (_, _) => PublishEdit();
+        groupBySubfolder.Unchecked += (_, _) => PublishEdit();
         foreach (var (_, box) in categories)
         {
             box.Checked += (_, _) => CategoriesChanged();
@@ -137,7 +137,7 @@ public sealed partial class WinUiTitleBarIsland
                 .Aggregate(FileCategories.All, (flags, item) => flags | item.Category);
             return query with { Search = _effectiveFileQuery.Search, Includes = includes.Text, Excludes = excludes.Text, Categories = selected,
                 Sort = selectedSort, Descending = descending.IsChecked == true, IncludeSubfolders = includeSubfolders.IsChecked == true,
-                CombineFolders = includeSubfolders.IsChecked == true && combineFolders.IsChecked == true };
+                CombineFolders = includeSubfolders.IsChecked == true && groupBySubfolder.IsChecked == false };
         }
 
         void UpdateCategories()
@@ -147,7 +147,7 @@ public sealed partial class WinUiTitleBarIsland
 
         void OnScopeChanged()
         {
-            combineFolders.IsEnabled = includeSubfolders.IsChecked == true;
+            groupBySubfolder.IsEnabled = includeSubfolders.IsChecked == true;
             PublishEdit();
         }
 

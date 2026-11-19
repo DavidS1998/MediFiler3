@@ -32,11 +32,12 @@ internal static partial class Program
         var backups = new FileSystemOperationBackupStore(journal, identities, Path.Combine(Root, "file-query-backups"));
         var operations = new FileSystemFileOrganizationService(journal, identities, backupStore: backups);
         var availability = new FileSystemRootFolderAvailabilityService(); var state = new NavigationSessionState();
+        var history = new RootFolderHistoryService(store, availability);
         var thumbnails = new CountingThumbnails();
         var window = new MediFiler3.MainWindow(Microsoft.Extensions.Logging.Abstractions.NullLogger<MediFiler3.MainWindow>.Instance,
             new FileSystemFolderTreeService(), new FileSystemFileListingService(), state, new WicImageDecoder(Files), thumbnails,
             operations, journal, new FileSystemTextContentService(Files), new External(), new Defaults(), settings,
-            new RootFolderHistoryService(store, availability), availability, new FileSystemCollisionPreviewService(thumbnails), backups, layout, new WindowsWindowPlacement())
+            history, availability, new FileSystemCollisionPreviewService(thumbnails), backups, layout, new WindowsWindowPlacement())
         { Opacity = 0, ShowInTaskbar = false };
         window.Show();
         ((System.Windows.Threading.DispatcherTimer)Field(window, "_folderHoverTimer")!).Stop();
@@ -70,9 +71,9 @@ internal static partial class Program
                 var appWindow = (Microsoft.UI.Windowing.AppWindow)Field(window, "_appWindow")!;
                 var filters = (Rect)Field(caption, "_filterBounds")!;
                 var filterButton = (Microsoft.UI.Xaml.Controls.Button)Field(caption, "_fileFilterButton")!;
-                Require(appWindow.TitleBar.PreferredHeightOption == Microsoft.UI.Windowing.TitleBarHeightOption.Tall &&
+                Require(appWindow.TitleBar.PreferredHeightOption == Microsoft.UI.Windowing.TitleBarHeightOption.Standard &&
                     Math.Abs(bounds.Top + bounds.Height / 2 - caption.ActualHeight / 2) < 1,
-                    "Title-bar search is not vertically centered at the tall native height");
+                    "Title-bar search is not vertically centered at the native height");
                 Require(filters.Left > bounds.Right &&
                     ((Microsoft.UI.Xaml.Controls.StackPanel)filterButton.Content).Children[0] is Microsoft.UI.Xaml.Controls.FontIcon,
                     "The filter icon button is not to the right of search");
@@ -218,9 +219,12 @@ internal static partial class Program
                         Require(control.Resources[$"{prefix}Background{suffix}"] is Microsoft.UI.Xaml.Media.SolidColorBrush
                             { Color.A: >= 230 and < 255 }, $"Title-bar {prefix} {suffix} lost its background opacity");
                 }
-                var labels = (Microsoft.UI.Xaml.Controls.StackPanel)((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children[1];
-                Require(labels.Children[0] is Microsoft.UI.Xaml.Controls.TextBlock { Text: "Filters" },
-                    "The Filters button changed its label when a filter was selected");
+                var labelBox = (Microsoft.UI.Xaml.Controls.Viewbox)((Microsoft.UI.Xaml.Controls.StackPanel)button.Content).Children[1];
+                var label = (Microsoft.UI.Xaml.Controls.TextBlock)labelBox.Child;
+                caption.SetFileResultCount("1 of 30000");
+                Require(label.Text == "1 of 30000" && labelBox.MaxWidth <= 55 &&
+                    labelBox.StretchDirection == Microsoft.UI.Xaml.Controls.StretchDirection.DownOnly,
+                    "The Filters button did not fit the full count on one line");
                 Require(Math.Abs(tag.CornerRadius.TopLeft - tag.ActualHeight * .45) < .5 &&
                     Math.Abs(chip.CornerRadius.TopLeft - chip.ActualHeight * .45) < .5,
                     "The flyout tag and toolbar tag are not pill-shaped");
@@ -286,6 +290,7 @@ internal static partial class Program
                     await WaitUntil(() => debounce.IsEnabled);
                     Require(!Route(Key.Left, ModifierKeys.None), "Viewer navigation consumed the search cursor key");
                     Require(!Route(Key.A, ModifierKeys.Control), "Viewer selection consumed search Ctrl+A");
+                    Require(!Route(Key.D1, ModifierKeys.None), "A view shortcut consumed a digit typed in search");
                     var input = GetFileQueryTestFocus();
                     Require(input != 0 && PostReaderKeyboardMessage(input, 0x0100, 0x0D, 1) &&
                         PostReaderKeyboardMessage(input, 0x0101, 0x0D, unchecked((nint)0xC0000001)),
@@ -306,6 +311,21 @@ internal static partial class Program
                     if (previousForeground != 0) SetLayoutForegroundWindow(previousForeground);
                 }
             });
+            await Check("number shortcuts switch to each view in sidebar order", async () =>
+            {
+                var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var page = (System.Windows.Controls.ContentControl)window.FindName("PageContent");
+                var destinations = new[] { (Key.D1, "_homeView"), (Key.D2, "_browseView"),
+                    (Key.D3, "_browseView"), (Key.D4, "_browseView"), (Key.D5, "_settingsView") };
+                for (var index = 0; index < destinations.Length; index++)
+                {
+                    var (key, field) = destinations[index];
+                    Require((bool)shortcut.Invoke(window, [key, ModifierKeys.None, false])!, $"Missing view shortcut {key}");
+                    await WaitUntil(() => ReferenceEquals(page.Content, Field(window, field)) && (index is 0 or 4 ||
+                        state.ViewingMode == (ViewingMode)(index - 1)));
+                }
+                Destination("Browse");
+            });
             await Check("recursive results share ordering and support grouped moves across source folders", async () =>
             {
                 var scope = System.IO.Directory.CreateDirectory(Path.Combine(Root, "recursive-query")).FullName;
@@ -324,18 +344,23 @@ internal static partial class Program
                 var owner = state.ActiveRoot!;
                 var filterButton = (Microsoft.UI.Xaml.Controls.Button)Field(caption, "_fileFilterButton")!;
                 var editor = (Microsoft.UI.Xaml.Controls.Flyout)filterButton.Flyout;
+                await WaitUntil(() => filterButton.IsLoaded && filterButton.ActualWidth > 0 &&
+                    ((Microsoft.UI.Xaml.Controls.Grid)Field(caption, "_fileSearchLayout")!).Visibility == Microsoft.UI.Xaml.Visibility.Visible);
+                await window.Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
                 editor.ShowAt(filterButton);
                 await WaitUntil(() => editor.IsOpen);
                 var panel = (Microsoft.UI.Xaml.Controls.StackPanel)((Microsoft.UI.Xaml.Controls.ScrollViewer)editor.Content).Content;
                 var fields = panel.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().First();
                 var scopeOptions = fields.Children.OfType<Microsoft.UI.Xaml.Controls.StackPanel>().First();
                 var include = scopeOptions.Children.OfType<Microsoft.UI.Xaml.Controls.CheckBox>().First();
-                var combine = scopeOptions.Children.OfType<Microsoft.UI.Xaml.Controls.CheckBox>().Last();
+                var groupBySubfolder = scopeOptions.Children.OfType<Microsoft.UI.Xaml.Controls.CheckBox>().Last();
+                Require(Equals(groupBySubfolder.Content, "Group files by subfolder") && groupBySubfolder.IsChecked == true,
+                    "Recursive results should be grouped by subfolder by default");
                 include.IsChecked = true;
                 await WaitUntil(() => state.Files.Select(file => file.FullPath).SequenceEqual(new[] { direct, firstChild, secondChild }));
                 Require(state.ActiveFolder?.DirectFileCount == 1 && ReferenceEquals(state.ActiveRoot, owner),
                     "Recursive results changed physical counts or ownership for overlapping roots");
-                combine.IsChecked = true;
+                groupBySubfolder.IsChecked = false;
                 await WaitUntil(() => state.Files.Select(file => file.FullPath).SequenceEqual(new[] { firstChild, secondChild, direct }));
                 editor.Hide();
                 await WaitUntil(() => !editor.IsOpen);
@@ -375,6 +400,65 @@ internal static partial class Program
                 await browse.RefreshAsync();
                 Require(ReferenceEquals(state.ActiveRoot, overlappingRoot) && ReferenceEquals(state.ActiveFolder, overlappingRoot),
                     "F5 switched an overlapping root to its ancestor's ownership");
+            });
+            await Check("sidebar quick folders mirror favorites and open or move through existing workflows", async () =>
+            {
+                var source = Directory.CreateDirectory(Path.Combine(Root, "quick-source")).FullName;
+                var destination = Directory.CreateDirectory(Path.Combine(Root, "Art & Books")).FullName;
+                var original = Path.Combine(source, "sample.png");
+                var moved = Path.Combine(destination, "sample.png");
+                File.Copy(Fixtures[".png"].FullPath, original);
+                await LoadRestartRootsAsync(window, [source]);
+                await WaitUntil(() => state.CurrentFile?.FullPath == original);
+                var initialRoot = state.ActiveRoot;
+                await history.RecordOpenedRootsAsync([destination]);
+                await history.SetFavoriteAsync(destination, true);
+                var sidebar = (Microsoft.UI.Xaml.Controls.NavigationView)Field(navigation, "_navigationView")!;
+                var quickButtons = (Microsoft.UI.Xaml.Controls.StackPanel)Field(navigation, "_quickFolderButtons")!;
+                await WaitUntil(() => quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Any(entry => Equals(entry.Tag, destination)));
+                var item = quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Single(entry => Equals(entry.Tag, destination));
+                Require(Equals(item.Content, "ABo") &&
+                    ((string)Microsoft.UI.Xaml.Controls.ToolTipService.GetToolTip(item)).Contains(destination) &&
+                    sidebar.MenuItems.Count == 5, "Quick folder caption, tooltip or placement was incorrect");
+
+                var move = (Action<string>)Field(navigation, "QuickFolderMoveRequested")!;
+                move(destination);
+                await WaitUntil(() => File.Exists(moved) && state.Files.Count == 0);
+                Require(state.Roots.Count == 1 && ReferenceEquals(state.ActiveRoot, initialRoot) && !File.Exists(original),
+                    "Moving to the quick folder changed the workspace or lost the source journal context");
+                await browse.UndoLastOperationAsync();
+                await WaitUntil(() => state.CurrentFile?.FullPath == original && !File.Exists(moved));
+
+                var open = (Action<string>)Field(navigation, "QuickFolderOpenRequested")!;
+                open(destination);
+                await WaitUntil(() => state.ActiveRoot?.Path == destination);
+                Require(state.Roots.Count == 2 && state.Roots.Contains(initialRoot!), "Opening a quick folder replaced the loaded roots");
+                open(destination);
+                Require(state.Roots.Count == 2, "Opening a loaded quick folder duplicated the root");
+                await history.SetFavoriteAsync(destination, false);
+                await WaitUntil(() => !quickButtons.Children.Contains(item));
+                navigation.SetQuickFolders(new[] { "lower-case", "Book 5", "A Big Collection 7", "---" }
+                    .Select(name => Path.Combine(Root, name))
+                    .Concat(Enumerable.Range(1, 30).Select(index => Path.Combine(Root, $"Favorite {index}"))));
+                Require(quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Take(4)
+                    .Select(button => (string)button.Content).SequenceEqual(new[] { "low", "B5", "ABC", "" }),
+                    "Quick folder initials did not follow the naming rules");
+                var scroll = (Microsoft.UI.Xaml.Controls.ScrollViewer)Field(navigation, "_quickFolderScroll")!;
+                var reader = (Microsoft.UI.Xaml.Controls.NavigationViewItem)Field(navigation, "_readerItem")!;
+                var settingsItem = (Microsoft.UI.Xaml.Controls.NavigationViewItem)Field(navigation, "_settingsItem")!;
+                var root = (Microsoft.UI.Xaml.Controls.Grid)Field(navigation, "_sidebarRoot")!;
+                await WaitUntil(() => scroll.ScrollableHeight > 0 &&
+                    Field(navigation, "_quickFolderScrollBar") is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar);
+                double Top(Microsoft.UI.Xaml.FrameworkElement element) => element.TransformToVisual(root)
+                    .TransformPoint(new Windows.Foundation.Point()).Y;
+                var readerTop = Top(reader);
+                var settingsTop = Top(settingsItem);
+                Require(Top(scroll) >= readerTop + reader.ActualHeight - 1 &&
+                    Top(scroll) + scroll.ActualHeight <= settingsTop + 1, "Quick folders overlap pinned navigation");
+                scroll.ChangeView(null, scroll.ScrollableHeight, null, true);
+                await WaitUntil(() => scroll.VerticalOffset > 0);
+                Require(Math.Abs(Top(reader) - readerTop) < 1 && Math.Abs(Top(settingsItem) - settingsTop) < 1,
+                    "Scrolling Quick folders moved the pinned navigation");
             });
         }
         finally { window.Close(); }

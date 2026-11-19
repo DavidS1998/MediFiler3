@@ -1,3 +1,5 @@
+using MediFiler3.Application.Folders;
+using System.Text.RegularExpressions;
 using Microsoft.UI;
 using Microsoft.UI.Content;
 using Microsoft.UI.Xaml.Controls;
@@ -17,6 +19,102 @@ public sealed class WinUiNavigationIsland : HwndHost
     private DesktopWindowXamlSource? _xamlSource;
     public void RaiseSurface() => NativeSurfaceOrder.Raise(_xamlSource);
     private NavigationView? _navigationView;
+    private string[] _quickFolders = [];
+    private Grid? _sidebarRoot;
+    private ScrollViewer? _quickFolderScroll;
+    private StackPanel? _quickFolderButtons;
+    private NavigationViewItem? _readerItem;
+    private NavigationViewItem? _settingsItem;
+    private Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? _quickFolderScrollBar;
+    public event Action<string>? QuickFolderOpenRequested;
+    public event Action<string>? QuickFolderMoveRequested;
+
+    public void SetQuickFolders(IEnumerable<string> paths)
+    {
+        var next = paths.ToArray();
+        if (_quickFolders.SequenceEqual(next, StringComparer.Ordinal)) return;
+        _quickFolders = next;
+        UpdateQuickFolders();
+    }
+
+    private void UpdateQuickFolders()
+    {
+        if (_quickFolderButtons is not { } buttons || _quickFolderScroll is not { } scroll) return;
+        buttons.Children.Clear();
+        foreach (var path in _quickFolders)
+        {
+            var name = RootFolderPath.Name(path);
+            var initials = GetQuickFolderInitials(name);
+            var button = new Button
+            {
+                Content = initials, Tag = path, FontSize = 11, Width = 40, Height = 32,
+                Padding = new Microsoft.UI.Xaml.Thickness(2),
+                HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Center
+            };
+            ToolTipService.SetToolTip(button, $"{name}\n{path}");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{name}, {path}");
+            button.Click += (_, _) => RequestQuickFolder(path, move: false);
+            button.RightTapped += (_, args) =>
+            {
+                args.Handled = true;
+                RequestQuickFolder(path, move: true);
+            };
+            buttons.Children.Add(button);
+        }
+        scroll.Visibility = _quickFolders.Length == 0 ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    }
+
+    private static string GetQuickFolderInitials(string name)
+    {
+        var cleanedName = Regex.Replace(name, @"[^a-zA-Z0-9]+", "");
+        var initials = string.Concat(Regex.Matches(cleanedName, @"[A-Z0-9]").Select(match => match.Value));
+        if (initials.Length <= 1)
+            initials = cleanedName[..Math.Min(cleanedName.Length, 3)];
+
+        if (initials.Length == 2)
+        {
+            var lastInitialIndex = cleanedName.LastIndexOf(initials[1]);
+            if (lastInitialIndex < cleanedName.Length - 1)
+                initials += cleanedName[lastInitialIndex + 1];
+        }
+
+        return initials[..Math.Min(initials.Length, 3)];
+    }
+
+    private void RequestQuickFolder(string path, bool move) => Dispatcher.BeginInvoke(new Action(() =>
+    {
+        if (_quickFolders.Contains(path, StringComparer.OrdinalIgnoreCase))
+        {
+            if (move) QuickFolderMoveRequested?.Invoke(path);
+            else QuickFolderOpenRequested?.Invoke(path);
+        }
+    }));
+
+    private void PositionQuickFolderScroll(object? sender, object args)
+    {
+        if (_sidebarRoot is not { } root || _quickFolderScroll is not { } scroll ||
+            _readerItem is not { IsLoaded: true, ActualHeight: > 0 } reader ||
+            _settingsItem is not { IsLoaded: true, ActualHeight: > 0 } settings) return;
+        var top = reader.TransformToVisual(root).TransformPoint(new Windows.Foundation.Point(0, reader.ActualHeight)).Y + 4;
+        var bottom = settings.TransformToVisual(root).TransformPoint(new Windows.Foundation.Point()).Y - 4;
+        var margin = new Microsoft.UI.Xaml.Thickness(0, Math.Max(0, top), 0, Math.Max(0, root.ActualHeight - bottom));
+        if (scroll.Margin != margin) scroll.Margin = margin;
+        if (_quickFolderScrollBar is null && FindVerticalScrollBar(scroll) is { } bar)
+        {
+            _quickFolderScrollBar = bar;
+            bar.Width = 6;
+            bar.MinWidth = 0;
+            bar.Opacity = .55;
+        }
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? FindVerticalScrollBar(Microsoft.UI.Xaml.DependencyObject node)
+    {
+        if (node is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar { Orientation: Orientation.Vertical } bar) return bar;
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+            if (FindVerticalScrollBar(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index)) is { } child) return child;
+        return null;
+    }
 
     public event Action<string>? DestinationSelected;
     public event Action? RefreshRequested;
@@ -42,14 +140,27 @@ public sealed class WinUiNavigationIsland : HwndHost
         _xamlSource.ShouldConstrainPopupsToWorkArea = true;
 
         _navigationView = CreateNavigationView();
-        WinUiViewKeyboard.Attach(_navigationView, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
-        _navigationView.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
+        _sidebarRoot = new Grid { RequestedTheme = ElementTheme.Dark };
+        _sidebarRoot.Children.Add(_navigationView);
+        _quickFolderButtons = new StackPanel { Spacing = 3, Margin = new Microsoft.UI.Xaml.Thickness(0, 0, 5, 0) };
+        _quickFolderScroll = new ScrollViewer
+        {
+            Content = _quickFolderButtons, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_quickFolderScroll, "Quick folders");
+        _sidebarRoot.Children.Add(_quickFolderScroll);
+        _sidebarRoot.LayoutUpdated += PositionQuickFolderScroll;
+        UpdateQuickFolders();
+        WinUiViewKeyboard.Attach(_sidebarRoot, (key, modifiers, repeat) => ViewShortcutHandler?.Invoke(key, modifiers, repeat) ?? false);
+        _sidebarRoot.AddHandler(Microsoft.UI.Xaml.UIElement.KeyDownEvent, new Microsoft.UI.Xaml.Input.KeyEventHandler((_, args) =>
         {
             if (args.Key != Windows.System.VirtualKey.F5) return;
             args.Handled = true;
             Dispatcher.BeginInvoke(new Action(() => RefreshRequested?.Invoke()));
         }), true);
-        _xamlSource.Content = _navigationView;
+        _xamlSource.Content = _sidebarRoot;
 
         var islandHandle = Win32Interop.GetWindowFromWindowId(_xamlSource.SiteBridge.WindowId);
         return new HandleRef(this, islandHandle);
@@ -64,7 +175,14 @@ public sealed class WinUiNavigationIsland : HwndHost
             _xamlSource = null;
         }
 
+        if (_sidebarRoot is not null) _sidebarRoot.LayoutUpdated -= PositionQuickFolderScroll;
         _navigationView = null;
+        _sidebarRoot = null;
+        _quickFolderScroll = null;
+        _quickFolderButtons = null;
+        _readerItem = null;
+        _settingsItem = null;
+        _quickFolderScrollBar = null;
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -131,13 +249,10 @@ public sealed class WinUiNavigationIsland : HwndHost
             Icon = new SymbolIcon(Symbol.Pictures),
             Tag = "Gallery"
         });
-        navigationView.MenuItems.Add(new NavigationViewItem { Content = "Reader", Icon = new FontIcon { Glyph = "\uE736" }, Tag = "Reader" });
-        navigationView.FooterMenuItems.Add(new NavigationViewItem
-        {
-            Content = "Settings",
-            Icon = new SymbolIcon(Symbol.Setting),
-            Tag = "Settings"
-        });
+        _readerItem = new NavigationViewItem { Content = "Reader", Icon = new FontIcon { Glyph = "\uE736" }, Tag = "Reader" };
+        navigationView.MenuItems.Add(_readerItem);
+        _settingsItem = new NavigationViewItem { Content = "Settings", Icon = new SymbolIcon(Symbol.Setting), Tag = "Settings" };
+        navigationView.FooterMenuItems.Add(_settingsItem);
 
         navigationView.SelectionChanged += OnSelectionChanged;
         navigationView.SelectedItem = navigationView.MenuItems[0];

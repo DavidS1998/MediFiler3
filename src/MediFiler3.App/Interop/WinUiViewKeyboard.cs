@@ -19,6 +19,17 @@ internal static class WinUiViewKeyboard
     [DllImport("user32.dll")]
     private static extern nint SetFocus(nint window);
 
+    public static bool HasTextInputFocus(nint island, XamlRoot? root)
+    {
+        var focused = GetFocus();
+        return island != 0 && (focused == island || IsChild(island, focused)) && root is not null &&
+            Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root) is
+                Microsoft.UI.Xaml.Controls.TextBox or Microsoft.UI.Xaml.Controls.PasswordBox or Microsoft.UI.Xaml.Controls.RichEditBox;
+    }
+
+    [DllImport("user32.dll")] private static extern nint GetFocus();
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsChild(nint parent, nint child);
+
     public static void Attach(UIElement root, Func<Key, ModifierKeys, bool, bool> handle)
     {
         root.PreviewKeyDown += (_, args) =>

@@ -83,6 +83,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         PrimaryCommandCenterChanged?.Invoke();
     }
 
+    public bool HasTextInputFocus => WinUiViewKeyboard.HasTextInputFocus(Handle, _rootElement?.XamlRoot);
+
     public bool HasOpenPopup => _rootElement?.XamlRoot is { } root && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0;
     public event Action? LoadFoldersRequested;
     public event Action? RefreshRequested;

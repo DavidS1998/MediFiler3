@@ -24,7 +24,7 @@ public sealed partial class WinUiTitleBarIsland
     public bool HasOpenPopup => _root?.XamlRoot is { } root &&
         Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0;
 
-    public double SetFilterBounds(double left, double top, double availableWidth)
+    public double SetFilterBounds(double left, double top, double availableWidth, double height)
     {
         if (_fileSearchLayout is null) return 0;
         if (_filterAvailableWidth != availableWidth)
@@ -33,9 +33,11 @@ public sealed partial class WinUiTitleBarIsland
             UpdateRecentFilterChips();
         }
         _fileSearchLayout.Margin = new Thickness(left, top, 0, 0);
+        _fileSearchLayout.Height = height;
+        if (_fileFilterButton is not null) _fileFilterButton.Height = height;
         var width = _fileSearchVisible ? _fileSearchLayout.Width : 0;
         _filterBounds = double.IsFinite(width) && width > 0
-            ? new System.Windows.Rect(left, top, width, 34) : System.Windows.Rect.Empty;
+            ? new System.Windows.Rect(left, top, width, height) : System.Windows.Rect.Empty;
         return double.IsFinite(width) ? width : 0;
     }
 
@@ -75,11 +77,12 @@ public sealed partial class WinUiTitleBarIsland
 
         var filterContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 7 };
         filterContent.Children.Add(new FontIcon { Glyph = "\uE71C", FontSize = 14 });
-        var labels = new StackPanel();
-        labels.Children.Add(new TextBlock { Text = "Filters", FontSize = 13, LineHeight = 16, LineStackingStrategy = LineStackingStrategy.BlockLineHeight });
-        _filterCountLabel = new TextBlock { FontSize = 11, LineHeight = 13, LineStackingStrategy = LineStackingStrategy.BlockLineHeight, TextTrimming = TextTrimming.CharacterEllipsis };
-        labels.Children.Add(_filterCountLabel);
-        filterContent.Children.Add(labels);
+        _filterCountLabel = new TextBlock { FontSize = 13, Text = "Filters" };
+        filterContent.Children.Add(new Viewbox
+        {
+            Child = _filterCountLabel, MaxWidth = 55, StretchDirection = StretchDirection.DownOnly,
+            VerticalAlignment = Microsoft.UI.Xaml.VerticalAlignment.Center
+        });
         _fileFilterButton = new Button { Content = filterContent, Width = 96, Height = 34, Padding = new Thickness(8, 1, 8, 1) };
         ApplyCaptionBackground(_fileFilterButton, "Button");
         var flyout = new Flyout
@@ -130,9 +133,7 @@ public sealed partial class WinUiTitleBarIsland
     private void UpdateFileFilterLabel()
     {
         if (_fileFilterButton is null || _filterCountLabel is null) return;
-        _filterCountLabel.Text = _fileResultCount;
-        _filterCountLabel.Visibility = _fileResultCount.Length > 0
-            ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+        _filterCountLabel.Text = _fileResultCount.Length > 0 ? _fileResultCount : "Filters";
         var description = string.IsNullOrEmpty(_fileResultCount) ? "Filters" : $"Filters, {_fileResultCount} files";
         ToolTipService.SetToolTip(_fileFilterButton, description);
         AutomationProperties.SetName(_fileFilterButton, description);

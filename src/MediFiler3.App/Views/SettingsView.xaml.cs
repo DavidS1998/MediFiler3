@@ -49,6 +49,7 @@ public partial class SettingsView : UserControl
     public void SetReaderOptions(ReaderOptions options) => CarouselSliderIsland.SetReaderOptions(options);
     public event Action<int>? CarouselNeighborCountChanged;
     public event Action<bool>? CarouselEnabledChanged;
+    public bool HasTextInputFocus => CarouselSliderIsland.HasTextInputFocus;
     public event Action<int>? ToolbarFilterTagCountChanged;
     public void SetToolbarFilterTagCount(int count) => CarouselSliderIsland.SetToolbarFilterTagCount(count);
     public event Action<bool>? OverscrollEnabledChanged;

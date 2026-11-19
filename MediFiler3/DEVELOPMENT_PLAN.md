@@ -143,7 +143,7 @@ Confirmed design decisions (2026-11-17):
 
 Use one active view definition combining scope, filename conditions, categories and ordering. Search edits an unsaved version of that same definition; it is not a separate search engine with different matching rules. Multiple conditions inside one filter are supported; combining several independently active filters is not allowed.
 
-The tall title bar centers search and places the Filters icon button and a configurable number of recent-filter chips to its right. The flyout shows filename conditions, categories, sort and direction, Clear filter, and saved-filter actions. Recent filtering history is accessible through the chips.
+The title bar centers search and places the Filters icon button and a configurable number of recent-filter chips to its right. The flyout shows filename conditions, categories, sort and direction, Clear filter, and saved-filter actions. Recent filtering history is accessible through the chips.
 
 1. Type ordinary filename text to narrow the active folder results. Literal, case-insensitive Contains is the default; filenames include extensions and paths are not implicitly searched. No query-language syntax is required initially.
 2. Open filter options for includes/exclusions, recursion, categories and basic order. Show an explicit active/Unsaved summary. No regex or content-metadata options in the initial release.

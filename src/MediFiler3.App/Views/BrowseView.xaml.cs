@@ -229,6 +229,51 @@ public partial class BrowseView : UserControl
         }
     }
 
+    private long _quickFolderOpenRevision;
+
+    public async Task OpenQuickFolderAsync(string path)
+    {
+        using var reconciliationDeferral = DeferReconciliation();
+        _navigationController.CancelPendingNavigation();
+        var revision = ++_quickFolderOpenRevision;
+        var token = (_loadCancellation ??= new CancellationTokenSource()).Token;
+        try
+        {
+            var root = _navigationState.Roots.FirstOrDefault(entry => PathsEqual(entry.Path, path));
+            if (root is null)
+            {
+                var result = await _folderTreeService.LoadRootsAsync([path], token);
+                if (!_viewerActive || revision != _quickFolderOpenRevision || token.IsCancellationRequested) return;
+                if (result.Roots.FirstOrDefault() is not { } loaded)
+                {
+                    ShowOperationNotice(result.Errors.FirstOrDefault() ?? "The quick folder could not be opened.");
+                    return;
+                }
+
+                root = _navigationState.Roots.FirstOrDefault(entry => PathsEqual(entry.Path, loaded.Path));
+                if (root is null)
+                {
+                    root = loaded;
+                    _navigationState.ReconcileRoots(_navigationState.Roots.Append(root).ToArray());
+                    StartWatching();
+                    _ = PopulateHierarchyAsync([root], token);
+                }
+            }
+
+            await ActivateFolderAsync(root);
+            if (_rootHistory is not null && _navigationState.Roots.Contains(root) && !token.IsCancellationRequested)
+            {
+                try { await _rootHistory.RecordOpenedRootsAsync([root.Path]); }
+                catch (Exception exception)
+                {
+                    RootHistoryPersistenceFailed?.Invoke(exception);
+                    ShowOperationNotice("Folder opened, but its visit history could not be saved.");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
     private async void OnFolderSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (e.NewValue is FolderTreeEntry folder && _navigationState.GetRootForFolder(folder) is not null)
@@ -494,6 +539,9 @@ public partial class BrowseView : UserControl
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SHObjectProperties(IntPtr hwnd, uint objectType, string objectName, string? propertyPage);
+
+    public Task MoveToQuickFolderAsync(string path) =>
+        MoveCurrentFileToFolderAsync(new FolderTreeEntry(RootFolderPath.Name(path), path));
 
     private async Task MoveCurrentFileToFolderAsync(FolderTreeEntry destination)
     {

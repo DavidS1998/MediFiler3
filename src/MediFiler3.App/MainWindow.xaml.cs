@@ -195,6 +195,7 @@ public partial class MainWindow : Window
         PageContent.Content = _homeView;
         NavigationIsland.DestinationSelected += OnNavigationSelectionChanged;
         NavigationIsland.RefreshRequested += async () => await RefreshBrowseAsync();
+        InitializeQuickFolders(rootHistory);
         ToolbarIsland.LoadFoldersRequested += OnLoadFoldersRequested;
         ToolbarIsland.RefreshRequested += async () => await RefreshBrowseAsync();
         ToolbarIsland.FolderBreadcrumbRequested += path =>
@@ -399,6 +400,28 @@ public partial class MainWindow : Window
                 return TitleBarIsland.HandleFileSearchKey(key, modifiers, repeat);
         }
         if (_browseView.IsGalleryMoveDragActive) return false; // Let the native drag loop own Escape/modifiers.
+        var destination = modifiers == ModifierKeys.None ? key switch
+        {
+            Key.D1 or Key.NumPad1 => "Home",
+            Key.D2 or Key.NumPad2 => "Browse",
+            Key.D3 or Key.NumPad3 => "Gallery",
+            Key.D4 or Key.NumPad4 => "Reader",
+            Key.D5 or Key.NumPad5 => "Settings",
+            _ => null
+        } : null;
+        if (destination is not null)
+        {
+            if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.PasswordBox ||
+                ToolbarIsland.HasTextInputFocus || PageContent.Content == _settingsView && _settingsView.HasTextInputFocus)
+                return false;
+            if (!repeat) Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (IsEnabled && !_browseView.IsGalleryMoveDragActive && !TitleBarIsland.IsFileFilterEditorOpen &&
+                    !OwnedWindows.OfType<Window>().Any(window => window.IsVisible))
+                    NavigationIsland.SelectDestination(destination);
+            }));
+            return true;
+        }
         if (ReaderIsActive && IsHiddenReaderCommandShortcut(key, modifiers)) return false;
         Func<Task>? action = null;
         var pinTree = key == Key.F3 && modifiers == ModifierKeys.None;

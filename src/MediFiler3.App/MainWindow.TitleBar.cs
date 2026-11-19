@@ -21,7 +21,7 @@ public partial class MainWindow
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(new WindowInteropHelper(this).Handle));
         if (!AppWindowTitleBar.IsCustomizationSupported()) return;
         _appWindow.TitleBar.ExtendsContentIntoTitleBar = true;
-        _appWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        _appWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
         _titleBarSource = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
         _titleBarSource?.AddHook(TitleBarWindowMessage);
         _appWindow.Changed += OnAppWindowChanged;
@@ -116,7 +116,7 @@ public partial class MainWindow
 
         var filterLeft = Math.Min(rightEdge, searchLeft + searchWidth + (int)Math.Round(8 * dpi.DpiScaleX));
         var filtersWidth = TitleBarIsland.SetFilterBounds((filterLeft - left) / dpi.DpiScaleX,
-            Math.Max(0, (TitleBarFrame.Height - 34) / 2), (rightEdge - filterLeft) / dpi.DpiScaleX);
+            (TitleBarFrame.Height - searchHeight) / 2, (rightEdge - filterLeft) / dpi.DpiScaleX, searchHeight);
         var controlsRight = Math.Min(rightEdge, filterLeft + (int)Math.Round(filtersWidth * dpi.DpiScaleX));
         var geometry = (width, height, left, bar.RightInset, shown, searchLeft, searchWidth, controlsRight);
         if (_titleBarGeometry != geometry)

@@ -21,6 +21,7 @@ public sealed partial class WinUiCarouselSettingsIsland : HwndHost
         Loaded += (_, _) => { ResumeFolderRuleSource(); ResumeFileRuleSource(); };
     }
     private DesktopWindowXamlSource? _xamlSource;
+    public bool HasTextInputFocus => WinUiViewKeyboard.HasTextInputFocus(Handle, _xamlSource?.Content?.XamlRoot);
     private Slider? _slider;
     private int _neighborCount = 5;
     private ToggleSwitch? _carouselToggle;
