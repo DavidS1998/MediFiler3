@@ -320,6 +320,8 @@ public partial class MainWindow : Window
     private void OnNavigationStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(NavigationSessionState.ViewingMode)) UpdateFileRuleCaption();
+        if (e.PropertyName is nameof(NavigationSessionState.ActiveRoot) or nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.Roots))
+            NavigationIsland.SetActiveQuickFolder(_navigationState.ActiveRoot?.Path);
         if (e.PropertyName == nameof(NavigationSessionState.ActiveRoot)) _ = UpdateHistoryAvailabilityAsync();
         if (e.PropertyName is nameof(NavigationSessionState.CurrentFilePosition) or nameof(NavigationSessionState.Files) or
             nameof(NavigationSessionState.ActiveFolder) or nameof(NavigationSessionState.CurrentFile))
@@ -441,6 +443,8 @@ public partial class MainWindow : Window
             else if (key == Key.F5 && modifiers == ModifierKeys.None) action = RefreshBrowseAsync;
             else if (key == Key.Z && modifiers == ModifierKeys.Control) action = _browseView.UndoLastOperationAsync;
             else if (key == Key.Y && modifiers == ModifierKeys.Control) action = _browseView.RedoLastOperationAsync;
+            else if (!_browseView.IsReader && modifiers == ModifierKeys.None && key is Key.F6 or Key.F7)
+                action = () => _browseView.ChangeLeadingPlusAsync(key == Key.F7);
             else if (key == Key.F2 && modifiers == ModifierKeys.None) action = _browseView.PromptRenameCurrentFileAsync;
             else if (key == Key.Delete && modifiers == ModifierKeys.None) action = _browseView.SendCurrentFileToRecycleBinAsync;
             else if (key == Key.N && modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) action = _browseView.CreateSubfolderInActiveFolderAsync;

@@ -9,6 +9,37 @@ namespace MediFiler3.Infrastructure.Tests;
 public sealed class FileSystemFileOrganizationServiceTests
 {
     [Fact]
+    public async Task LeadingPlusBatchRenamesSelectedChainsAndUndoesAsOneGroup()
+    {
+        using var tempDb = new TemporaryDatabase();
+        using var workspace = new TemporaryWorkspace(tempDb);
+        var plain = Path.Combine(workspace.Root, "a.txt");
+        var marked = Path.Combine(workspace.Root, "+a.txt");
+        var twice = Path.Combine(workspace.Root, "++a.txt");
+        await File.WriteAllTextAsync(plain, "plain");
+        await File.WriteAllTextAsync(marked, "marked");
+
+        var added = await workspace.Service.ChangeLeadingPlusAsync([plain, marked], add: true);
+        Assert.True(added.Succeeded, added.Message);
+        Assert.Equal("plain", await File.ReadAllTextAsync(marked));
+        Assert.Equal("marked", await File.ReadAllTextAsync(twice));
+
+        var undone = await workspace.Service.UndoAsync();
+        Assert.True(undone.Succeeded, undone.Message);
+        Assert.False(File.Exists(twice));
+        Assert.Equal("plain", await File.ReadAllTextAsync(plain));
+        Assert.Equal("marked", await File.ReadAllTextAsync(marked));
+
+        var redone = await workspace.Service.RedoAsync();
+        Assert.True(redone.Succeeded, redone.Message);
+        var removed = await workspace.Service.ChangeLeadingPlusAsync([twice, marked], add: false);
+        Assert.True(removed.Succeeded, removed.Message);
+        Assert.Equal("plain", await File.ReadAllTextAsync(plain));
+        Assert.Equal("marked", await File.ReadAllTextAsync(marked));
+        Assert.Empty((await workspace.Service.ChangeLeadingPlusAsync([plain], add: false)).Results);
+    }
+
+    [Fact]
     public async Task MovesFileWithoutOverwritingAndRecordsVerifiedCompletion()
     {
         using var tempDb = new TemporaryDatabase();

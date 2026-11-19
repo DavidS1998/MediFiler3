@@ -319,6 +319,28 @@ public sealed partial class FileSystemFileOrganizationService(
         RunFileBatchAsync(sourceFilePaths, (path, batch, token) =>
             SendToRecycleBinCoreAsync(path, false, false, token, batch), cancellationToken);
 
+    public Task<FileOrganizationBatchResult> ChangeLeadingPlusAsync(IReadOnlyList<string> sourceFilePaths,
+        bool add, CancellationToken cancellationToken = default)
+    {
+        static int PrefixLength(string path)
+        {
+            var name = Path.GetFileName(path);
+            return name.Length - name.TrimStart('+').Length;
+        }
+
+        // Move the occupied end of a selected chain first, leaving room for its neighbor.
+        var paths = sourceFilePaths.Where(path => add || Path.GetFileName(path).Length > 1 && PrefixLength(path) > 0)
+            .OrderBy(path => add ? -PrefixLength(path) : PrefixLength(path)).ToArray();
+        return RunFileBatchAsync(paths, (path, batch, token) =>
+        {
+            var name = Path.GetFileName(path);
+            var renamed = add ? "+" + name : name[1..];
+            ValidateLeafName(renamed);
+            return ExecutePathRequestAsync(new PathRequest(FileOperationKind.Rename, false, path,
+                Path.Combine(Path.GetDirectoryName(path)!, renamed)), batch, token);
+        }, cancellationToken);
+    }
+
     private Task<FileOrganizationBatchResult> RunFileBatchAsync(IReadOnlyList<string> paths,
         Func<string, Guid, CancellationToken, Task<FileOrganizationResult>> execute, CancellationToken token)
     {

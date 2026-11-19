@@ -20,6 +20,19 @@ public sealed class WinUiNavigationIsland : HwndHost
     public void RaiseSurface() => NativeSurfaceOrder.Raise(_xamlSource);
     private NavigationView? _navigationView;
     private string[] _quickFolders = [];
+    private string? _activeQuickFolder;
+
+    public void SetActiveQuickFolder(string? rootPath)
+    {
+        if (StringComparer.OrdinalIgnoreCase.Equals(_activeQuickFolder, rootPath)) return;
+        _activeQuickFolder = rootPath;
+        if (_quickFolderButtons is null) return;
+        foreach (var button in _quickFolderButtons.Children.OfType<Button>())
+            UpdateQuickFolderAccent(button);
+    }
+
+    private void UpdateQuickFolderAccent(Button button) =>
+        WinUiAccentButton.SetSelected(button, StringComparer.OrdinalIgnoreCase.Equals(button.Tag as string, _activeQuickFolder));
     private Grid? _sidebarRoot;
     private ScrollViewer? _quickFolderScroll;
     private StackPanel? _quickFolderButtons;
@@ -59,6 +72,7 @@ public sealed class WinUiNavigationIsland : HwndHost
                 args.Handled = true;
                 RequestQuickFolder(path, move: true);
             };
+            UpdateQuickFolderAccent(button);
             buttons.Children.Add(button);
         }
         scroll.Visibility = _quickFolders.Length == 0 ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;

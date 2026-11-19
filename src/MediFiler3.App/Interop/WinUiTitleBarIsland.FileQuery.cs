@@ -180,6 +180,7 @@ public sealed partial class WinUiTitleBarIsland
             var button = new Button { Content = new TextBlock { Text = filter.Name,
                 TextTrimming = TextTrimming.CharacterEllipsis }, Tag = filter, Width = chipWidth, Padding = new Thickness(10, 4, 10, 4) };
             RoundFilterChip(button);
+            ApplyCaptionBackground(button, "Button");
             StyleFilterTag(button, filter, inCaption: true);
             button.Click += (_, _) => Dispatcher.BeginInvoke(new Action(() => ToggleFileFilter(filter.Id)));
             _recentFilterChips.Children.Add(button);

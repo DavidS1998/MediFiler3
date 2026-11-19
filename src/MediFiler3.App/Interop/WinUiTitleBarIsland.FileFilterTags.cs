@@ -3,8 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Markup;
-using Microsoft.UI.Xaml.Media;
-using Windows.UI.ViewManagement;
 
 namespace MediFiler3.Interop;
 
@@ -19,7 +17,6 @@ public sealed partial class WinUiTitleBarIsland
         return Math.Clamp(Math.Ceiling(measure.DesiredSize.Width) + 26, 34, maximum);
     }
 
-    private static readonly string[] TagInteractionStates = ["PointerOver", "Pressed"];
 
 
     private static void RoundFilterChip(Button button)
@@ -30,44 +27,9 @@ public sealed partial class WinUiTitleBarIsland
     private void StyleFilterTag(Button button, SavedFileFilter filter, bool inCaption = false)
     {
         var selected = filter.Id == _activeFilterId;
-        var wasSelected = button.Resources.ContainsKey("ButtonForegroundPointerOver");
-        if (selected)
-        {
-            var accent = new UISettings().GetColorValue(UIColorType.Accent);
-            var fill = new SolidColorBrush(accent);
-            var ink = new SolidColorBrush(
-                .2126 * accent.R + .7152 * accent.G + .0722 * accent.B >= 145 ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White);
-            if (button.Background is not SolidColorBrush previous ||
-                previous.Color.R != accent.R || previous.Color.G != accent.G || previous.Color.B != accent.B || !wasSelected)
-            {
-                if (inCaption) ApplyCaptionBackground(button, "Button", accent);
-                else button.Background = fill;
-                button.Foreground = ink;
-                foreach (var state in TagInteractionStates)
-                {
-                    if (!inCaption) button.Resources[$"ButtonBackground{state}"] = fill;
-                    button.Resources[$"ButtonForeground{state}"] = ink;
-                    button.Resources[$"ButtonBorderBrush{state}"] = button.Background;
-                }
-            }
-        }
-        else if (wasSelected || inCaption && button.Background != CaptionControlFill)
-        {
-            if (inCaption) ApplyCaptionBackground(button, "Button");
-            else button.ClearValue(Control.BackgroundProperty);
-            button.ClearValue(Control.ForegroundProperty);
-            foreach (var state in TagInteractionStates)
-            {
-                if (!inCaption) button.Resources.Remove($"ButtonBackground{state}");
-                button.Resources.Remove($"ButtonForeground{state}");
-                button.Resources.Remove($"ButtonBorderBrush{state}");
-            }
-        }
-        if (wasSelected != selected && button.IsPointerOver)
-        {
-            VisualStateManager.GoToState(button, "Normal", false);
-            VisualStateManager.GoToState(button, button.IsPressed ? "Pressed" : "PointerOver", false);
-        }
+        WinUiAccentButton.SetSelected(button, selected, inCaption
+            ? static (control, accent) => ApplyCaptionBackground(control, "Button", accent)
+            : null);
         ToolTipService.SetToolTip(button, filter.Name);
         AutomationProperties.SetName(button, selected ? $"Clear {filter.Name}, selected filter" : $"Apply {filter.Name}");
     }

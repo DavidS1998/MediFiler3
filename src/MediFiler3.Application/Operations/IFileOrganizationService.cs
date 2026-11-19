@@ -66,6 +66,7 @@ public interface IFileOrganizationService
     Task<FileOrganizationResult> SendToRecycleBinAsync(string path, bool isDirectory, bool confirmNonEmptyDirectory = false, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> SendFilesToRecycleBinAsync(IReadOnlyList<string> sourceFilePaths, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> MoveFilesAsync(IReadOnlyList<string> sourceFilePaths, string destinationFolderPath, CancellationToken cancellationToken = default);
+    Task<FileOrganizationBatchResult> ChangeLeadingPlusAsync(IReadOnlyList<string> sourceFilePaths, bool add, CancellationToken cancellationToken = default);
     Task<FileOrganizationHistoryPreview?> GetHistoryPreviewAsync(FileOrganizationHistoryDirection direction, CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> UndoAsync(CancellationToken cancellationToken = default);
     Task<FileOrganizationBatchResult> RedoAsync(CancellationToken cancellationToken = default);

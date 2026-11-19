@@ -401,6 +401,35 @@ internal static partial class Program
                 Require(ReferenceEquals(state.ActiveRoot, overlappingRoot) && ReferenceEquals(state.ActiveFolder, overlappingRoot),
                     "F5 switched an overlapping root to its ancestor's ownership");
             });
+            await Check("F7 and F6 change one prefix on Browse and Gallery files", async () =>
+            {
+                var folder = Directory.CreateDirectory(Path.Combine(Root, "prefix-shortcuts")).FullName;
+                var first = Path.Combine(folder, "first.png");
+                var second = Path.Combine(folder, "second.png");
+                File.Copy(Fixtures[".png"].FullPath, first);
+                File.Copy(Fixtures[".png"].FullPath, second);
+                await LoadRestartRootsAsync(window, [folder]);
+                await WaitUntil(() => state.CurrentFile?.FullPath == first && (int)Field(browse, "_reconciliationDeferrals")! == 0);
+                browse.FocusActiveViewer();
+                await WaitUntil(() => !caption.IsFileSearchFocused && !caption.IsFileFilterEditorOpen);
+                var shortcut = typeof(MediFiler3.MainWindow).GetMethod("TryHandleViewShortcut", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                void Press(Key key) => Require((bool)shortcut.Invoke(window, [key, ModifierKeys.None, false])!, $"Missing prefix shortcut {key}");
+                Press(Key.F7);
+                await WaitUntil(() => state.CurrentFile?.Name == "+first.png" && Field(browse, "_galleryCommandCancellation") is null);
+                Destination("Gallery");
+                await WaitUntil(() => Field(browse, "_gallery") is WinUiGalleryIsland gallery && gallery.RealizedCount > 0);
+                state.GallerySelection.SelectAll(state.Files);
+                Press(Key.F7);
+                await WaitUntil(() => state.Files.Any(file => file.Name == "++first.png") &&
+                    state.Files.Any(file => file.Name == "+second.png") && Field(browse, "_galleryCommandCancellation") is null);
+                state.GallerySelection.SelectAll(state.Files);
+                Press(Key.F6);
+                await WaitUntil(() => state.Files.Any(file => file.Name == "+first.png") &&
+                    state.Files.Any(file => file.Name == "second.png") && Field(browse, "_galleryCommandCancellation") is null);
+                Destination("Reader");
+                Require(!(bool)shortcut.Invoke(window, [Key.F7, ModifierKeys.None, false])!, "F7 was enabled in Reader");
+                Destination("Browse");
+            });
             await Check("sidebar quick folders mirror favorites and open or move through existing workflows", async () =>
             {
                 var source = Directory.CreateDirectory(Path.Combine(Root, "quick-source")).FullName;
@@ -433,6 +462,14 @@ internal static partial class Program
                 open(destination);
                 await WaitUntil(() => state.ActiveRoot?.Path == destination);
                 Require(state.Roots.Count == 2 && state.Roots.Contains(initialRoot!), "Opening a quick folder replaced the loaded roots");
+                var accent = new Windows.UI.ViewManagement.UISettings().GetColorValue(Windows.UI.ViewManagement.UIColorType.Accent);
+                Require(item.Background is Microsoft.UI.Xaml.Media.SolidColorBrush active && active.Color == accent &&
+                    item.Resources["ButtonBackgroundPointerOver"] is Microsoft.UI.Xaml.Media.SolidColorBrush hover && hover.Color == accent,
+                    "The active Quick folder did not use the accent color");
+                open(source);
+                await WaitUntil(() => ReferenceEquals(state.ActiveRoot, initialRoot));
+                Require(item.Background is not Microsoft.UI.Xaml.Media.SolidColorBrush cleared || cleared.Color != accent,
+                    "The previous Quick folder stayed highlighted");
                 open(destination);
                 Require(state.Roots.Count == 2, "Opening a loaded quick folder duplicated the root");
                 await history.SetFavoriteAsync(destination, false);
