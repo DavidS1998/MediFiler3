@@ -15,8 +15,6 @@ using MediFiler3.Interop;
 using MediFiler3.Services;
 using MediFiler3.Views;
 
-// Actual PagerControl coverage for the user-approved experimental SDK.
-#pragma warning disable CS8305
 
 internal static partial class Program
 {
@@ -278,9 +276,28 @@ internal static partial class Program
                 var slider = (Microsoft.UI.Xaml.Controls.Slider)Field(toolbar, "_readerWidthSlider")!;
                 var widthControls = (Microsoft.UI.Xaml.Controls.StackPanel)Field(toolbar, "_readerWidthControls")!;
                 var group = (Microsoft.UI.Xaml.Controls.StackPanel)Field(toolbar, "_readerControls")!;
-                Require(((Microsoft.UI.Xaml.Controls.FontIcon)widthButton.Icon).Glyph == "\uE8AB" &&
-                    ((Microsoft.UI.Xaml.Controls.FontIcon)heightButton.Icon).Glyph == "\uE8CB" && widthButton.IsChecked == true && heightButton.IsChecked != true &&
-                    ReferenceEquals(group.Children[0], widthControls), "Reader sizing glyphs, active mode or slider order are incorrect");
+                foreach (var button in new[] { widthButton, heightButton })
+                {
+                    var capture = new Microsoft.UI.Xaml.Media.Imaging.RenderTargetBitmap();
+                    await capture.RenderAsync(button.Icon);
+                    var pixels = (await capture.GetPixelsAsync()).ToArray();
+                    var ink = Enumerable.Range(0, pixels.Length / 4).Where(i => pixels[i * 4 + 3] >= 128).ToArray();
+                    Require(ink.Length > 0, $"Reader icon for {button.Label} did not render");
+                    var origin = button.Icon.TransformToVisual(button).TransformPoint(new Windows.Foundation.Point(0, 0));
+                    var inkCenterX = (ink.Min(i => i % capture.PixelWidth) + ink.Max(i => i % capture.PixelWidth) + 1) / 2.0;
+                    var inkCenterY = (ink.Min(i => i / capture.PixelWidth) + ink.Max(i => i / capture.PixelWidth) + 1) / 2.0;
+                    var centerX = origin.X + inkCenterX * button.Icon.ActualWidth / capture.PixelWidth;
+                    var centerY = origin.Y + inkCenterY * button.Icon.ActualHeight / capture.PixelHeight;
+                    Require(Math.Abs(centerX - button.ActualWidth / 2) <= 1 &&
+                        Math.Abs(centerY - button.ActualHeight / 2) <= 1,
+                        $"Reader icon for {button.Label} rendered at ({centerX}, {centerY}) in a {button.ActualWidth}×{button.ActualHeight} button");
+                }
+                Require(widthButton.Icon is Microsoft.UI.Xaml.Controls.PathIcon { Data: { } widthPath } &&
+                    widthPath.Bounds.Width > widthPath.Bounds.Height &&
+                    heightButton.Icon is Microsoft.UI.Xaml.Controls.PathIcon { Data: { } heightPath } &&
+                    heightPath.Bounds.Height > heightPath.Bounds.Width &&
+                    widthButton.IsChecked == true && heightButton.IsChecked != true &&
+                    ReferenceEquals(group.Children[0], widthControls), "Reader sizing icons, active mode or slider order are incorrect");
                 var sidebar = (Microsoft.UI.Xaml.Controls.NavigationView)Field(navigation, "_navigationView")!;
                 Require(sidebar.MenuItems[1] is Microsoft.UI.Xaml.Controls.NavigationViewItemSeparator &&
                     sidebar.MenuItems.OfType<Microsoft.UI.Xaml.Controls.NavigationViewItem>().Select(item => (string)item.Tag).SequenceEqual(new[] { "Home", "Browse", "Gallery", "Reader" }),
@@ -462,19 +479,41 @@ internal static partial class Program
                 Require(browse.JumpReaderPage(0), "Could not jump to the first Reader image");
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[0]);
                 Require(Key(System.Windows.Input.Key.Left) && ReferenceEquals(originalFolder, state.ActiveFolder), "Reader escaped the folder at the start");
-                var pager = (Microsoft.UI.Xaml.Controls.PagerControl)Field(toolbar, "_readerPager")!;
-                Require(pager.IsEnabled && pager.NumberOfPages == state.Reader.Pages.Count && pager.SelectedPageIndex == 0,
-                    "Native Reader pager is not synchronized with the projection");
-                var nextPage = CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.Button>()
-                    .Single(button => button.Name == "NextPageButton");
+                var pager = (Microsoft.UI.Xaml.Controls.AppBarElementContainer)Field(toolbar, "_readerPagerContainer")!;
+                var pageInput = CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.NumberBox>().Single();
+                Microsoft.UI.Xaml.Controls.Button PagerButton(string name) =>
+                    CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.Button>().Single(button => button.Name == name);
+                var nextPage = PagerButton("NextPageButton");
+                Require(pageInput.IsEnabled && pageInput.Maximum == state.Reader.Pages.Count && pageInput.Value == 1,
+                    "Reader page field is not synchronized with the projection");
                 InvokeNativeButton(nextPage);
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[1]);
-                var pageInput = CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.NumberBox>().Single();
                 pageInput.Value = 3;
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[2]);
-                Require(browse.JumpReaderPage(state.Reader.Pages.Count - 1), "Could not jump to the last page");
+                if (pager.Content is Microsoft.UI.Xaml.Controls.StackPanel)
+                {
+                    var firstPage = PagerButton("FirstPageButton");
+                    var previousPage = PagerButton("PreviousPageButton");
+                    var lastPage = PagerButton("LastPageButton");
+                    Require(CountRuleVisuals(pager).OfType<Microsoft.UI.Xaml.Controls.TextBlock>()
+                        .Any(label => label.Text == $"of {state.Reader.Pages.Count}"), "Reader total is missing");
+                    pageInput.Value = 2.5;
+                    Require(pageInput.Value == 3 && state.CurrentFile == state.Reader.Pages[2], "Reader accepted a fractional page");
+                    InvokeNativeButton(previousPage);
+                    await WaitUntil(() => state.CurrentFile == state.Reader.Pages[1]);
+                    InvokeNativeButton(firstPage);
+                    await WaitUntil(() => state.CurrentFile == state.Reader.Pages[0]);
+                    Require(!firstPage.IsEnabled && !previousPage.IsEnabled, "Reader enabled backward navigation on the first page");
+                    InvokeNativeButton(lastPage);
+                    await WaitUntil(() => state.CurrentFile == state.Reader.Pages[^1]);
+                    Require(!lastPage.IsEnabled, "Reader enabled last page on the last page");
+                }
+                else
+                {
+                    Require(browse.JumpReaderPage(state.Reader.Pages.Count - 1), "Could not jump to the last page");
+                }
                 await WaitUntil(() => state.CurrentFile == state.Reader.Pages[^1]);
-                Require(pager.SelectedPageIndex == state.Reader.Pages.Count - 1 && !nextPage.IsEnabled && Key(System.Windows.Input.Key.Right) &&
+                Require(pageInput.Value == state.Reader.Pages.Count && !nextPage.IsEnabled && Key(System.Windows.Input.Key.Right) &&
                     ReferenceEquals(originalFolder, state.ActiveFolder) && state.Files.SequenceEqual(files), "Reader crossed a folder or enabled next beyond the sequence");
                 Require(!Key(System.Windows.Input.Key.Right, System.Windows.Input.ModifierKeys.Control), "Reader claimed an undefined shortcut");
                 Require(!Key(System.Windows.Input.Key.Enter), "Reader Enter handoff should be dormant");

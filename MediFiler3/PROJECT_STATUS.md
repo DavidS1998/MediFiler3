@@ -21,7 +21,7 @@ Updated 2026-11-18. Short-term issues, unresolved decisions and immediate action
 
 The direct-folder and recursive filter/search/sort slices are implemented. [Development plan, section 5](DEVELOPMENT_PLAN.md#5-proposed-next-feature-shared-filters-search-and-sorting) records the recursive scope and ordering contract. Physical toolbar focus, sizing, accessibility and mixed-DPI behavior still need targeted review.
 
-Toolbar breadcrumbs and the WinUI title/pager/menu changes were accepted by the user on 2026-11-17. They confirmed the refined carousel feels much better. Coalesced/cached caption publication is implemented; remaining physical inter-compositor color timing is unconfirmed. The breadcrumb rollback switch remains. User authorized the experimental SDK for actual PagerControl; framework-dependent targets need the matching experimental runtime.
+Toolbar breadcrumbs and the WinUI title/pager/menu changes were accepted by the user on 2026-11-17. They confirmed the refined carousel feels much better. Coalesced/cached caption publication is implemented. Physical inter-compositor color timing is unconfirmed. The breadcrumb rollback switch remains. The default Reader pager now uses stable WinUI controls on Windows App SDK 2.7.0. The experimental pager is available through a build switch. The WindowsX64 profile produced a self-contained 1.0.0 release candidate in `bin/ReleaseArtifacts`. Clean-machine acceptance and public distribution remain pending.
 
 Settings now includes a persisted Browse overscroll switch (default on), 320px Carousel slider and consistently centered 150px Gallery toolbar sliders. Backup review/location links and reviewed-ID manual cleanup are delivered. User-authorized 30-day expiry replaces the former no-expiry policy: startup after recovery and hourly while running, based on last successful journaled preservation rather than source timestamps. Protected/unavailable/recovery backups remain for retry. Physical Settings/Explorer-link review is pending; test link invocation records a callback rather than launching Explorer.
 
@@ -36,6 +36,8 @@ The user accepted the measured roughly one-second clear of 10,000 Gallery select
 3. Before any implementation/release claim, inspect actual Git state and rerun checks appropriate to the change. Never restart the user's running app or commit/push without instruction.
 
 ## Current validation confidence
+
+Windows x64 release candidate (2026-11-19) published successfully. The Release solution build had zero warnings or errors, and 428 unit/filesystem, 25 Reader and 32 file-query native checks passed with zero failures or skips. All 811 ZIP entries matched the staged publish files. This run used the development machine. A clean Windows launch from the extracted ZIP remains pending.
 
 Recursive filters (2026-11-18) passed a clean build, 427 unit/filesystem tests, 29 focused native checks and 242 full native checks with zero failures or skips. Tests cover natural grouped and combined order, 1,000 physical files, junction/backup exclusions, cancellation, descendant watcher and F5 refresh, overlapping-root ownership, grouped move/Undo/Redo, and saved scope persistence. Full log: `%TEMP%\MediFiler3Recursive-final.log`. Cold network and removable-library characterization remains pending.
 

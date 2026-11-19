@@ -444,11 +444,17 @@ internal static partial class Program
                 await history.SetFavoriteAsync(destination, true);
                 var sidebar = (Microsoft.UI.Xaml.Controls.NavigationView)Field(navigation, "_navigationView")!;
                 var quickButtons = (Microsoft.UI.Xaml.Controls.StackPanel)Field(navigation, "_quickFolderButtons")!;
+                var scroll = (Microsoft.UI.Xaml.Controls.ScrollViewer)Field(navigation, "_quickFolderScroll")!;
+                bool IsCentered(Microsoft.UI.Xaml.Controls.Button button) => Math.Abs(
+                    button.TransformToVisual(scroll).TransformPoint(new Windows.Foundation.Point(button.ActualWidth / 2, 0)).X
+                    - scroll.ActualWidth / 2) < 1;
                 await WaitUntil(() => quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Any(entry => Equals(entry.Tag, destination)));
                 var item = quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Single(entry => Equals(entry.Tag, destination));
                 Require(Equals(item.Content, "ABo") &&
                     ((string)Microsoft.UI.Xaml.Controls.ToolTipService.GetToolTip(item)).Contains(destination) &&
                     sidebar.MenuItems.Count == 5, "Quick folder caption, tooltip or placement was incorrect");
+                await WaitUntil(() => item.ActualWidth > 0 && scroll.ActualHeight > 0);
+                Require(scroll.ScrollableHeight == 0 && IsCentered(item), "Quick folder was off-center in a list that fits");
 
                 var move = (Action<string>)Field(navigation, "QuickFolderMoveRequested")!;
                 move(destination);
@@ -480,12 +486,21 @@ internal static partial class Program
                 Require(quickButtons.Children.OfType<Microsoft.UI.Xaml.Controls.Button>().Take(4)
                     .Select(button => (string)button.Content).SequenceEqual(new[] { "low", "B5", "ABC", "" }),
                     "Quick folder initials did not follow the naming rules");
-                var scroll = (Microsoft.UI.Xaml.Controls.ScrollViewer)Field(navigation, "_quickFolderScroll")!;
                 var reader = (Microsoft.UI.Xaml.Controls.NavigationViewItem)Field(navigation, "_readerItem")!;
                 var settingsItem = (Microsoft.UI.Xaml.Controls.NavigationViewItem)Field(navigation, "_settingsItem")!;
                 var root = (Microsoft.UI.Xaml.Controls.Grid)Field(navigation, "_sidebarRoot")!;
                 await WaitUntil(() => scroll.ScrollableHeight > 0 &&
                     Field(navigation, "_quickFolderScrollBar") is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar);
+                var bar = (Microsoft.UI.Xaml.Controls.Primitives.ScrollBar)Field(navigation, "_quickFolderScrollBar")!;
+                var first = (Microsoft.UI.Xaml.Controls.Button)quickButtons.Children[0];
+                var setHover = typeof(MediFiler3.Interop.WinUiNavigationIsland).GetMethod(
+                    "SetQuickFolderScrollHovered", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                setHover.Invoke(navigation, [false]);
+                Require(IsCentered(first) && bar.Opacity == 0 && !bar.IsHitTestVisible, "The idle scrollbar affected centered buttons");
+                setHover.Invoke(navigation, [true]);
+                Require(IsCentered(first) && bar.Opacity > 0 && bar.IsHitTestVisible, "Hover did not reveal the scrollbar over centered buttons");
+                setHover.Invoke(navigation, [false]);
+                Require(bar.Opacity == 0 && !bar.IsHitTestVisible, "The scrollbar stayed visible after leaving");
                 double Top(Microsoft.UI.Xaml.FrameworkElement element) => element.TransformToVisual(root)
                     .TransformPoint(new Windows.Foundation.Point()).Y;
                 var readerTop = Top(reader);

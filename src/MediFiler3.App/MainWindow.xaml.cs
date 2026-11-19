@@ -402,6 +402,7 @@ public partial class MainWindow : Window
                 return TitleBarIsland.HandleFileSearchKey(key, modifiers, repeat);
         }
         if (_browseView.IsGalleryMoveDragActive) return false; // Let the native drag loop own Escape/modifiers.
+        if (ReaderIsActive && ToolbarIsland.HasTextInputFocus && key != Key.F11) return false;
         var destination = modifiers == ModifierKeys.None ? key switch
         {
             Key.D1 or Key.NumPad1 => "Home",

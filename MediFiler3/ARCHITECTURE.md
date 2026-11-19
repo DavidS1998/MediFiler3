@@ -17,7 +17,7 @@ Keep exactly six authoritative documentation files under `MediFiler3/`; don't re
 
 ## 1. Stack and project boundaries
 
-Windows desktop, C#/.NET 10, target `net10.0-windows10.0.19041.0`. WPF owns startup/window/composition/navigation; WinUI XAML Islands provide native controls/media. The app is unpackaged/framework-dependent (`WindowsPackageType=None`), with Windows App SDK bootstrap enabled; target machines need Windows App Runtime. Self-contained packaging is not implemented.
+Windows desktop, C#/.NET 10, target `net10.0-windows10.0.19041.0`. WPF owns startup, window composition and navigation. WinUI XAML Islands provide native controls and media. Development builds are unpackaged and framework-dependent (`WindowsPackageType=None`) and use the Windows App SDK bootstrapper. The WindowsX64 publish profile bundles .NET and the Windows App SDK in an unpackaged release folder.
 
 | Project | Responsibility / entry points |
 |---|---|
@@ -30,7 +30,7 @@ Windows desktop, C#/.NET 10, target `net10.0-windows10.0.19041.0`. WPF owns star
 
 There is no separate WinUI project. Framework-specific controls/pixels/presentations stay in App; contracts use domain records, encoded bytes or bounded decoded data. Keep filesystem work out of UI handlers and format switches out of central navigation.
 
-Current references: Windows App SDK 2.6.6-experimental (user-approved for native PagerControl), XamlAnimatedGif 2.3.2, Microsoft.Extensions.Hosting 10.0.0, Microsoft.Data.Sqlite 10.0.14. `global.json` starts at SDK 10.0.0 with latest-major roll-forward/prerelease allowed. Check project files before dependency changes; no bundled codec/FFmpeg runtime. Framework-dependent runs now require the matching experimental Windows App Runtime (2-experimental0); the NuGet Runtime package includes the per-architecture framework/DDLM MSIX packages. Stable runtime installation alone is insufficient.
+The default build uses Windows App SDK 2.7.0 stable, XamlAnimatedGif 2.3.2, Microsoft.Extensions.Hosting 10.0.0 and Microsoft.Data.Sqlite 10.0.14. `global.json` starts at SDK 10.0.0 with latest-major roll-forward/prerelease allowed. Framework-dependent default builds require the matching stable Windows App Runtime. The optional experimental pager build requires the matching 2.6.6 experimental runtime. Codec support comes from Windows.
 
 ## 2. Composition and lifecycle
 
@@ -143,7 +143,7 @@ Maintenance verifies owned hash leaf names within resolved non-reparse ancestry.
 
 ## 7. Reader pipeline
 
-WinUiToolbarIsland.Reader hosts the experimental native PagerControl in an AppBarElementContainer, NumberBox mode, synchronized under a publication guard. It replaces separate previous/next/Go toolbar buttons and is hidden for empty/inactive Reader context. MainWindow defers selected-page events out of native input and revalidates folder/page/modal context before JumpReaderPage. Ctrl+G retains the bounded numeric dialog. CS8305 suppression is local to this approved experimental adapter and its native integration checks. Browse image reset-to-fit combines icon/percentage label on one AppBarButton. Folder MenuFlyoutItems use native FontIcons; WPF label text occupies only its own column before the reserved menu button.
+WinUiToolbarIsland.Reader hosts a stable WinUI NumberBox, total count and four navigation buttons in an AppBarElementContainer. A publication guard prevents updates from requesting navigation. The container hides for empty or inactive Reader contexts. MainWindow lets the focused page editor handle editing keys, defers page requests out of native input and revalidates folder/page/modal context before JumpReaderPage. Ctrl+G retains the bounded numeric dialog. Build with `-p:UseExperimentalReaderPager=true` to restore the original native PagerControl and its matching experimental SDK. Browse image reset-to-fit combines icon/percentage label on one AppBarButton. Folder MenuFlyoutItems use native FontIcons. WPF label text occupies its own column before the reserved menu button.
 
 ReaderSessionState owns projection, path/fraction/gap anchor, dimension ratios/prefix geometry and visible/preload window, never pixels. It projects the shared listing without replacing it. ReaderNavigation provides bounded navigation/query policy; ReaderOptions persists in the existing settings payload.
 
@@ -228,6 +228,15 @@ git diff --check
 ```
 
 After restore, build may use `--no-restore`. Unit/native runners can run independently after build; native timing samples should run sequentially. Focused alternatives replace the fixture directory with `--file-query-only`, `--reader-only`, `--gallery-only` (UI refinement/Gallery) or `--gallery-resume-only`; generated focused runs don't replace full codec acceptance. Internal `--phase4-restart-worker` isn't a production option; full runs launch seed/reopen/verify workers automatically.
+
+Publish the self-contained x64 release to a fresh directory:
+
+```powershell
+$publishDirectory = Join-Path $env:TEMP ('MediFiler3Publish-' + [guid]::NewGuid())
+dotnet publish src/MediFiler3.App -c Release -r win-x64 --self-contained true -p:PublishProfile=WindowsX64 -o $publishDirectory
+```
+
+Keep the executable and its runtime files together in the ZIP. Include launch instructions and third-party notices. Retain debug symbols separately for diagnostics, and provide a SHA-256 checksum alongside the ZIP.
 
 `--reader-restoration-only` runs the deterministic native scroll/dimension regression alone; it is also included in Reader/full runs. ReaderRestorationChecks uses real PNG decoding, holds page 7's source result, accepts a fractional ChangeView, completes the decode on its captured dispatcher context, then invokes the normal UpdatePages layout synchronously before yielding. It asserts that the native offset actually arrives during layout, retains the requested path/fraction and pixel offset, and survives a subsequent width reflow. This controls the observed event ordering without production test hooks or timing sleeps.
 

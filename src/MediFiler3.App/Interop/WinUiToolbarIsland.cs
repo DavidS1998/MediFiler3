@@ -320,7 +320,7 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         _readerFileSeparators.Clear(); _readerNavigationDivider = null;
         _readerBrowse = null;
         _readerControls = null; _readerWidthControls = null; _readerWidthButton = null; _readerHeightButton = null; _readerWidthSlider = null; _readerWidthLabel = null;
-        _readerPager = null; _readerPagerContainer = null;
+        ReleaseReaderPager();
         _galleryControls = null; _galleryWidthSlider = null; _galleryHeightSlider = null;
     }
 

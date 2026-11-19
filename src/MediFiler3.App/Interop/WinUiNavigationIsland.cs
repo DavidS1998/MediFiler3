@@ -39,6 +39,7 @@ public sealed class WinUiNavigationIsland : HwndHost
     private NavigationViewItem? _readerItem;
     private NavigationViewItem? _settingsItem;
     private Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? _quickFolderScrollBar;
+    private bool _quickFolderScrollHovered;
     public event Action<string>? QuickFolderOpenRequested;
     public event Action<string>? QuickFolderMoveRequested;
 
@@ -118,8 +119,17 @@ public sealed class WinUiNavigationIsland : HwndHost
             _quickFolderScrollBar = bar;
             bar.Width = 6;
             bar.MinWidth = 0;
-            bar.Opacity = .55;
+            SetQuickFolderScrollHovered(_quickFolderScrollHovered);
         }
+    }
+
+    private void SetQuickFolderScrollHovered(bool hovered)
+    {
+        _quickFolderScrollHovered = hovered;
+        if (_quickFolderScrollBar is not { } bar) return;
+        // The native scrollbar overlays the viewport, so toggling it needn't change layout.
+        bar.Opacity = hovered ? .55 : 0;
+        bar.IsHitTestVisible = hovered;
     }
 
     private static Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? FindVerticalScrollBar(Microsoft.UI.Xaml.DependencyObject node)
@@ -156,12 +166,23 @@ public sealed class WinUiNavigationIsland : HwndHost
         _navigationView = CreateNavigationView();
         _sidebarRoot = new Grid { RequestedTheme = ElementTheme.Dark };
         _sidebarRoot.Children.Add(_navigationView);
-        _quickFolderButtons = new StackPanel { Spacing = 3, Margin = new Microsoft.UI.Xaml.Thickness(0, 0, 5, 0) };
+        _quickFolderButtons = new StackPanel { Spacing = 3 };
         _quickFolderScroll = new ScrollViewer
         {
             Content = _quickFolderButtons, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             HorizontalScrollMode = ScrollMode.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent)
+        };
+        _quickFolderScroll.PointerEntered += (_, args) =>
+        {
+            if (args.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Touch)
+                SetQuickFolderScrollHovered(true);
+        };
+        _quickFolderScroll.PointerExited += (_, args) =>
+        {
+            if (args.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Touch)
+                SetQuickFolderScrollHovered(false);
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_quickFolderScroll, "Quick folders");
         _sidebarRoot.Children.Add(_quickFolderScroll);
@@ -197,6 +218,7 @@ public sealed class WinUiNavigationIsland : HwndHost
         _readerItem = null;
         _settingsItem = null;
         _quickFolderScrollBar = null;
+        _quickFolderScrollHovered = false;
     }
 
     protected override Size ArrangeOverride(Size finalSize)

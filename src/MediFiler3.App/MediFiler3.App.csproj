@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <ApplicationIcon>Assets\v3.ico</ApplicationIcon>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,12 +10,26 @@
     <WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets\v3.ico" />
+    <EmbeddedResource Include="Assets\ic_fluent_auto_fit_width_24_regular.svg"
+                      LogicalName="ReaderFitWidth.svg" />
+    <EmbeddedResource Include="Assets\ic_fluent_auto_fit_height_24_regular.svg"
+                      LogicalName="ReaderFitHeight.svg" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.6-experimental" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.7.0" Condition="'$(UseExperimentalReaderPager)' != 'true'" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.6-experimental" Condition="'$(UseExperimentalReaderPager)' == 'true'" />
     <PackageReference Include="XamlAnimatedGif" Version="2.3.2" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(UseExperimentalReaderPager)' == 'true'">
+    <DefineConstants>$(DefineConstants);EXPERIMENTAL_READER_PAGER</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\MediFiler3.Application\MediFiler3.Application.csproj" />
     <ProjectReference Include="..\MediFiler3.Infrastructure\MediFiler3.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Remove="Assets\v3.png" />
   </ItemGroup>
 </Project>

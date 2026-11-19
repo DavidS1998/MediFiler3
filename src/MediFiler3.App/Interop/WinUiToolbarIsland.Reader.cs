@@ -1,9 +1,11 @@
 using MediFiler3.Application.Navigation;
 using Microsoft.UI.Xaml.Controls;
+using Xml = System.Xml.Linq;
 using Xaml = Microsoft.UI.Xaml;
 
-// User-approved experimental SDK adoption, isolated to the native pager adapter.
+#if EXPERIMENTAL_READER_PAGER
 #pragma warning disable CS8305
+#endif
 
 namespace MediFiler3.Interop;
 
@@ -18,7 +20,13 @@ public sealed partial class WinUiToolbarIsland
     public event Action<ReaderOptions>? ReaderOptionsChanged;
     public event Action? ReaderOpenBrowseRequested;
     private AppBarButton? _readerBrowse;
+#if EXPERIMENTAL_READER_PAGER
     private PagerControl? _readerPager;
+#else
+    private NumberBox? _readerPageInput;
+    private TextBlock? _readerPageTotal;
+    private Button? _readerFirstPage, _readerPreviousPage, _readerNextPage, _readerLastPage;
+#endif
     private AppBarElementContainer? _readerPagerContainer;
     private bool _settingReaderPager;
     public event Action<int>? ReaderPageRequested;
@@ -31,17 +39,30 @@ public sealed partial class WinUiToolbarIsland
         if (_readerPagerContainer is not null) _readerPagerContainer.Visibility = _readerControlsVisible && count > 0
             ? Xaml.Visibility.Visible : Xaml.Visibility.Collapsed;
         if (_readerBrowse is not null) _readerBrowse.IsEnabled = index >= 0 && index < count;
-        if (_readerPager is not null)
+        _settingReaderPager = true;
+        try
         {
-            _settingReaderPager = true;
-            try
+            var page = Math.Clamp(index, 0, Math.Max(0, count - 1));
+#if EXPERIMENTAL_READER_PAGER
+            if (_readerPager is not null)
             {
                 _readerPager.IsEnabled = count > 0;
                 _readerPager.NumberOfPages = Math.Max(1, count);
-                _readerPager.SelectedPageIndex = Math.Clamp(index, 0, Math.Max(0, count - 1));
+                _readerPager.SelectedPageIndex = page;
             }
-            finally { _settingReaderPager = false; }
+#else
+            if (_readerPageInput is not null)
+            {
+                _readerPageInput.IsEnabled = count > 0;
+                _readerPageInput.Maximum = Math.Max(1, count);
+                _readerPageInput.Value = page + 1;
+                _readerPageTotal!.Text = $"of {count}";
+                _readerFirstPage!.IsEnabled = _readerPreviousPage!.IsEnabled = page > 0;
+                _readerNextPage!.IsEnabled = _readerLastPage!.IsEnabled = page + 1 < count;
+            }
+#endif
         }
+        finally { _settingReaderPager = false; }
     }
 
     public void SetReaderControls(bool visible, ReaderOptions options)
@@ -91,8 +112,8 @@ public sealed partial class WinUiToolbarIsland
         var buttons = new CommandBar { Background = new Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Black),
             Height = 48, OverflowButtonVisibility = CommandBarOverflowButtonVisibility.Collapsed,
             IsDynamicOverflowEnabled = false, DefaultLabelPosition = CommandBarDefaultLabelPosition.Collapsed };
-        _readerWidthButton = CreateReaderScaleButton("\uE8AB", "Resize to width", ReaderScalingMode.FitWidth); // Switch
-        _readerHeightButton = CreateReaderScaleButton("\uE8CB", "Resize to height", ReaderScalingMode.FitHeight); // Sort
+        _readerWidthButton = CreateReaderScaleButton("ReaderFitWidth.svg", "Resize to width", ReaderScalingMode.FitWidth);
+        _readerHeightButton = CreateReaderScaleButton("ReaderFitHeight.svg", "Resize to height", ReaderScalingMode.FitHeight);
         buttons.PrimaryCommands.Add(_readerWidthButton); buttons.PrimaryCommands.Add(_readerHeightButton);
         _readerControls.Children.Add(buttons);
         SetReaderControls(_readerControlsVisible, _readerToolbarOptions);
@@ -102,19 +123,7 @@ public sealed partial class WinUiToolbarIsland
     {
         _readerFileSeparators.Clear(); _readerFileSeparators.AddRange(middle.PrimaryCommands.OfType<AppBarSeparator>());
         _readerNavigationDivider = new AppBarSeparator(); middle.PrimaryCommands.Add(_readerNavigationDivider);
-        _readerPager = new PagerControl
-        {
-            DisplayMode = PagerControlDisplayMode.NumberBox,
-            VerticalAlignment = Xaml.VerticalAlignment.Center,
-            PrefixText = "Page", SuffixText = "of"
-        };
-        Xaml.Automation.AutomationProperties.SetName(_readerPager, "Reader page navigation");
-        _readerPager.SelectedIndexChanged += (_, _) =>
-        {
-            if (!_settingReaderPager && _readerControlsVisible && _readerPageCount > 0)
-                ReaderPageRequested?.Invoke(_readerPager.SelectedPageIndex);
-        };
-        _readerPagerContainer = new AppBarElementContainer { Content = _readerPager,
+        _readerPagerContainer = new AppBarElementContainer { Content = CreateReaderPager(),
             VerticalAlignment = Xaml.VerticalAlignment.Center };
         middle.PrimaryCommands.Add(_readerPagerContainer);
         _readerBrowse = CreateButton(Symbol.OpenFile, "Open current Reader image in Browse (Enter)", () => ReaderOpenBrowseRequested?.Invoke());
@@ -122,9 +131,101 @@ public sealed partial class WinUiToolbarIsland
         SetReaderNavigation(_readerPageIndex, _readerPageCount);
     }
 
-    private AppBarToggleButton CreateReaderScaleButton(string glyph, string label, ReaderScalingMode mode)
+    private Xaml.FrameworkElement CreateReaderPager()
     {
-        var button = new AppBarToggleButton { Icon = new FontIcon { Glyph = glyph, FontSize = 16 },
+#if EXPERIMENTAL_READER_PAGER
+        _readerPager = new PagerControl
+        {
+            DisplayMode = PagerControlDisplayMode.NumberBox,
+            VerticalAlignment = Xaml.VerticalAlignment.Center,
+            PrefixText = "Page", SuffixText = "of"
+        };
+        Xaml.Automation.AutomationProperties.SetName(_readerPager, "Reader page navigation");
+        _readerPager.SelectedIndexChanged += (sender, _) => RequestReaderPage(sender.SelectedPageIndex);
+        return _readerPager;
+#else
+        var pager = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4,
+            VerticalAlignment = Xaml.VerticalAlignment.Center };
+        Xaml.Automation.AutomationProperties.SetName(pager, "Reader page navigation");
+        _readerFirstPage = CreateReaderPageButton("FirstPageButton", "First page", "\uE892", () => 0);
+        _readerPreviousPage = CreateReaderPageButton("PreviousPageButton", "Previous page", "\uE76B", () => _readerPageIndex - 1);
+        _readerNextPage = CreateReaderPageButton("NextPageButton", "Next page", "\uE76C", () => _readerPageIndex + 1);
+        _readerLastPage = CreateReaderPageButton("LastPageButton", "Last page", "\uE893", () => _readerPageCount - 1);
+        _readerPageInput = new NumberBox
+        {
+            Minimum = 1, Maximum = 1, Value = 1, MinWidth = 64,
+            VerticalAlignment = Xaml.VerticalAlignment.Center
+        };
+        Xaml.Automation.AutomationProperties.SetName(_readerPageInput, "Reader page number");
+        _readerPageInput.ValueChanged += (_, args) =>
+        {
+            if (_settingReaderPager) return;
+            var value = args.NewValue;
+            if (value >= 1 && value <= _readerPageCount && value == Math.Truncate(value))
+                RequestReaderPage((int)value - 1);
+            else
+                SetReaderNavigation(_readerPageIndex, _readerPageCount);
+        };
+        _readerPageTotal = new TextBlock { VerticalAlignment = Xaml.VerticalAlignment.Center };
+        pager.Children.Add(_readerFirstPage);
+        pager.Children.Add(_readerPreviousPage);
+        pager.Children.Add(new TextBlock { Text = "Page", VerticalAlignment = Xaml.VerticalAlignment.Center });
+        pager.Children.Add(_readerPageInput);
+        pager.Children.Add(_readerPageTotal);
+        pager.Children.Add(_readerNextPage);
+        pager.Children.Add(_readerLastPage);
+        return pager;
+#endif
+    }
+
+    private void RequestReaderPage(int page)
+    {
+        if (!_settingReaderPager && _readerControlsVisible && page >= 0 && page < _readerPageCount)
+            ReaderPageRequested?.Invoke(page);
+    }
+
+    private void ReleaseReaderPager()
+    {
+        _readerPagerContainer = null;
+#if EXPERIMENTAL_READER_PAGER
+        _readerPager = null;
+#else
+        _readerPageInput = null;
+        _readerPageTotal = null;
+        _readerFirstPage = _readerPreviousPage = _readerNextPage = _readerLastPage = null;
+#endif
+    }
+
+#if !EXPERIMENTAL_READER_PAGER
+    private Button CreateReaderPageButton(string name, string label, string glyph, Func<int> target)
+    {
+        var button = new Button { Name = name, Width = 32, Height = 32, Padding = new Xaml.Thickness(0),
+            Content = new FontIcon { Glyph = glyph, FontSize = 16 },
+            VerticalAlignment = Xaml.VerticalAlignment.Center };
+        Xaml.Automation.AutomationProperties.SetName(button, label);
+        ToolTipService.SetToolTip(button, label);
+        button.Click += (_, _) => RequestReaderPage(target());
+        return button;
+    }
+#endif
+
+    private AppBarToggleButton CreateReaderScaleButton(string iconResource, string label, ReaderScalingMode mode)
+    {
+        using var stream = typeof(WinUiToolbarIsland).Assembly.GetManifestResourceStream(iconResource)
+            ?? throw new InvalidOperationException($"Missing Reader icon resource {iconResource}.");
+        Xml.XNamespace svg = "http://www.w3.org/2000/svg";
+        var path = Xml.XDocument.Load(stream).Root!.Element(svg + "path")!;
+        var iconMarkup = new Xml.XElement(
+            Xml.XName.Get("PathIcon", "http://schemas.microsoft.com/winfx/2006/xaml/presentation"),
+            new Xml.XAttribute("Data", path.Attribute("d")!.Value));
+        var icon = (PathIcon)Xaml.Markup.XamlReader.Load(iconMarkup.ToString());
+        // Match the compact toolbar's 16-DIP icon slot while retaining the SVG's centered 24-unit viewport.
+        const double iconSize = 16;
+        const double scale = iconSize / 24;
+        icon.Width = iconSize;
+        icon.Height = iconSize;
+        icon.Data.Transform = new Xaml.Media.ScaleTransform { ScaleX = scale, ScaleY = scale };
+        var button = new AppBarToggleButton { Icon = icon,
             Width = 32, Label = label, LabelPosition = CommandBarLabelPosition.Collapsed };
         Xaml.Automation.AutomationProperties.SetName(button, label);
         ToolTipService.SetToolTip(button, label);
