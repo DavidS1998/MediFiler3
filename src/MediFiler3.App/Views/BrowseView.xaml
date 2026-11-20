@@ -213,15 +213,19 @@
                                 <ColumnDefinition Width="28" />
                             </Grid.ColumnDefinitions>
                             <Border Grid.Column="0" HorizontalAlignment="Stretch" Padding="4,5,8,5" CornerRadius="3">
-                                <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis">
-                                    <TextBlock.Foreground>
-                                        <MultiBinding Converter="{StaticResource FolderTextBrush}">
-                                            <Binding Path="Depth" />
-                                            <Binding Path="FolderDepthShadingEnabled" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
-                                            <Binding Path="RuleTextColor" />
-                                        </MultiBinding>
-                                    </TextBlock.Foreground>
-                                </TextBlock>
+                                <DockPanel>
+                                    <views:FolderTreeIcon DockPanel.Dock="Left" FolderPath="{Binding Path}" Width="16" Height="16"
+                                                          Margin="0,0,5,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+                                    <TextBlock Text="{Binding DisplayName}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Foreground>
+                                            <MultiBinding Converter="{StaticResource FolderTextBrush}">
+                                                <Binding Path="Depth" />
+                                                <Binding Path="FolderDepthShadingEnabled" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
+                                                <Binding Path="RuleTextColor" />
+                                            </MultiBinding>
+                                        </TextBlock.Foreground>
+                                    </TextBlock>
+                                </DockPanel>
                             </Border>
                             <Button Grid.Column="1" Width="24" Height="24" Padding="0" Margin="0,2,0,2"
                                     HorizontalAlignment="Right" VerticalAlignment="Center" Content="..."

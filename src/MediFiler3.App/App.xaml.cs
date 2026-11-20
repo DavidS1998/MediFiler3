@@ -12,6 +12,7 @@ using MediFiler3.Services;
 using MediFiler3.Infrastructure.Persistence;
 using MediFiler3.Application.Persistence;
 using MediFiler3.Infrastructure.Operations;
+using System.IO;
 using System.Windows;
 
 namespace MediFiler3;
@@ -94,12 +95,30 @@ public partial class App : System.Windows.Application
         }
         catch (Exception exception)
         {
+            var logPath = WriteStartupFailureLog(exception);
             _host?.Services.GetService<ILogger<App>>()?.LogCritical(exception, "Application startup failed.");
             ShowApplicationMessage(
-                "MediFiler3 could not start. See the application logs for details.",
+                logPath is null ? $"MediFiler3 could not start.\n\n{exception.Message}" :
+                    $"MediFiler3 could not start. Details were saved to:\n{logPath}",
                 "MediFiler3 startup error",
                 MessageBoxImage.Error);
             Shutdown(-1);
+        }
+    }
+
+    private static string? WriteStartupFailureLog(Exception exception)
+    {
+        try
+        {
+            var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediFiler3");
+            Directory.CreateDirectory(folder);
+            var path = Path.Combine(folder, "startup-error.log");
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O}{Environment.NewLine}{exception}{Environment.NewLine}{Environment.NewLine}");
+            return path;
+        }
+        catch (Exception logError) when (logError is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 

@@ -233,10 +233,10 @@ Publish the self-contained x64 release to a fresh directory:
 
 ```powershell
 $publishDirectory = Join-Path $env:TEMP ('MediFiler3Publish-' + [guid]::NewGuid())
-dotnet publish src/MediFiler3.App -c Release -r win-x64 --self-contained true -p:PublishProfile=WindowsX64 -o $publishDirectory
+dotnet publish src/MediFiler3.App -c Release -r win-x64 --self-contained true -p:PublishProfile=WindowsX64 -p:Version=1.0.1 -o $publishDirectory
 ```
 
-Keep the executable and its runtime files together in the ZIP. Include launch instructions and third-party notices. Retain debug symbols separately for diagnostics, and provide a SHA-256 checksum alongside the ZIP.
+The profile copies `Microsoft.UI.Xaml.Controls.pri` to `resources.pri` for WinUI theme lookup in the unpackaged WPF host. Keep the executable and its runtime files together in the ZIP. Include launch instructions and third-party notices. Retain debug symbols separately for diagnostics, and provide a SHA-256 checksum alongside the ZIP. Smoke-test the actual executable from a fresh extraction through window open and close. Startup failures are logged to `%LOCALAPPDATA%\MediFiler3\startup-error.log` even when the application host fails to initialize.
 
 `--reader-restoration-only` runs the deterministic native scroll/dimension regression alone; it is also included in Reader/full runs. ReaderRestorationChecks uses real PNG decoding, holds page 7's source result, accepts a fractional ChangeView, completes the decode on its captured dispatcher context, then invokes the normal UpdatePages layout synchronously before yielding. It asserts that the native offset actually arrives during layout, retains the requested path/fraction and pixel offset, and survives a subsequent width reflow. This controls the observed event ordering without production test hooks or timing sleeps.
 

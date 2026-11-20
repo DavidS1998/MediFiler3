@@ -430,7 +430,7 @@ internal static partial class Program
                 Require(!(bool)shortcut.Invoke(window, [Key.F7, ModifierKeys.None, false])!, "F7 was enabled in Reader");
                 Destination("Browse");
             });
-            await Check("sidebar quick folders mirror favorites and open or move through existing workflows", async () =>
+            await Check("sidebar quick folders mirror favorites, replace roots in Browse, and support moves", async () =>
             {
                 var source = Directory.CreateDirectory(Path.Combine(Root, "quick-source")).FullName;
                 var destination = Directory.CreateDirectory(Path.Combine(Root, "Art & Books")).FullName;
@@ -464,20 +464,25 @@ internal static partial class Program
                 await browse.UndoLastOperationAsync();
                 await WaitUntil(() => state.CurrentFile?.FullPath == original && !File.Exists(moved));
 
+                File.Copy(Fixtures[".png"].FullPath, moved);
+                await LoadRestartRootsAsync(window, [source, destination]);
+                await WaitUntil(() => state.Roots.Count == 2 && state.CurrentFile?.FullPath == original);
+                Destination("Reader");
+                await WaitUntil(() => browse.IsReader);
                 var open = (Action<string>)Field(navigation, "QuickFolderOpenRequested")!;
                 open(destination);
-                await WaitUntil(() => state.ActiveRoot?.Path == destination);
-                Require(state.Roots.Count == 2 && state.Roots.Contains(initialRoot!), "Opening a quick folder replaced the loaded roots");
+                await WaitUntil(() => state.ActiveRoot?.Path == destination && state.CurrentFile?.FullPath == moved);
+                Require(state.Roots.Count == 1 && state.ViewingMode == ViewingMode.Browse,
+                    "Opening an already loaded Quick folder did not replace all roots and switch to Browse");
                 var accent = new Windows.UI.ViewManagement.UISettings().GetColorValue(Windows.UI.ViewManagement.UIColorType.Accent);
                 Require(item.Background is Microsoft.UI.Xaml.Media.SolidColorBrush active && active.Color == accent &&
                     item.Resources["ButtonBackgroundPointerOver"] is Microsoft.UI.Xaml.Media.SolidColorBrush hover && hover.Color == accent,
                     "The active Quick folder did not use the accent color");
                 open(source);
-                await WaitUntil(() => ReferenceEquals(state.ActiveRoot, initialRoot));
+                await WaitUntil(() => state.ActiveRoot?.Path == source && state.CurrentFile?.FullPath == original);
+                Require(state.Roots.Count == 1, "Opening a Quick folder outside the workspace did not replace the existing root");
                 Require(item.Background is not Microsoft.UI.Xaml.Media.SolidColorBrush cleared || cleared.Color != accent,
                     "The previous Quick folder stayed highlighted");
-                open(destination);
-                Require(state.Roots.Count == 2, "Opening a loaded quick folder duplicated the root");
                 await history.SetFavoriteAsync(destination, false);
                 await WaitUntil(() => !quickButtons.Children.Contains(item));
                 navigation.SetQuickFolders(new[] { "lower-case", "Book 5", "A Big Collection 7", "---" }

@@ -33,12 +33,7 @@ public partial class MainWindow
         NavigationIsland.QuickFolderOpenRequested += async path =>
         {
             if (IsEnabled && !_browseView.IsGalleryMoveDragActive)
-                await RunViewShortcutAsync(async () =>
-                {
-                    NavigationIsland.SelectDestination("Browse");
-                    // Quick folders add or activate one root without replacing the workspace.
-                    await _browseView.OpenQuickFolderAsync(path);
-                });
+                await RunViewShortcutAsync(() => LoadFolderPathsAsync([path]));
         };
         NavigationIsland.QuickFolderMoveRequested += async path =>
         {

@@ -37,6 +37,9 @@ internal static partial class Program
                 window.UpdateLayout();
                 var item = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(folder)!;
                 var header = (FrameworkElement)item.Template.FindName("PART_Header", item);
+                var icon = Visuals(header).OfType<FolderTreeIcon>().Single();
+                await WaitUntil(() => icon.FolderPath == directory &&
+                    icon.Source is System.Windows.Media.Imaging.BitmapSource { IsFrozen: true });
                 var label = Visuals(header).OfType<TextBlock>().First(text => text.Text == folder.DisplayName);
                 var click = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
                     { RoutedEvent = Mouse.PreviewMouseDownEvent };
