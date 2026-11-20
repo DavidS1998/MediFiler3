@@ -15,6 +15,7 @@ internal static partial class Program
         await Check("Explicit active-folder row clicks reload the listing from its first file in every view", async () =>
         {
             var directory = Directory.CreateDirectory(Path.Combine(Root, "active-folder-click")).FullName;
+            Directory.CreateDirectory(Path.Combine(directory, "branch", "leaf"));
             foreach (var name in new[] { "a.png", "b.png", "c.png" }) File.Copy(Fixtures[".png"].FullPath, Path.Combine(directory, name));
             await LoadRestartRootsAsync(window, [directory]); await WaitUntil(() => state.Files.Count == 3);
             var folder = state.ActiveFolder!; browse.SetFolderPinned(true);
@@ -41,6 +42,17 @@ internal static partial class Program
                 await WaitUntil(() => icon.FolderPath == directory &&
                     icon.Source is System.Windows.Media.Imaging.BitmapSource { IsFrozen: true });
                 var label = Visuals(header).OfType<TextBlock>().First(text => text.Text == folder.DisplayName);
+                await WaitUntil(() => folder.HasChildren);
+                var wasExpanded = folder.IsExpanded;
+                for (var toggle = 0; toggle < 2; toggle++)
+                {
+                    var middle = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Middle)
+                        { RoutedEvent = Mouse.PreviewMouseDownEvent };
+                    label.RaiseEvent(middle);
+                    Require(middle.Handled && folder.IsExpanded == (toggle == 0 ? !wasExpanded : wasExpanded) &&
+                        ReferenceEquals(state.ActiveFolder, folder) && state.CurrentFile?.Name == "c.png",
+                        $"Middle-click in {view} did not toggle the folder while retaining the current file");
+                }
                 var click = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
                     { RoutedEvent = Mouse.PreviewMouseDownEvent };
                 label.RaiseEvent(click);

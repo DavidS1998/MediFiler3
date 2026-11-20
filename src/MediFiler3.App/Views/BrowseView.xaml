@@ -78,6 +78,7 @@
                             </Grid.RowDefinitions>
                             <Border x:Name="HeaderBackground" Grid.ColumnSpan="2" Background="Transparent" CornerRadius="3" />
                             <ToggleButton x:Name="Expander" Grid.Row="0" Grid.Column="0" Width="18" Height="26"
+                                          PreviewMouseDown="OnFolderRowPreviewMouseDown"
                                           Focusable="False" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
                                           Background="Transparent" BorderThickness="0" Foreground="#AEB4C0">
                                 <ToggleButton.Template>
@@ -224,7 +225,8 @@
                           VirtualizingPanel.ScrollUnit="Pixel">
                     <TreeView.ItemTemplate>
                     <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                        <Grid MinHeight="28" HorizontalAlignment="Stretch" PreviewMouseLeftButtonDown="OnFolderRowPreviewMouseLeftButtonDown">
+                        <Grid MinHeight="28" HorizontalAlignment="Stretch" PreviewMouseDown="OnFolderRowPreviewMouseDown"
+                              PreviewMouseLeftButtonDown="OnFolderRowPreviewMouseLeftButtonDown">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="28" />

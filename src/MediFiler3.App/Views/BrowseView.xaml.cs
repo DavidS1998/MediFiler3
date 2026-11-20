@@ -246,6 +246,16 @@ public partial class BrowseView : UserControl
     private Task ActivateFolderAsync(FolderTreeEntry folder, string? preferredFilePath = null, int preferredFileIndex = 0) =>
         ActivateFolderCoreAsync(folder, preferredFilePath, preferredFileIndex, reloadCurrent: false);
 
+    private void OnFolderRowPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled || e.ChangedButton != MouseButton.Middle || IsGalleryMoveDragActive ||
+            sender is not FrameworkElement { DataContext: FolderTreeEntry { HasChildren: true } folder } ||
+            _navigationState.GetRootForFolder(folder) is null) return;
+
+        e.Handled = true;
+        folder.IsExpanded = !folder.IsExpanded;
+    }
+
     private async void OnFolderRowPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.Handled || e.ChangedButton != MouseButton.Left || e.ClickCount != 1 ||
