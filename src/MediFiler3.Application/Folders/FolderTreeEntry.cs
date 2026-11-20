@@ -59,6 +59,17 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
     }
     public ReadOnlyObservableCollection<FolderTreeEntry> Children { get; }
     public bool HasChildren => Children.Count > 0;
+    private FolderTreeEntry? _lastVisibleChild;
+    public FolderTreeEntry? LastVisibleChild
+    {
+        get => _lastVisibleChild;
+        private set
+        {
+            if (ReferenceEquals(_lastVisibleChild, value)) return;
+            _lastVisibleChild = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastVisibleChild)));
+        }
+    }
     public bool ContainsChild(FolderTreeEntry child) => _childHandlers.ContainsKey(child);
     public bool IsExpanded
     {
@@ -118,11 +129,17 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
             foreach (var nested in descendant.Children) descendants.Push(nested);
         }
         _children.Add(child);
+        if (!child.IsHiddenByRule) LastVisibleChild = child;
         var previousTotal = child.TotalFileCount;
         if (previousTotal is { } known) _knownChildFileCount += known;
         else _unknownChildCount++;
         PropertyChangedEventHandler handler = (_, args) =>
         {
+            if (args.PropertyName == nameof(IsHiddenByRule) &&
+                (!child.IsHiddenByRule || ReferenceEquals(child, LastVisibleChild)))
+            {
+                UpdateLastVisibleChild();
+            }
             if (args.PropertyName != nameof(TotalFileCount)) return;
             if (previousTotal is { } previous) _knownChildFileCount -= previous;
             else _unknownChildCount--;
@@ -168,6 +185,7 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
             old.PropertyChanged -= _childHandlers[old];
             _childHandlers.Remove(old);
             _children.Remove(old);
+            if (ReferenceEquals(old, LastVisibleChild)) UpdateLastVisibleChild();
             if (old.TotalFileCount is { } count) _knownChildFileCount -= count;
             else _unknownChildCount--;
             old.Parent = null;
@@ -183,12 +201,26 @@ public sealed class FolderTreeEntry : INotifyPropertyChanged
         for (var i = 0; i < children.Count; i++)
         {
             if (!string.Equals(_children[i].Path, children[i].Path, StringComparison.OrdinalIgnoreCase))
+            {
                 _children.Move(_children.IndexOf(existingByPath[children[i].Path]), i);
+                UpdateLastVisibleChild();
+            }
             await YieldAsync();
         }
         IsExpanded = expanded;
         CompleteChildrenLoad();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasChildren)));
+    }
+
+    private void UpdateLastVisibleChild()
+    {
+        for (var index = _children.Count - 1; index >= 0; index--)
+        {
+            if (_children[index].IsHiddenByRule) continue;
+            LastVisibleChild = _children[index];
+            return;
+        }
+        LastVisibleChild = null;
     }
 
     public void CompleteChildrenLoad()

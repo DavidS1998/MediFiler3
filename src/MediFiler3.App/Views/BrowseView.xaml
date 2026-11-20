@@ -10,6 +10,7 @@
     <UserControl.Resources>
         <views:FolderTextBrushConverter x:Key="FolderTextBrush" />
         <views:TreeFooterMarginConverter x:Key="TreeFooterMargin" />
+        <views:TreeGroupEndConverter x:Key="TreeGroupEnd" />
         <Style x:Key="SubtleScrollBarStyle" TargetType="ScrollBar">
             <Setter Property="Width" Value="7" />
             <Setter Property="MinWidth" Value="7" />
@@ -73,6 +74,7 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <Border x:Name="HeaderBackground" Grid.ColumnSpan="2" Background="Transparent" CornerRadius="3" />
                             <ToggleButton x:Name="Expander" Grid.Row="0" Grid.Column="0" Width="18" Height="26"
@@ -104,6 +106,7 @@
                             <ContentPresenter x:Name="PART_Header" Grid.Column="1" ContentSource="Header"
                                               HorizontalAlignment="Stretch" VerticalAlignment="Center" />
                             <ItemsPresenter x:Name="ItemsHost" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" />
+                            <Border x:Name="SubfolderGap" Grid.Row="2" Height="14" IsHitTestVisible="False" />
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -120,7 +123,21 @@
                             </Trigger>
                             <Trigger Property="IsExpanded" Value="False">
                                 <Setter TargetName="ItemsHost" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="SubfolderGap" Property="Visibility" Value="Collapsed" />
                             </Trigger>
+                            <DataTrigger Binding="{Binding ActualHeight, ElementName=ItemsHost}" Value="0">
+                                <Setter TargetName="SubfolderGap" Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                            <DataTrigger Value="True">
+                                <DataTrigger.Binding>
+                                    <MultiBinding Converter="{StaticResource TreeGroupEnd}">
+                                        <Binding />
+                                        <Binding Path="Parent.LastVisibleChild" />
+                                        <Binding Path="TreeFooterRoot" RelativeSource="{RelativeSource AncestorType={x:Type views:BrowseView}}" />
+                                    </MultiBinding>
+                                </DataTrigger.Binding>
+                                <Setter TargetName="SubfolderGap" Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>

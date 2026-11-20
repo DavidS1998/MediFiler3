@@ -338,7 +338,14 @@ internal static partial class Program
                 await browse.ExecuteFolderMenuActionAsync(root, "collapse-children");
                 Require(root.IsExpanded && groups.All(g => !g.IsExpanded) && groups[0].Children[0].IsExpanded && ReferenceEquals(state.Roots[0], root),
                     "Collapse child folders reset the root, deeper expansion or node identity");
+                scroll.ScrollToTop();
+                window.UpdateLayout();
+                var rootItem = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(root);
+                var groupItem = (TreeViewItem)rootItem.ItemContainerGenerator.ContainerFromItem(groups[0]);
+                var gap = (FrameworkElement)groupItem.Template.FindName("SubfolderGap", groupItem);
+                Require(gap.ActualHeight == 0, "Collapsed folders left a trailing gap");
                 groups[0].IsExpanded = true;
+                await WaitUntil(() => gap.ActualHeight == 14);
                 Require(groups[0].Children[0].IsExpanded && root.TotalFileCount == 0, "Reopening lost deeper expansion or counters");
                 await WaitUntil(() =>
                 {
@@ -351,6 +358,38 @@ internal static partial class Program
                 var sample = new { Records = 10102, InitialContainers = initial, DistantContainers = distant, EnterFullscreenMs = enterMs, ExitFullscreenMs = exitMs };
                 var json = System.Text.Json.JsonSerializer.Serialize(sample);
                 File.WriteAllText(Path.Combine(Root, "tree-scale.json"), json); Console.WriteLine("TREE SCALE " + json);
+            });
+            await Check("nested folder groups share one half-row gap before the next visible sibling", async () =>
+            {
+                var leaf = new FolderTreeEntry("leaf", Path.Combine(directory, "outer", "inner", "leaf"));
+                var inner = new FolderTreeEntry("inner", Path.Combine(directory, "outer", "inner"), [leaf]);
+                var outer = new FolderTreeEntry("outer", Path.Combine(directory, "outer"), [inner], isRoot: true);
+                var next = new FolderTreeEntry("next", Path.Combine(directory, "next"), isRoot: true);
+                state.ReplaceRoots([outer, next]); state.SetActiveFolder(outer);
+                var tree = (TreeView)browse.FindName("FolderTree");
+                FrameworkElement Part(TreeViewItem item, string name) =>
+                    (FrameworkElement)item.Template.FindName(name, item);
+                double GapBeforeNext()
+                {
+                    var outerItem = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(outer);
+                    var innerItem = (TreeViewItem)outerItem.ItemContainerGenerator.ContainerFromItem(inner);
+                    var leafItem = (TreeViewItem)innerItem.ItemContainerGenerator.ContainerFromItem(leaf);
+                    var nextItem = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(next);
+                    var leafBottom = leafItem.TranslatePoint(new Point(0, leafItem.ActualHeight), tree).Y;
+                    return nextItem.TranslatePoint(new Point(), tree).Y - leafBottom;
+                }
+                await WaitUntil(() =>
+                {
+                    window.UpdateLayout();
+                    return tree.ItemContainerGenerator.ContainerFromItem(outer) is TreeViewItem outerItem &&
+                        outerItem.ItemContainerGenerator.ContainerFromItem(inner) is TreeViewItem innerItem &&
+                        innerItem.ItemContainerGenerator.ContainerFromItem(leaf) is TreeViewItem &&
+                        tree.ItemContainerGenerator.ContainerFromItem(next) is TreeViewItem &&
+                        GapBeforeNext() == 14;
+                });
+                next.ApplyRuleActions(new(null, null, true));
+                var outerContainer = (TreeViewItem)tree.ItemContainerGenerator.ContainerFromItem(outer);
+                await WaitUntil(() => Part(outerContainer, "SubfolderGap").ActualHeight == 0);
             });
             await Check("native-island F11 shortcut works and closing fullscreen retains normal restart layout", async () =>
             {

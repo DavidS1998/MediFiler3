@@ -7,6 +7,13 @@ using MediFiler3.Application.Folders;
 
 namespace MediFiler3.Views;
 
+public sealed class TreeGroupEndConverter : IMultiValueConverter
+{
+    public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
+        values[0] is FolderTreeEntry node && (ReferenceEquals(node, values[1]) || ReferenceEquals(node, values[2]));
+    public object[] ConvertBack(object value, Type[] targetTypes, object parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 public sealed class TreeFooterMarginConverter : IMultiValueConverter
 {
     public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture) =>
