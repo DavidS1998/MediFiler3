@@ -215,7 +215,8 @@ public partial class MainWindow : Window
         {
             if (IsFullscreen) SetFullscreenChrome(true, _fullscreenSidebarVisible);
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
-                ToolbarIsland.ShowFolderMenu(location, folder.Name,
+                ToolbarIsland.ShowFolderMenu(location, folder.Name, folder.IsRoot,
+                    BrowseView.GetRootReplacementPath(folder) is not null,
                     action => _browseView.ExecuteFolderMenuActionAsync(folder, action))));
         };
         ToolbarIsland.ResetZoomRequested += _browseView.ResetZoomToFit;

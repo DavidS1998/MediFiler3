@@ -517,6 +517,56 @@ internal static partial class Program
                 Require(Math.Abs(Top(reader) - readerTop) < 1 && Math.Abs(Top(settingsItem) - settingsTop) < 1,
                     "Scrolling Quick folders moved the pinned navigation");
             });
+            await Check("folder menu replaces the workspace with a child or the parent of a loaded root", async () =>
+            {
+                var parent = Directory.CreateDirectory(Path.Combine(Root, "menu-root")).FullName;
+                var child = Directory.CreateDirectory(Path.Combine(parent, "child")).FullName;
+                var nested = Directory.CreateDirectory(Path.Combine(child, "nested", "deep")).FullName;
+                var other = Directory.CreateDirectory(Path.Combine(Root, "other-root")).FullName;
+                var image = Path.Combine(child, "sample.png");
+                File.Copy(Fixtures[".png"].FullPath, image);
+                var secondImage = Path.Combine(child, "second.png");
+                File.Copy(Fixtures[".png"].FullPath, secondImage);
+                var nestedImage = Path.Combine(nested, "sample.png");
+                File.Copy(Fixtures[".png"].FullPath, nestedImage);
+                await LoadRestartRootsAsync(window, [other, parent]);
+                await WaitUntil(() => state.Roots.Count == 2 && state.Roots[1].Children.Any(folder => folder.Path == child));
+                var originalParent = state.Roots[1];
+                var childFolder = originalParent.Children.Single(folder => folder.Path == child);
+                Destination("Gallery");
+                await WaitUntil(() => browse.IsGallery);
+
+                await browse.ExecuteFolderMenuActionAsync(childFolder, "set-root");
+                await WaitUntil(() => state.ActiveRoot?.Path == child && state.CurrentFile?.FullPath == image);
+                Require(state.Roots.Count == 1 && browse.IsGallery,
+                    "Promoting a child folder did not replace all roots while retaining Gallery");
+
+                await browse.ExecuteFolderMenuActionAsync(originalParent, "set-root");
+                Require(state.ActiveRoot?.Path == child, "A stale folder menu changed the workspace");
+                ((NavigationController)Field(browse, "_navigationController")!).SelectFile(
+                    state.Files.Single(file => file.FullPath == secondImage));
+                await browse.ExecuteFolderMenuActionAsync(state.ActiveRoot!, "set-root");
+                await WaitUntil(() => state.ActiveRoot?.Path == parent && state.ActiveFolder?.Path == child &&
+                    state.ActiveFolder.IsSelected && state.CurrentFile?.FullPath == secondImage);
+                Require(state.Roots.Count == 1 && browse.IsGallery, "Promoting the parent did not replace the child root");
+                Require(state.Roots[0].IsExpanded, "The new root did not show the selected former root");
+
+                await WaitUntil(() => state.ActiveFolder?.Children.FirstOrDefault()?.Children.Any(folder => folder.Path == nested) == true);
+                var nestedFolder = state.ActiveFolder!.Children[0].Children.Single(folder => folder.Path == nested);
+                var activate = typeof(BrowseView).GetMethod("ActivateFolderAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                await (Task)activate.Invoke(browse, [nestedFolder, null, 0])!;
+                await WaitUntil(() => state.CurrentFile?.FullPath == nestedImage);
+
+                var ancestor = state.ActiveFolder!.Parent!.Parent!;
+                await browse.ExecuteFolderMenuActionAsync(ancestor, "set-root");
+                await WaitUntil(() => state.ActiveRoot?.Path == child && state.ActiveFolder?.Path == nested &&
+                    state.ActiveFolder.IsSelected && state.CurrentFile?.FullPath == nestedImage);
+                await browse.ExecuteFolderMenuActionAsync(state.ActiveRoot!, "set-root");
+                await WaitUntil(() => state.ActiveRoot?.Path == parent && state.ActiveFolder?.Path == nested &&
+                    state.ActiveFolder.IsSelected && state.CurrentFile?.FullPath == nestedImage);
+                for (var node = state.ActiveFolder!.Parent; node is not null; node = node.Parent)
+                    Require(node.IsExpanded, "An ancestor of the retained folder was collapsed");
+            });
         }
         finally { window.Close(); }
     }

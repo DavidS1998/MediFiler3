@@ -112,7 +112,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     public event Action? TogglePlaybackMuteRequested;
     public event Action<double>? JumpPlaybackRequested;
 
-    public void ShowFolderMenu(System.Windows.Point screenPoint, string folderName, Func<string, Task> actionHandler)
+    public void ShowFolderMenu(System.Windows.Point screenPoint, string folderName, bool isRoot,
+        bool canSetRoot, Func<string, Task> actionHandler)
     {
         if (_xamlSource is null || _rootElement is null) return;
 
@@ -129,6 +130,8 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
         AddFolderMenuItem(menu, "Move folder to...", "move-folder", folderName, actionHandler);
         AddFolderMenuItem(menu, "Send folder to Recycle Bin", "recycle-folder", folderName, actionHandler);
         menu.Items.Add(new MenuFlyoutSeparator());
+        AddFolderMenuItem(menu, isRoot ? "Set parent folder as root" : "Set as root folder",
+            "set-root", folderName, actionHandler, canSetRoot);
         AddFolderMenuItem(menu, "Collapse child folders", "collapse-children", folderName, actionHandler);
         AddFolderMenuItem(menu, "Refresh tree", "refresh-tree", folderName, actionHandler);
         AddFolderMenuItem(menu, "Open in File Explorer", "open-explorer", folderName, actionHandler);
@@ -509,16 +512,16 @@ public sealed partial class WinUiToolbarIsland : HwndHost, IWinUiDialogService
     }
 
     private void AddFolderMenuItem(MenuFlyout menu, string label, string action, string folderName,
-        Func<string, Task> actionHandler)
+        Func<string, Task> actionHandler, bool isEnabled = true)
     {
-        var item = new MenuFlyoutItem { Text = label, Icon = new FontIcon
+        var item = new MenuFlyoutItem { Text = label, IsEnabled = isEnabled, Icon = new FontIcon
         {
             Glyph = action switch
             {
                 "new-folder" => "\uE8F4", "rename-folder" => "\uE8AC",
                 "move-folder" => "\uE8DE", "recycle-folder" => "\uE74D",
                 "collapse-children" => "\uE8A3", "refresh-tree" => "\uE72C",
-                "open-explorer" => "\uE838", _ => "\uE946"
+                "set-root" => "\uE8B7", "open-explorer" => "\uE838", _ => "\uE946"
             }
         } };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(item, $"{label}: {folderName}");

@@ -158,7 +158,8 @@ public partial class BrowseView : UserControl
         };
     }
 
-    public async Task LoadRootsAsync(IEnumerable<string> paths)
+    public async Task LoadRootsAsync(IEnumerable<string> paths, string? preferredFolderPath = null,
+        string? preferredFilePath = null)
     {
         StopWatching();
         using var reconciliationDeferral = DeferReconciliation();
@@ -187,7 +188,11 @@ public partial class BrowseView : UserControl
             cancellationToken.ThrowIfCancellationRequested();
             _navigationState.ReplaceRoots(result.Roots);
             StartWatching();
-            _ = PopulateHierarchyAsync(result.Roots, cancellationToken);
+            var firstRoot = result.Roots.FirstOrDefault();
+            var selectRoot = preferredFolderPath is null ||
+                (firstRoot is not null && PathsEqual(firstRoot.Path, preferredFolderPath));
+            _ = PopulateHierarchyAsync(result.Roots, cancellationToken,
+                selectRoot ? null : preferredFolderPath, preferredFilePath);
 
             if (result.Errors.Count > 0)
             {
@@ -199,9 +204,9 @@ public partial class BrowseView : UserControl
                 StatusChanged?.Invoke($"Loaded {result.Roots.Count} folder root(s).");
             }
 
-            if (result.Roots.FirstOrDefault() is { } firstRoot)
+            if (firstRoot is not null)
             {
-                _ = ActivateFolderAsync(firstRoot);
+                if (selectRoot) _ = ActivateFolderAsync(firstRoot, preferredFilePath);
             }
             else
             {
@@ -365,6 +370,21 @@ public partial class BrowseView : UserControl
                 case "rename-folder": await RenameFolderAsync(folder); break;
                 case "move-folder": await MoveFolderAsync(folder); break;
                 case "recycle-folder": await DeleteFolderAsync(folder); break;
+                case "set-root":
+                    // Let the native flyout finish handling the click before replacing its workspace.
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+                    if (_viewerActive && !_historyBusy && _galleryCommandCancellation is null &&
+                        _readerCommandCancellation is null && !IsGalleryMoveDragActive &&
+                        _navigationState.GetRootForFolder(folder) is not null &&
+                        GetRootReplacementPath(folder) is { } path)
+                    {
+                        var activeFolder = _navigationState.ActiveFolder;
+                        var keepActiveFolder = activeFolder is not null && IsPathWithin(activeFolder.Path, path);
+                        var preferredFolder = keepActiveFolder ? activeFolder!.Path : folder.IsRoot ? folder.Path : null;
+                        var preferredFile = keepActiveFolder ? _navigationState.CurrentFile?.FullPath : null;
+                        await LoadRootsAsync([path], preferredFolder, preferredFile);
+                    }
+                    break;
                 case "collapse-children":
                     if (_navigationState.GetRootForFolder(folder) is not null) folder.CollapseDirectChildren();
                     break;
@@ -379,6 +399,9 @@ public partial class BrowseView : UserControl
             ShowOperationNotice(exception.Message);
         }
     }
+
+    internal static string? GetRootReplacementPath(FolderTreeEntry folder) =>
+        folder.IsRoot ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(folder.Path)) : folder.Path;
 
     private async void OnFolderTreePreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -972,6 +995,7 @@ public partial class BrowseView : UserControl
                     result.Parent.AddChild(result.Children[index]);
                     if (index % 32 == 31) await Dispatcher.Yield(DispatcherPriority.Background);
                 }
+                cancellationToken.ThrowIfCancellationRequested();
                 // Failed discovery leaves subtree totals unknown.
                 if (result.Errors.Count == 0) result.Parent.CompleteChildrenLoad();
                 errors.AddRange(result.Errors.Take(Math.Max(0, 3 - errors.Count)));
@@ -979,10 +1003,13 @@ public partial class BrowseView : UserControl
                     (_navigationState.ActiveFolder is null || (ReferenceEquals(_navigationState.ActiveFolder, initialFolder) &&
                      ReferenceEquals(_navigationState.CurrentFile, initialFile))))
                 {
-                    var preferred = FindFolder(roots, preferredFolderPath);
+                    var preferred = result.Children.FirstOrDefault(child => PathsEqual(child.Path, preferredFolderPath));
                     if (preferred is not null)
                     {
-                        await ActivateFolderAsync(preferred, preferredFilePath, preferredFileIndex);
+                        var activation = ActivateFolderAsync(preferred, preferredFilePath, preferredFileIndex);
+                        for (var ancestor = preferred.Parent; ancestor is not null; ancestor = ancestor.Parent)
+                            ancestor.IsExpanded = true;
+                        await activation;
                         preferredFolderPath = null;
                     }
                 }
